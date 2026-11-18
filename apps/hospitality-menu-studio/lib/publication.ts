@@ -1,8 +1,10 @@
-import { createHash } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { z } from "zod";
 import type { CatalogueLoadResult } from "@fika/server-shared/hospitality-catalogue-client";
-import type { StudioDishSafetyFence, StudioDishSafetyStatus } from "../../shared/hospitality-menu-studio-safety";
+import { sameStudioDishReviewSubject, studioDishReviewKey, studioDishReviewSubject, type StudioDishSafetyFence, type StudioDishSafetyStatus } from "../../shared/hospitality-menu-studio-safety";
 import type { Dish, Menu, Publication, PublicationScope, Review } from "./contract";
 import { draftContentReview, menuDishIds } from "./review";
+import { dateSchema, dishSchema, idSchema, menuSchema, revisionSchema } from "./schema";
 import { compareMenuDrafts } from "./versions";
 
 export type PublicationRequest = { menuId: string; version: number; effectiveDate: string; scope: PublicationScope };
@@ -22,6 +24,21 @@ export type PublicationPackage = {
   catalogueHash: string;
   dishes: { dish: Dish; safety: Pick<StudioDishSafetyFence, "subject" | "releaseId" | "matrixHash"> }[];
 };
+
+const hash = z.string().regex(/^[a-f0-9]{64}$/);
+const packageSchema = z.object({
+  contract: z.literal("hospitality-menu-studio.publication.v1"), publicationId: idSchema, publicationRevision: revisionSchema,
+  sourceApp: z.literal("hospitality-menu-studio"), projectId: z.literal("demo-fika-os"), menu: menuSchema.strict(),
+  effectiveDate: dateSchema, sourceDraftVersion: revisionSchema, previousPublicationId: idSchema.nullable(), catalogueHash: hash,
+  dishes: z.array(z.object({ dish: dishSchema.strict(), safety: z.object({
+    subject: z.object({ dishId: idSchema, revision: revisionSchema, sourceHash: hash }).strict(),
+    releaseId: z.string().regex(/^cpu-studio-dish-release:[a-f0-9]{64}:v[1-9][0-9]*$/), matrixHash: hash,
+  }).strict() }).strict()),
+}).strict() satisfies z.ZodType<PublicationPackage>;
+
+// Local authoring runs in one server process. Restarting requires a fresh review for unconfirmed requests.
+const reviewKey = randomBytes(32);
+const maxPackageBytes = 650_000;
 
 export function reviewPublication(input: {
   request: PublicationRequest; menu: Menu; dishes: Dish[]; today: string; actorId: string; canPublish: boolean;
@@ -63,7 +80,7 @@ export function reviewPublication(input: {
   const byId = new Map(dishes.map(dish => [dish.id, dish]));
   const publicationRevision = (previous?.revision ?? 0) + 1;
   const payload: PublicationPackage = {
-    contract: "hospitality-menu-studio.publication.v1", publicationId: `publication-${publicationHash(menu.id).slice(0, 32)}-v${publicationRevision}`, publicationRevision,
+    contract: "hospitality-menu-studio.publication.v1", publicationId: publicationIdFor(menu.id, publicationRevision), publicationRevision,
     sourceApp: "hospitality-menu-studio", projectId: "demo-fika-os", menu, effectiveDate: request.effectiveDate, sourceDraftVersion: menu.version,
     previousPublicationId: previous?.id ?? null, catalogueHash: catalogue.contentHash,
     dishes: dishIds.map(id => {
@@ -73,10 +90,10 @@ export function reviewPublication(input: {
   };
   const body = canonicalJson(payload);
   const contentHash = publicationHash(body);
-  if (Buffer.byteLength(body) > 650_000) return {
+  if (Buffer.byteLength(body) > maxPackageBytes) return {
     review: { ...review, canPublish: false, issues: ["The full publication exceeds the storage limit."] },
   };
-  const reviewToken = publicationHash(canonicalJson(["studio-publication-review-v1", actorId, contentHash, impact]));
+  const reviewToken = createHmac("sha256", reviewKey).update(canonicalJson(["studio-publication-review-v1", actorId, contentHash, impact])).digest("hex");
   return { review: { ...review, reviewToken }, package: { payload, body, contentHash } };
 }
 
@@ -92,3 +109,31 @@ export function publicationImpactScope(request: PublicationRequest, menu: Menu, 
 }
 
 export function publicationHash(value: string) { return createHash("sha256").update(value).digest("hex"); }
+
+export function sameReviewToken(supplied: string, issued: string | null) {
+  return issued !== null && hash.safeParse(supplied).success && timingSafeEqual(Buffer.from(supplied, "hex"), Buffer.from(issued, "hex"));
+}
+
+export function decodeLocalPublicationPackage(body: string, publication: Publication): PublicationPackage | undefined {
+  if (Buffer.byteLength(body) > maxPackageBytes || publicationHash(body) !== publication.contentHash) return undefined;
+  let value: unknown;
+  try { value = JSON.parse(body); }
+  catch { return undefined; }
+  const parsed = packageSchema.safeParse(value);
+  if (!parsed.success || canonicalJson(parsed.data) !== body) return undefined;
+  const payload = parsed.data;
+  if (payload.publicationId !== publication.id || payload.publicationRevision !== publication.revision
+    || payload.publicationId !== publicationIdFor(payload.menu.id, payload.publicationRevision)
+    || payload.previousPublicationId !== (payload.publicationRevision === 1 ? null : publicationIdFor(payload.menu.id, payload.publicationRevision - 1))
+    || payload.effectiveDate !== publication.effectiveDate || payload.menu.id !== publication.menuId || payload.menu.name !== publication.menuName
+    || payload.sourceDraftVersion !== publication.sourceDraftVersion || payload.menu.version !== payload.sourceDraftVersion) return undefined;
+  const dishIds = menuDishIds(payload.menu);
+  if (dishIds.length !== payload.dishes.length || payload.dishes.some(({ dish, safety }, index) => {
+    const subject = studioDishReviewSubject(dish);
+    return dish.id !== dishIds[index] || dish.version < 1 || !sameStudioDishReviewSubject(safety.subject, subject)
+      || !safety.releaseId.startsWith(`cpu-studio-dish-release:${studioDishReviewKey(dish.id, dish.version)}:v`);
+  })) return undefined;
+  return payload;
+}
+
+function publicationIdFor(menuId: string, revision: number) { return `publication-${publicationHash(menuId).slice(0, 32)}-v${revision}`; }

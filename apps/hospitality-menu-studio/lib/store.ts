@@ -9,8 +9,8 @@ import {
 } from "../../shared/hospitality-menu-studio-safety";
 import { londonDate, type Dish, type DraftVersion, type Menu, type Publication, type Review, type Section, type StudioActor } from "./contract";
 import { StudioProblem } from "./problem";
-import { canonicalJson, publicationHash, publicationImpactScope, reviewPublication,
-  type DishSafety, type PublicationImpactTarget, type PublicationPackage, type PublicationRequest, type SeasonWindow } from "./publication";
+import { canonicalJson, decodeLocalPublicationPackage, publicationHash, publicationImpactScope, reviewPublication, sameReviewToken,
+  type DishSafety, type PublicationImpactTarget, type PublicationRequest, type SeasonWindow } from "./publication";
 import { studioRuntime } from "./runtime";
 import { dishSchema, menuSchema } from "./schema";
 import { assortmentIsComplete, menuDishIds } from "./review";
@@ -67,7 +67,9 @@ export class StudioStore {
     const head = this.draftHead("menus", request.menuId);
     return this.db.runTransaction(async transaction => {
       const [draft, latest] = await transaction.getAll(head, head.collection("publicationState").doc("head"));
-      const menu = archivedMenu(draft.data() as StoredDraft | undefined, request.menuId, request.version);
+      const stored = draft.data() as StoredDraft | undefined;
+      if (!stored || stored.item.version !== request.version) throw conflict();
+      const menu = archivedMenu(stored, request.menuId, request.version);
       const previous = latest.data() as Publication | undefined;
       const previousPackage = previous ? await this.readPublicationPackage(transaction, head, previous) : undefined;
       return publicationImpactScope(request, menu, previousPackage);
@@ -85,7 +87,7 @@ export class StudioStore {
       const existing = await this.readPublicationReceipt(transaction, request, inputs.actor.id);
       if (existing) return existing;
       const candidate = await this.publicationCandidate(transaction, request, inputs);
-      if (!candidate.package || request.reviewToken !== candidate.review.reviewToken) {
+      if (!candidate.package || !sameReviewToken(request.reviewToken, candidate.review.reviewToken)) {
         throw new StudioProblem(409, "PUBLICATION_REVIEW_CHANGED", "The draft or its publication evidence changed. Review the publication again.");
       }
       const { payload, body, contentHash } = candidate.package;
@@ -178,14 +180,12 @@ export class StudioStore {
   private async readPublicationPackage(transaction: Transaction, head: DocumentReference, publication: Publication) {
     const snapshot = await transaction.get(head.collection("publicationPackages").doc(publication.id));
     const data = snapshot.data();
-    if (!data || typeof data.body !== "string" || data.contentHash !== publication.contentHash || publicationHash(data.body) !== publication.contentHash) {
+    if (!data || data.contract !== "hospitality-menu-studio.publication.v1" || typeof data.body !== "string"
+      || data.contentHash !== publication.contentHash || publication.menuId !== head.id) {
       throw publicationIntegrity();
     }
-    const payload = JSON.parse(data.body) as PublicationPackage;
-    if (payload.contract !== "hospitality-menu-studio.publication.v1" || payload.projectId !== "demo-fika-os"
-      || payload.publicationId !== publication.id || payload.publicationRevision !== publication.revision || payload.effectiveDate !== publication.effectiveDate
-      || payload.menu.id !== head.id || payload.sourceDraftVersion !== publication.sourceDraftVersion || !menuSchema.safeParse(payload.menu).success
-      || !Array.isArray(payload.dishes)) throw publicationIntegrity();
+    const payload = decodeLocalPublicationPackage(data.body, publication);
+    if (!payload) throw publicationIntegrity();
     return payload;
   }
 

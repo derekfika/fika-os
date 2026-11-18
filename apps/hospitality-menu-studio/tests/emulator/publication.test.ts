@@ -9,7 +9,7 @@ import {
 } from "../../../shared/hospitality-menu-studio-safety";
 import type { Dish, Menu, Review } from "../../lib/contract";
 import { studioHandlers } from "../../lib/http";
-import { publicationHash } from "../../lib/publication";
+import { canonicalJson, decodeLocalPublicationPackage, publicationHash } from "../../lib/publication";
 import { StudioStore } from "../../lib/store";
 
 test("content publication freezes current menu, dish and signed evidence with an idempotent receipt", async () => {
@@ -107,6 +107,19 @@ test("content publication freezes current menu, dish and signed evidence with an
     assert.equal(payload.projectId, "demo-fika-os");
     assert.equal(payload.dishes[0].dish.kitchenDescription, dish.kitchenDescription);
     assert.deepEqual(payload.dishes[0].safety, { subject, releaseId: evidence.releaseId, matrixHash: evidence.matrixHash });
+    assert.deepEqual(decodeLocalPublicationPackage(data.body, first), payload);
+    const forgedToken = publicationHash(canonicalJson(["studio-publication-review-v1", actor.id, first.contentHash, accepted.impact]));
+    assert.notEqual(forgedToken, accepted.reviewToken);
+    assert.equal((await publish(forgedToken)).status, 409);
+    for (const mismatch of [
+      { ...payload, sourceApp: "integration-hub" },
+      { ...payload, menu: { ...payload.menu, version: payload.menu.version + 1 } },
+      { ...payload, dishes: [] },
+      { ...payload, dishes: [{ ...payload.dishes[0], dish: { ...payload.dishes[0].dish, kitchenDescription: "Altered content" } }] },
+    ]) {
+      const bytes = canonicalJson(mismatch);
+      assert.equal(decodeLocalPublicationPackage(bytes, { ...first, contentHash: publicationHash(bytes) }), undefined);
+    }
     assert.equal((await head.collection("publicationOutbox").doc(first.id).get()).data()?.impact.status, "unavailable");
     assert.equal((await post({ action: "activate-collection", menuId: menu.id, publicationId: first.id, visibility: "customer", confirmed: true })).status, 503);
 
@@ -117,6 +130,7 @@ test("content publication freezes current menu, dish and signed evidence with an
 
     const savedMenu = await store.read<Menu>("menus", menu.id);
     const amendedMenu = await store.save("menus", actor.id, { ...savedMenu, name: "Synthetic winter menu amendment" });
+    assert.equal((await post({ ...action, action: "review" })).status, 409);
     const amendment = { ...action, version: amendedMenu.version, effectiveDate: "2027-01-01" };
     const reviewedAmendment = await readReview(amendment);
     assert.match(reviewedAmendment.changes.join(" "), /Menu name changed/);
