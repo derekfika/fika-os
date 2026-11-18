@@ -42,7 +42,7 @@ export function studioHandlers(
     const catalogue = readCatalogue?.(request).catch(() => undefined);
     let impact: Review["impact"] = { status: "unavailable" };
     let impactTarget: PublicationImpactTarget | undefined;
-    if (readImpact && !command.scope.sectionId && !command.scope.week && !command.scope.dishId) {
+    if (readImpact) {
       impactTarget = await db.publicationImpactTarget(command);
       if (impactTarget.catalogueItemIds.length && impactTarget.firstEventDate <= impactTarget.lastEventDate) {
         impact = await readImpact(request, impactTarget).catch(() => ({ status: "unavailable" }));

@@ -4,13 +4,15 @@ import type { CatalogueLoadResult } from "@fika/server-shared/hospitality-catalo
 import { sameStudioDishReviewSubject, studioDishReviewKey, studioDishReviewSubject, type StudioDishSafetyFence, type StudioDishSafetyStatus } from "../../shared/hospitality-menu-studio-safety";
 import type { Dish, Menu, Publication, PublicationScope, Review } from "./contract";
 import { draftContentReview, menuDishIds } from "./review";
-import { dateSchema, dishSchema, idSchema, menuSchema, revisionSchema } from "./schema";
+import { dateSchema, dishSchema, idSchema, menuSchema, revisionSchema, scopeSchema } from "./schema";
+import { hasPublicationScope, type ScopedPublicationContent } from "./scoped-publication";
 import { compareMenuDrafts } from "./versions";
 
 export type PublicationRequest = { menuId: string; version: number; effectiveDate: string; scope: PublicationScope };
 export type DishSafety = { status: StudioDishSafetyStatus; fence?: StudioDishSafetyFence };
 export type SeasonWindow = { menuId: string; startDate: string; endDate: string };
-export type PublicationImpactTarget = { firstEventDate: string; lastEventDate: string; catalogueItemIds: string[]; scope: "catalogue-item" };
+export type PublicationImpactTarget = { firstEventDate: string; lastEventDate: string; catalogueItemIds: string[];
+  scope: ScopedPublicationContent["impactScope"]; rotation?: ScopedPublicationContent["rotation"] };
 export type PublicationPackage = {
   contract: "hospitality-menu-studio.publication.v1";
   publicationId: string;
@@ -21,6 +23,7 @@ export type PublicationPackage = {
   effectiveDate: string;
   sourceDraftVersion: number;
   previousPublicationId: string | null;
+  scope?: PublicationScope;
   catalogueHash: string;
   dishes: { dish: Dish; safety: Pick<StudioDishSafetyFence, "subject" | "releaseId" | "matrixHash"> }[];
 };
@@ -29,7 +32,7 @@ const hash = z.string().regex(/^[a-f0-9]{64}$/);
 const packageSchema = z.object({
   contract: z.literal("hospitality-menu-studio.publication.v1"), publicationId: idSchema, publicationRevision: revisionSchema,
   sourceApp: z.literal("hospitality-menu-studio"), projectId: z.literal("demo-fika-os"), menu: menuSchema.strict(),
-  effectiveDate: dateSchema, sourceDraftVersion: revisionSchema, previousPublicationId: idSchema.nullable(), catalogueHash: hash,
+  effectiveDate: dateSchema, sourceDraftVersion: revisionSchema, previousPublicationId: idSchema.nullable(), catalogueHash: hash, scope: scopeSchema.optional(),
   dishes: z.array(z.object({ dish: dishSchema.strict(), safety: z.object({
     subject: z.object({ dishId: idSchema, revision: revisionSchema, sourceHash: hash }).strict(),
     releaseId: z.string().regex(/^cpu-studio-dish-release:[a-f0-9]{64}:v[1-9][0-9]*$/), matrixHash: hash,
@@ -43,12 +46,12 @@ const maxPackageBytes = 650_000;
 export function reviewPublication(input: {
   request: PublicationRequest; menu: Menu; dishes: Dish[]; today: string; actorId: string; canPublish: boolean;
   catalogue?: CatalogueLoadResult; safety: Map<string, DishSafety>; previous?: Publication; previousPackage?: PublicationPackage;
-  seasons: SeasonWindow[]; impact: Review["impact"];
+  seasons: SeasonWindow[]; impact: Review["impact"]; scopeResult: Pick<ScopedPublicationContent, "issues" | "changes">;
 }) {
   const { request, menu, dishes, today, catalogue, previous, previousPackage, impact, actorId } = input;
   const previousMenu = previousPackage?.menu;
-  const { issues, changes } = draftContentReview(menu, dishes, request.effectiveDate, request.scope, today);
-  if (request.scope.sectionId || request.scope.week || request.scope.dishId) issues.push("Select the whole menu for this publication.");
+  const { issues, changes } = draftContentReview(menu, dishes, request.effectiveDate, {}, today);
+  issues.push(...input.scopeResult.issues);
   if (previous && request.effectiveDate < previous.effectiveDate) issues.push("Choose an effective date on or after the latest publication.");
   if (previousMenu && (previousMenu.kind !== menu.kind || previousMenu.startDate !== menu.startDate || previousMenu.endDate !== menu.endDate)) {
     issues.push("Keep the published menu type and date window. Create a different menu for a new date window.");
@@ -73,7 +76,8 @@ export function reviewPublication(input: {
   const dishRevisions = new Map(previousPackage?.dishes.map(({ dish }) => [dish.id, dish.version]));
   const dishChanges = previousPackage ? dishes.filter(dish => dishRevisions.get(dish.id) !== dish.version).map(dish => `${dish.name} uses dish revision ${dish.version}.`) : [];
   const impactWarning = impact.status === "available" && impact.coverage === "partial" ? ["The impact check covered only part of the affected booking data. Additional bookings may be affected."] : [];
-  const review: Review = { canPublish: issues.length === 0, issues: [...issues, ...impactWarning], changes: previousMenu ? [...compareMenuDrafts(previousMenu, menu), ...dishChanges] : changes,
+  const menuChanges = previousMenu ? [...compareMenuDrafts(previousMenu, menu), ...dishChanges] : changes;
+  const review: Review = { canPublish: issues.length === 0, issues: [...issues, ...impactWarning], changes: [...menuChanges, ...input.scopeResult.changes],
     safety, impact, reviewToken: null };
   // Booking impact is advisory. An unavailable result stays in the author’s reviewed evidence and is preserved with publication.
   if (!review.canPublish || !catalogue) return { review };
@@ -83,6 +87,7 @@ export function reviewPublication(input: {
     contract: "hospitality-menu-studio.publication.v1", publicationId: publicationIdFor(menu.id, publicationRevision), publicationRevision,
     sourceApp: "hospitality-menu-studio", projectId: "demo-fika-os", menu, effectiveDate: request.effectiveDate, sourceDraftVersion: menu.version,
     previousPublicationId: previous?.id ?? null, catalogueHash: catalogue.contentHash,
+    ...(hasPublicationScope(request.scope) ? { scope: request.scope } : {}),
     dishes: dishIds.map(id => {
       const { subject, releaseId, matrixHash } = input.safety.get(id)!.fence!;
       return { dish: byId.get(id)!, safety: { subject, releaseId, matrixHash } };
@@ -102,10 +107,9 @@ export function canonicalJson(value: unknown) {
     ? Object.fromEntries(Object.keys(item).sort().map(key => [key, item[key]])) : item);
 }
 
-export function publicationImpactScope(request: PublicationRequest, menu: Menu, previous?: PublicationPackage): PublicationImpactTarget {
-  const sections = [...menu.sections, ...(previous?.menu.sections || [])];
-  return { firstEventDate: request.effectiveDate, lastEventDate: menu.endDate,
-    catalogueItemIds: [...new Set(sections.map(section => section.catalogueItemId).filter(Boolean))].sort(), scope: "catalogue-item" };
+export function publicationImpactScope(request: PublicationRequest, content: ScopedPublicationContent): PublicationImpactTarget {
+  return { firstEventDate: request.effectiveDate, lastEventDate: content.menu.endDate, catalogueItemIds: content.impactItemIds,
+    scope: content.impactScope, ...(content.rotation ? { rotation: content.rotation } : {}) };
 }
 
 export function publicationHash(value: string) { return createHash("sha256").update(value).digest("hex"); }
@@ -125,6 +129,7 @@ export function decodeLocalPublicationPackage(body: string, publication: Publica
   if (payload.publicationId !== publication.id || payload.publicationRevision !== publication.revision
     || payload.publicationId !== publicationIdFor(payload.menu.id, payload.publicationRevision)
     || payload.previousPublicationId !== (payload.publicationRevision === 1 ? null : publicationIdFor(payload.menu.id, payload.publicationRevision - 1))
+    || canonicalJson(payload.scope || {}) !== canonicalJson(publication.scope) || (payload.scope && payload.publicationRevision === 1)
     || payload.effectiveDate !== publication.effectiveDate || payload.menu.id !== publication.menuId || payload.menu.name !== publication.menuName
     || payload.sourceDraftVersion !== publication.sourceDraftVersion || payload.menu.version !== payload.sourceDraftVersion) return undefined;
   const dishIds = menuDishIds(payload.menu);
