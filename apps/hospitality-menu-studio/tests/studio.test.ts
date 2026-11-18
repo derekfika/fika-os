@@ -6,7 +6,7 @@ import { londonDate, rotationWeek, type Dish, type Menu } from "../lib/contract"
 import { studioHandlers } from "../lib/http";
 import { StudioProblem } from "../lib/problem";
 import { assortmentIsComplete, draftCustomerChoices, draftReadiness, kitchenQuantities } from "../lib/review";
-import { studioRuntime } from "../lib/runtime";
+import { assertStudioDraftCommand, studioRuntime } from "../lib/runtime";
 import { studioStore } from "../lib/store";
 import { commandSchema, dateSchema } from "../lib/schema";
 
@@ -78,7 +78,7 @@ test("kitchen totals distinguish box count, pieces per box and component totals"
 
 const staging = {
   NODE_ENV: "test" as const,
-  FIKA_RUNTIME_MODE: "staging", FIREBASE_PROJECT_ID: "fika-os-dev",
+  FIKA_RUNTIME_MODE: "staging", FIREBASE_PROJECT_ID: "fika-menu-studio-dev",
   FIKA_HUB_BASE_URL: "https://staging-os.fikacatering.com",
   FIKA_STUDIO_ORIGIN: "https://menu-studio-staging.fikacatering.com",
   FIKA_STUDIO_FIRESTORE_DATABASE: "hospitality-menu-studio",
@@ -87,10 +87,11 @@ const staging = {
 
 test("runtime rejects cross-project configuration and local fixture settings in staging", () => {
   assert.equal(studioRuntime(staging).name, "fika_os_session_staging");
-  assert.equal(studioRuntime(staging).writes, false);
+  assert.equal(studioRuntime(staging).writes, true);
   assert.equal(studioRuntime(staging).databaseId, "hospitality-menu-studio");
   for (const override of [
-    { FIREBASE_PROJECT_ID: "fika-os" }, { FIKA_HUB_BASE_URL: "https://os.fikacatering.com" },
+    { FIREBASE_PROJECT_ID: "fika-os" }, { FIREBASE_PROJECT_ID: "fika-os-dev" },
+    { GOOGLE_APPLICATION_CREDENTIALS: "unexpected.json" }, { GOOGLE_CLOUD_PROJECT: "fika-os-dev" }, { FIKA_HUB_BASE_URL: "https://os.fikacatering.com" },
     { FIKA_STUDIO_LOCAL_PREVIEW: "1" }, { FIRESTORE_EMULATOR_HOST: "127.0.0.1:8085" },
     { FIKA_RUNTIME_MODE: "production" }, { GCLOUD_PROJECT: "fika-os" },
     { FIKA_STUDIO_FIRESTORE_DATABASE: undefined }, { FIKA_STUDIO_FIRESTORE_DATABASE: "(default)" },
@@ -114,6 +115,9 @@ test("staging Studio accepts only a stable principal and a dedicated View decisi
   assert.deepEqual(await authoriseStudio("sample", runtime, reply), {
     id: principal.id, name: principal.displayName, canManage: false, canPublish: false,
   });
+  assert.deepEqual(await authoriseStudio("sample", runtime, async () => Response.json({
+    principal, permissions: { View: true, Manage: true },
+  })), { id: principal.id, name: principal.displayName, canManage: true, canPublish: false });
   await assert.rejects(authoriseStudio(undefined, runtime, reply), { status: 401 });
   await assert.rejects(authoriseStudio("sample", runtime, async () => new Response(null, { status: 403 })), { status: 403 });
   await assert.rejects(authoriseStudio("sample", runtime, async () => Response.json({
@@ -138,7 +142,7 @@ test("staging rejects alternate request hosts and sends sign-in to the pinned Hu
 
 test("the staging Admin SDK client is bound to the named database", () => {
   const store = studioStore(studioRuntime(staging));
-  assert.equal(getApp("hospitality-menu-studio-fika-os-dev").options.projectId, "fika-os-dev");
+  assert.equal(getApp("hospitality-menu-studio-fika-menu-studio-dev").options.projectId, "fika-menu-studio-dev");
   assert.equal(store["db"].databaseId, "hospitality-menu-studio");
 });
 
@@ -157,6 +161,26 @@ test("publication and activation require explicit rights and intent and fail clo
     assert.equal((await make(true).POST(post({ ...action, confirmed: true }))).status, 503);
   }
   assert.equal((await make(true).POST(post({ ...publish, confirmed: true }, "https://untrusted.invalid"))).status, 403);
+});
+
+test("staging commands are limited to synthetic draft actions before accessing storage", async () => {
+  const make = studioHandlers(async () => ({ id: "fixture", name: "Fixture", canManage: true, canPublish: true }),
+    () => assert.fail("An operational command accessed storage"), () => {}, undefined,
+    command => assertStudioDraftCommand(command.action));
+  const planned = { menuId: "menu-1", version: 1, effectiveDate: "2026-12-01", scope: {} };
+  for (const command of [
+    { ...planned, action: "publish", reviewToken: "test", confirmed: true },
+    { action: "activate-collection", menuId: "menu-1", publicationId: "publication-1", visibility: "customer", confirmed: true },
+    { action: "restore-menu", menuId: "menu-1", publicationId: "publication-1", version: 1 },
+  ]) {
+    const response = await make.POST(new Request("https://menu-studio-staging.fikacatering.com/api/studio", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(command),
+    }));
+    assert.equal(response.status, 403);
+    assert.equal((await response.json()).code, "STUDIO_WRITE_DENIED");
+  }
+  for (const action of ["save-dish", "save-menu", "restore-draft", "review"]) assert.doesNotThrow(() => assertStudioDraftCommand(action));
+  assert.throws(() => assertStudioDraftCommand("sign-allergens"), { code: "STUDIO_WRITE_DENIED" });
 });
 
 test("local same-origin accepts either exact loopback host when Next normalizes its URL", () => {

@@ -5,7 +5,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { NextRequest } from "next/server";
-import type { AuthIdentity, AuthPrincipal, ApplicationRegistryEntry } from "../lib/authmod-core/model";
+import { idempotentId as authmodId, type AuthIdentity, type AuthPrincipal, type ApplicationRegistryEntry } from "../lib/authmod-core/model";
 
 const enabled = process.env.FIREBASE_PROJECT_ID === "demo-fika-os"
   && /^127\.0\.0\.1:\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST || "")
@@ -51,13 +51,17 @@ test("emulator: Studio preview denies missing and stale AUTHMOD access packages 
   const head = db.collection("authmodAccessHeads").doc(id);
   const assignment = db.collection("authmodAppAssignments").doc(id);
   const grant = db.collection("authmodAuthorityGrants").doc(id);
+  const manage = db.collection("authmodAuthorityGrants").doc(`${id}:manage`);
   await db.batch().create(appRef, application).create(identityRef, identity).create(head, { version: 1 }).create(assignment, {
-    ...stamps, id: assignment.id, identityId: id, appId, bundleId, status: "active", source: "standard-app-access",
+    ...stamps, id: assignment.id, identityId: id, appId, bundleId: authmodId("standard-app-access", id, appId), status: "active", source: "standard-app-access",
+  }).create(manage, {
+    ...stamps, id: manage.id, appId, resource, subjectId: id, subjectType: "interactive", action: "Manage",
+    scope: { kind: "organisation", ids: [] }, status: "active", provenance: "explicit-special-authority",
   }).create(grant, {
     ...stamps, id: grant.id, appId, resource, subjectId: id, subjectType: "interactive", action: "View",
     scope: { kind: "organisation", ids: [] }, status: "active", provenance: "explicit-special-authority",
   }).commit();
-  t.after(async () => { await db.batch().delete(appRef).delete(identityRef).delete(head).delete(assignment).delete(grant).commit(); });
+  t.after(async () => { await db.batch().delete(appRef).delete(identityRef).delete(head).delete(assignment).delete(grant).delete(manage).commit(); });
 
   const read = () => db.runTransaction(transaction => {
     const repository = new FirestoreAuthModRepository("studio-preview-emulator", undefined, transaction);
@@ -71,7 +75,7 @@ test("emulator: Studio preview denies missing and stale AUTHMOD access packages 
   await assert.rejects(read(), { code: "AUTHMOD_ACCESS_PACKAGE_STALE" });
   assert.ok(!(await packageStore.getManifest(key)));
   const manifest = await rebuildAuthmodAccessReadPackage(id);
-  assert.deepEqual(await read(), { principal: { id, displayName: identity.displayName }, permissions: { View: true } });
+  assert.deepEqual(await read(), { principal: { id, displayName: identity.displayName }, permissions: { View: true, Manage: true } });
   await db.batch().update(grant, { status: "revoked" }).update(head, { version: 2 }).commit();
   await assert.rejects(read(), { code: "AUTHMOD_ACCESS_PACKAGE_STALE" });
   assert.equal((await packageStore.getManifest(key))?.sourceVersion, manifest.sourceVersion);
@@ -292,7 +296,8 @@ test("emulator: create the hidden Beverage registry and audit atomically without
   const { db } = await import("../lib/firebase-admin");
   const { getAuthmodReferenceManifest, getAuthmodReferenceReadPackage, rebuildAuthmodReferenceReadPackage } =
     await import("../lib/authmod-reference-read-package");
-  const { provisionBeverageStagingRegistry, publishBeverageRegistryReferences } = await import("../lib/beverage-staging-registry");
+  const { provisionBeverageStagingRegistry, provisionStudioStagingRegistry, publishStagingRegistryReferences, publishBeverageRegistryReferences } =
+    await import("../lib/beverage-staging-registry");
   const { BEVERAGE_AUTHMOD_APP_ID: appId, decideBeverageSiteAuthority } = await import("../lib/authmod-core/beverage-admission");
   const { idempotentId } = await import("../lib/authmod-core/model");
   const { FirestoreAuthModRepository } = await import("../lib/authmod-core/firestore-repository");
@@ -394,4 +399,21 @@ test("emulator: create the hidden Beverage registry and audit atomically without
   await assert.rejects(provisionBeverageStagingRegistry(operator, true), /differs from this command/);
   assert.equal((await appRef.get()).get("launchVisible"), true);
   assert.deepEqual((await auditRef.get()).data(), audit);
+
+  const studio = await provisionStudioStagingRegistry(operator, false);
+  assert.equal(studio.status, "planned");
+  const studioRef = db.collection("authmodApplications").doc("hospitality-menu-studio");
+  const studioAudit = db.collection("authmodAccessAudit").doc(studio.auditId);
+  t.after(async () => { await db.batch().delete(studioRef).delete(studioAudit).commit(); });
+  assert.equal((await studioRef.get()).exists, false);
+  const created = await provisionStudioStagingRegistry(operator, true);
+  assert.ok(created.status === "created");
+  assert.equal(created.application.appId, "hospitality-menu-studio");
+  assert.equal(created.application.baseUrl, "https://menu-studio-staging.fikacatering.com");
+  assert.equal(created.application.launchVisible, false);
+  assert.deepEqual(created.application.standardActions, ["View"]);
+  assert.equal((await studioAudit.get()).get("targetId"), created.application.appId);
+  assert.equal((await provisionStudioStagingRegistry(operator, true)).status, "already-registered");
+  await publishStagingRegistryReferences(created.application);
+  assert.deepEqual(await repository.listAppAssignments(id), []);
 });

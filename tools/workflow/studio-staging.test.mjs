@@ -3,9 +3,11 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync, readdirSync } from 'node:fs';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { supportedTargets, target } from './policy.mjs';
+import { supportedTargets, target, validateRecord } from './policy.mjs';
+import { inspectEmptyFirstReleaseState, emptyFirstReleaseBaselineRecord, releaseHealthProbe } from './releases.mjs';
+import { readStudioReleaseDomain, studioProjectNumber } from './release-prestate.mjs';
 import { backendPath } from './runtime.mjs';
-import { studioStaging, studioStagingPreflight } from './studio-staging.mjs';
+import { studioStaging, studioStagingPreflight, verifyStudioStagingOverlay } from './studio-staging.mjs';
 
 const backend = backendPath(studioStaging);
 const traffic = `${backend}/traffic`;
@@ -21,12 +23,12 @@ function evidence() {
     [backend]: {
       name: backend,
       environment: 'staging',
-      uri: 'fika-menu-studio-staging--fika-os-dev.europe-west4.hosted.app',
+      uri: 'fika-menu-studio-staging--fika-menu-studio-dev.europe-west4.hosted.app',
       serviceAccount: studioStaging.serviceAccount,
       reconciling: false,
       codebase: {
         rootDirectory: '/apps/hospitality-menu-studio',
-        repository: 'projects/fika-os-dev/locations/europe-west4/connections/apphosting-test/gitRepositoryLinks/derekfika-fika-os',
+        repository: 'projects/fika-menu-studio-dev/locations/europe-west4/connections/apphosting-test/gitRepositoryLinks/derekfika-fika-os',
       },
     },
     [traffic]: { name: traffic, rolloutPolicy: { disabled: true, codebaseBranch: 'main' }, current: { splits: [] } },
@@ -36,8 +38,9 @@ function evidence() {
     [builds]: {},
     [rollouts]: { rollouts: [] },
   };
-  const account = { projectId: 'fika-os-dev', email: studioStaging.serviceAccount };
-  const database = { name: 'projects/fika-os-dev/databases/hospitality-menu-studio', type: 'FIRESTORE_NATIVE' };
+  const account = { projectId: studioStaging.project, email: studioStaging.serviceAccount };
+  const database = { name: 'projects/fika-menu-studio-dev/databases/hospitality-menu-studio', type: 'FIRESTORE_NATIVE',
+    locationId: studioStaging.region, deleteProtectionState: 'DELETE_PROTECTION_ENABLED' };
   const packages = [{ name: studioStaging.backend }];
   const cloudReads = [];
   const descriptions = [];
@@ -62,12 +65,11 @@ function evidence() {
   return { resources, account, database, packages, read, describeResource, cloudReads, descriptions };
 }
 
-test('Studio provisioning has a staging identity but remains outside governed release targets', () => {
-  assert.equal(backend, 'projects/fika-os-dev/locations/europe-west4/backends/fika-menu-studio-staging');
-  assert.equal(supportedTargets().some(item => item.app === 'menu-studio' || item.backend === studioStaging.backend), false);
-  for (const environment of ['staging', 'prod']) {
-    assert.throws(() => target('menu-studio', environment), /Unknown application\/environment/);
-  }
+test('Studio maps to exactly one governed backend in the dedicated staging project', () => {
+  assert.equal(backend, 'projects/fika-menu-studio-dev/locations/europe-west4/backends/fika-menu-studio-staging');
+  assert.deepEqual(supportedTargets().filter(item => item.app === 'menu-studio' || item.backend === studioStaging.backend),
+    [target('menu-studio', 'staging')]);
+  assert.throws(() => target('menu-studio', 'prod'), /Unknown application\/environment/);
 });
 
 test('the preflight rejects execution, production and configurable targets before inspecting cloud', () => {
@@ -80,7 +82,7 @@ test('the preflight rejects execution, production and configurable targets befor
   }
 });
 
-test('App Hosting defaults to closed with only the pinned read-only staging overlay', () => {
+test('App Hosting defaults to closed with only the pinned Studio staging overlay', () => {
   const folder = new URL('../../apps/hospitality-menu-studio/', import.meta.url);
   assert.deepEqual(readdirSync(folder).filter(name => /^apphosting.*\.ya?ml$/i.test(name)).sort(), ['apphosting.staging.yaml', 'apphosting.yaml']);
   const config = readFileSync(new URL('apphosting.yaml', folder), 'utf8').replace(/^#.*\r?\n/gm, '').replaceAll('\r\n', '\n').trim();
@@ -96,6 +98,8 @@ test('App Hosting defaults to closed with only the pinned read-only staging over
   };
   assert.equal(staging, 'env:\n' + Object.entries(bindings).map(([key, value]) =>
     `  - variable: ${key}\n    value: ${value}\n    availability: [RUNTIME]`).join('\n'));
+  assert.doesNotThrow(() => verifyStudioStagingOverlay(staging));
+  assert.throws(() => verifyStudioStagingOverlay(staging.replace(studioStaging.project, 'fika-os-dev')), /exact Studio staging overlay/);
   const rules = JSON.parse(readFileSync(new URL('firebase.staging.json', folder), 'utf8'));
   assert.deepEqual(rules, { firestore: [{ database: studioStaging.database, rules: 'firestore.rules' }] });
   assert.match(readFileSync(new URL('firestore.rules', folder), 'utf8'), /allow read, write: if false;/);
@@ -113,7 +117,7 @@ test('preflight observes only scoped metadata and leaves release blocked even wh
     buildHistory: 'VERIFIED', customDomain: 'VERIFIED', managedArtifactRepository: 'UNVERIFIED',
   });
   assert.equal(result.status, 'BLOCKED');
-  assert.match(result.pending.join(' '), /AUTHMOD.*IAM.*Storage.*release enablement/);
+  assert.match(result.pending.join(' '), /AUTHMOD.*IAM.*Storage.*first-release plan/);
 });
 
 test('mismatched identity, active traffic, overrides and unfinished domain certificate block the preflight', async () => {
@@ -194,10 +198,43 @@ test('the artifact probe detects a foreign package without returning names or ce
   const fixture = evidence();
   fixture.packages.length = 0;
   assert.equal((await studioStagingPreflight(fixture)).checks.managedArtifactRepository, 'UNVERIFIED');
-  fixture.packages.push({ name: 'projects/fika-os-dev/locations/europe-west4/repositories/firebaseapphosting-images/packages/sensitive-unrelated' });
+  fixture.packages.push({ name: 'projects/fika-menu-studio-dev/locations/europe-west4/repositories/firebaseapphosting-images/packages/sensitive-unrelated' });
   const result = await studioStagingPreflight(fixture);
   assert.equal(result.checks.managedArtifactRepository, 'SHARED');
   assert.doesNotMatch(JSON.stringify(result), /sensitive-unrelated/);
   fixture.packages[0].name = 'projects/another-project/locations/europe-west4/repositories/firebaseapphosting-images/packages/sensitive-unrelated';
   assert.equal((await studioStagingPreflight(fixture)).checks.managedArtifactRepository, 'UNVERIFIED');
+});
+
+test('first Studio release requires the exact dedicated backend, main branch and active custom domain', async () => {
+  const t = target('menu-studio', 'staging');
+  const fixture = evidence();
+  const read = async resource => resource.endsWith('?pageSize=100') ? {} : fixture.read(resource);
+  const before = await inspectEmptyFirstReleaseState(t, read);
+  assert.equal(before.state, 'EMPTY');
+  assert.equal(validateRecord(emptyFirstReleaseBaselineRecord(t, before), t).project, t.project);
+  await assert.rejects(inspectEmptyFirstReleaseState({ ...t, project: 'fika-os-dev' }, read), /does not support/);
+  assert.equal(studioProjectNumber(t, projectId => ({ projectId, projectNumber: '123456', lifecycleState: 'ACTIVE' })), '123456');
+  assert.throws(() => studioProjectNumber({ ...t }, () => ({ projectId: 'fika-os-dev', projectNumber: '123456', lifecycleState: 'ACTIVE' })), /could not be verified/);
+  assert.equal((await readStudioReleaseDomain(t, read)).resource, domain);
+  fixture.resources[domain].customDomainStatus.certState = 'CERT_PREPARING';
+  await assert.rejects(readStudioReleaseDomain(t, read), /certificate must be active/);
+  fixture.resources[traffic].rolloutPolicy.codebaseBranch = 'other-branch';
+  await assert.rejects(inspectEmptyFirstReleaseState(t, read), /must use main/);
+});
+
+test('Studio serving verification binds the custom-domain SHA and rejects an open unauthenticated API', async () => {
+  const sha = 'a'.repeat(40);
+  const provider = evidence().resources[backend].uri;
+  const makeFetch = (status = 401, buildSha = sha) => async (url, options) => {
+    assert.equal(new URL(url).origin, studioStaging.origin);
+    assert.equal(options.redirect, 'manual');
+    if (url.endsWith('/api/build-info')) return Response.json({ appId: 'hospitality-menu-studio', buildSha });
+    return Response.json({ code: 'FIKA_SESSION_MISSING' }, { status });
+  };
+  assert.equal((await releaseHealthProbe('menu-studio', provider, sha, makeFetch(), 'staging')).ok, true);
+  assert.equal((await releaseHealthProbe('menu-studio', provider, sha, makeFetch(200), 'staging')).ok, false);
+  assert.equal((await releaseHealthProbe('menu-studio', provider, sha, makeFetch(401, 'b'.repeat(40)), 'staging')).ok, false);
+  assert.equal((await releaseHealthProbe('menu-studio', provider.replace('fika-menu-studio-dev', 'fika-os-dev'), sha,
+    () => assert.fail('foreign backend must not get a probe'), 'staging')).ok, false);
 });

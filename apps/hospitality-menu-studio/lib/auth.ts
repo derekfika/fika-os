@@ -9,7 +9,7 @@ const authResponse = z.object({
   principal: z.object({ id: z.string().min(1), displayName: z.string().optional() }).optional(),
 });
 const previewAccess = z.strictObject({
-  permissions: z.strictObject({ View: z.literal(true) }),
+  permissions: z.strictObject({ View: z.literal(true), Manage: z.boolean().optional() }),
   principal: z.strictObject({ id: z.string().min(1), displayName: z.string().optional() }),
 });
 
@@ -43,7 +43,7 @@ export async function authoriseStudio(
     const parsed = previewAccess.safeParse(value);
     if (!response.ok || !parsed.success) throw unavailable();
     const { id, displayName } = parsed.data.principal;
-    return { id, name: displayName || "Studio viewer", canManage: false, canPublish: false };
+    return { id, name: displayName || "Studio reviewer", canManage: runtime.writes && parsed.data.permissions.Manage === true, canPublish: false };
   }
   const parsed = authResponse.safeParse(value);
   if (!response.ok || !parsed.success) throw unavailable();

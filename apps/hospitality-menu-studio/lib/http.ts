@@ -4,7 +4,7 @@ import { catalogueUnavailable, siteOfferings, studioCatalogueOptions } from "./c
 import type { Menu, StudioActor } from "./contract";
 import { StudioProblem } from "./problem";
 import { draftCustomerChoices, draftReadiness, menuDishIds } from "./review";
-import { commandSchema, dateSchema, idSchema, versionQuerySchema } from "./schema";
+import { commandSchema, dateSchema, idSchema, versionQuerySchema, type StudioCommand } from "./schema";
 import type { StudioStore } from "./store";
 import { compareMenuDrafts } from "./versions";
 
@@ -29,6 +29,7 @@ export function studioHandlers(
   store: () => StudioStore,
   assertOrigin: (request: Request) => void,
   readCatalogue?: (request: Request) => Promise<CatalogueLoadResult>,
+  assertCommand?: (command: StudioCommand) => void,
 ) {
   const respond = async (operation: () => Promise<unknown>) => {
     try {
@@ -101,6 +102,7 @@ export function studioHandlers(
       try { data = JSON.parse(body); }
       catch { throw new StudioProblem(422, "INVALID_REQUEST", "The request could not be read."); }
       const command = commandSchema.parse(data);
+      assertCommand?.(command);
 
       if (command.action === "review") {
         const db = store();

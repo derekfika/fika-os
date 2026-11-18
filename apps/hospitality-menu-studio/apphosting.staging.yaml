@@ -3,7 +3,7 @@ env:
     value: staging
     availability: [RUNTIME]
   - variable: FIREBASE_PROJECT_ID
-    value: fika-os-dev
+    value: fika-menu-studio-dev
     availability: [RUNTIME]
   - variable: FIKA_HUB_BASE_URL
     value: https://staging-os.fikacatering.com

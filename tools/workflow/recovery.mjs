@@ -1,4 +1,4 @@
-import { digest, exactSha, assertResume, validateRecord, APPS } from './policy.mjs';
+import { digest, exactSha, assertResume, validateRecord, APPS, allowsEmptyFirstRelease } from './policy.mjs';
 import { cloud, serving, backendPath } from './runtime.mjs';
 import { discover } from './discovery.mjs';
 
@@ -39,7 +39,7 @@ export async function recoverySnapshot(t, read = cloud, currentServing = serving
 }
 
 function assertFirstReleaseBackend(t, snapshot) {
-  const allowed = (t.app === 'adhoc' && t.environment === 'prod') || (t.app === 'beverage' && t.environment === 'staging');
+  const allowed = allowsEmptyFirstRelease(t);
   const expectedEnvironment = t.environment === 'prod' ? 'production' : 'staging';
   const expectedRoot = `/${APPS[t.app]?.path || ''}`;
   if (!allowed || snapshot.backend?.name !== backendPath(t) || snapshot.backend.environment !== expectedEnvironment || snapshot.backend.reconciling !== false ||

@@ -1,16 +1,17 @@
 import path from 'node:path';
 import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { APPS, REPO, MAIN_CHECK, target, exactSha, assertClean, validateRecord, assertResume, assertServingLineage, digest } from './policy.mjs';
+import { APPS, REPO, MAIN_CHECK, target, exactSha, assertClean, validateRecord, assertResume, assertServingLineage, digest, allowsEmptyFirstRelease, STUDIO_STAGING } from './policy.mjs';
 import { git, command, ancestor, ref, ghApi, scopeHash, asyncLock, save, stateDir, jsonFile, serving, cloud, cloudPatch, backendPath } from './runtime.mjs';
 import { assertHostedContext } from './hosted.mjs';
 import { discover } from './discovery.mjs';
-import { releaseBackend, verifiedReleaseServing, releasePrestate } from './release-prestate.mjs';
+import { releaseBackend, verifiedReleaseServing, releasePrestate, verifyStudioTraffic, studioProjectNumber, readStudioReleaseDomain } from './release-prestate.mjs';
 import { recoverySnapshot, isDomainOperationTarget, isReleaseRelevantOperation, reconcileIntent, resubmitNeverSubmitted, submissionAttempts, describeSubmissionEvidence } from './recovery.mjs';
 import { readCreateAuditEvents } from './audit.mjs';
 import { assertCpuAdoptionTarget, observeCpuAdoption, adoptCompletedCpu } from './cpu-prod-adoption.mjs';
 import { configurationDigest, prepareHotfixRelease } from './hotfix-release.mjs';
 import { assertHotfixFilesReconciled, assertMainReconciled, hotfixBranch } from './hotfix.mjs';
+import { verifyStudioStagingOverlay } from './studio-staging.mjs';
 
 export function releaseRecord(branch) {
   const sha = ref(`refs/remotes/origin/${branch}`);
@@ -48,9 +49,8 @@ export function appendRecord(t, record, expected) {
 /** Read-only, backend-specific proof for an explicitly allowed empty first target. No missing
  * serving revision is interpreted as empty unless Firebase independently proves
  * backend identity, disabled automatic rollouts, zero traffic and no live ops. */
-const allowedEmptyFirstTarget = t => (t.app === 'adhoc' && t.environment === 'prod') || (t.app === 'beverage' && t.environment === 'staging');
 export async function inspectEmptyFirstReleaseState(t, read = cloud, { allowFailedHistory = false } = {}) {
-  if (!allowedEmptyFirstTarget(t)) throw Error('First-release state inspection is restricted to Ad-Hoc production or Beverage staging');
+  if (!allowsEmptyFirstRelease(t)) throw Error('Selected target does not support first-release state inspection');
   const base = backendPath(t);
   const [backend, traffic, builds, rollouts, operations] = await Promise.all([
     read(base), read(`${base}/traffic`),
@@ -58,6 +58,10 @@ export async function inspectEmptyFirstReleaseState(t, read = cloud, { allowFail
     discover(`${base}/rollouts`, 'rollouts', r=>({name:r.name,state:r.state,reconciling:Boolean(r.reconciling),build:r.build}), read),
     discover(`projects/${t.project}/locations/${t.region}/operations`, 'operations', o=>({name:o.name,done:o.done===true,target:o.metadata?.target||o.response?.name||''}), read),
   ]);
+  if (t.app === 'menu-studio') {
+    await releaseBackend(t, async () => backend);
+    verifyStudioTraffic(t, traffic);
+  }
   const current=traffic.current?.splits||[], targetTraffic=traffic.target?.splits||[];
   const active=operations.filter(o=>isReleaseRelevantOperation(t,o));
   const domainOperations=operations.filter(o=>!o.done&&isDomainOperationTarget(t,o.target));
@@ -87,14 +91,14 @@ export async function stableFirstReleaseState(t, read=cloud, options={}) {
 export const inspectAdhocProductionState=inspectEmptyFirstReleaseState;
 export const stableAdhocProductionState=stableFirstReleaseState;
 export function emptyFirstReleaseBaselineRecord(t, current, observedAt = new Date().toISOString()) {
-  if (!allowedEmptyFirstTarget(t)) throw Error('Empty first-release baselines are restricted to Ad-Hoc production or Beverage staging');
+  if (!allowsEmptyFirstRelease(t)) throw Error('Selected target does not support an empty first-release baseline');
   return {schema:'fika.release.v1',...t,...current,backend:t.backend,kind:'empty-baseline',scopeHash:digest({app:t.app,project:t.project,backend:t.backend,root:APPS[t.app].path,state:'EMPTY'}),observedAt,recovery:{firstRelease:true,noPreviousRelease:true}};
 }
 export const adhocEmptyBaselineRecord=emptyFirstReleaseBaselineRecord;
 export async function bootstrap(t, options = {}) {
   const existing = releaseRecord(t.branch);
   if (existing) { validateRecord(existing.record, t); return { status: 'existing', ...existing }; }
-  if (allowedEmptyFirstTarget(t)) {
+  if (allowsEmptyFirstRelease(t)) {
     const current=await stableFirstReleaseState(t);
     const record=emptyFirstReleaseBaselineRecord(t,current);
     if (!options.execute) return {status:'dry-run-empty-first-release',record};
@@ -121,6 +125,25 @@ export function rolloutArguments(plan) {
 }
 export async function releaseHealthProbe(app, backendUri, sourceSha, fetchImpl = fetch, environment) {
   const origin = `https://${String(backendUri).replace(/^https?:\/\//, '').replace(/\/$/, '')}`;
+  if (app === 'menu-studio') {
+    const url = `${STUDIO_STAGING.origin}/api/build-info`;
+    if (environment !== 'staging' || origin !== `https://${STUDIO_STAGING.backend}--${STUDIO_STAGING.project}.europe-west4.hosted.app` ||
+        !/^[a-f0-9]{40}$/.test(sourceSha || '')) return { ok: false, status: null, url, reason: 'invalid_studio_target' };
+    try {
+      const options = { redirect: 'manual', cache: 'no-store', signal: AbortSignal.timeout(30000) };
+      const info = await fetchImpl(url, options);
+      if (info.status !== 200) return { ok: false, status: info.status, url, reason: 'studio_build_info_unavailable' };
+      const body = await info.json();
+      if (body?.appId !== 'hospitality-menu-studio' || body.buildSha !== sourceSha) {
+        return { ok: false, status: info.status, url, reason: 'studio_build_identity_mismatch' };
+      }
+      const authUrl = `${STUDIO_STAGING.origin}/api/studio?list=menus`;
+      const auth = await fetchImpl(authUrl, options);
+      const denied = auth.status === 401 && !auth.headers.get('location') && (await auth.json())?.code === 'FIKA_SESSION_MISSING';
+      return { ok: denied, status: auth.status, url: authUrl, appId: body.appId, buildSha: body.buildSha,
+        ...(denied ? { authGate: 'FIKA_SESSION_MISSING' } : { reason: 'studio_auth_gate_not_fail_closed' }) };
+    } catch { return { ok: false, status: null, url, reason: 'request_failed' }; }
+  }
   if (app === 'beverage') {
     const infoUrl = `${origin}/api/build-info`, url = `${origin}/`;
     if (!/^[a-f0-9]{40}$/.test(sourceSha || '')) return { ok: false, status: null, url: infoUrl, reason: 'invalid_expected_source_sha' };
@@ -652,6 +675,7 @@ export async function deploy(app, environment, options, {
     } else if (options.resume) throw Error('No matching pending release to resume');
 
     const backend = await releaseBackend(t, read);
+    if (app === 'menu-studio') studioProjectNumber(t);
     if (options.resume && plan.hotfix) {
       const branch = hotfixBranch(app, plan.releaseId);
       git('fetch', 'origin', `refs/heads/${branch}:refs/remotes/origin/${branch}`);
@@ -711,10 +735,23 @@ export async function deploy(app, environment, options, {
       } else {
         plan = planRelease(t, options, pointer, before, { github, env });
       }
+      if (app === 'menu-studio') {
+        verifyStudioStagingOverlay(git('show', `${plan.sourceSha}:${APPS[app].path}/apphosting.staging.yaml`));
+        if (firstRelease) {
+          const domain = await readStudioReleaseDomain(t, read);
+          plan.studioFirstReleaseApprovalHash = digest({ target: t, sourceSha: plan.sourceSha, scopeHash: plan.scopeHash,
+            projectNumber: studioProjectNumber(t), backendEtag: backend.etag || null, domain, before, ledger: pointer?.commit || null });
+          if (options.execute && (!options.reason?.trim() || options['approve-hash'] !== plan.studioFirstReleaseApprovalHash)) {
+            throw Error(`First Studio release requires an owner-approved dry run hash and approval reference in --reason. Review ${plan.studioFirstReleaseApprovalHash}.`);
+          }
+        }
+      }
       const staleLedger = firstRelease ? !abandonedFirst && prior?.kind !== 'empty-baseline' :
         !matchesServing(prior, before) && !(prior?.kind === 'abandoned' && matchesServing(prior.previousGood, before));
       if (!options.execute) return { dryRun:true, plan, before, url:backend.uri, ...(staleLedger ? { willRecordObservedBaseline:true } : {}),
-        next:'An authenticated deployment operator can add --execute for this exact source and target.' };
+        next:plan.studioFirstReleaseApprovalHash
+          ? 'After owner approval of configuration, effective isolation and this exact plan, the authorised operator can add --execute --approve-hash and --reason.'
+          : 'An authenticated deployment operator can add --execute for this exact source and target.' };
 
       if (journal && !['completed', 'abandoned'].includes(journal.state)) {
         const remoteAdvanced = journal.intentCommit && pointer && ancestor(journal.intentCommit, pointer.commit);

@@ -1,8 +1,39 @@
-import { APPS, REPO } from './policy.mjs';
-import { backendPath, serving } from './runtime.mjs';
+import { APPS, REPO, STUDIO_STAGING, allowsEmptyFirstRelease } from './policy.mjs';
+import { backendPath, command, serving } from './runtime.mjs';
 import { recoverySnapshot } from './recovery.mjs';
 
 const PROJECT_NUMBER = { 'fika-os': '397503564317', 'fika-os-dev': '594727519934' };
+
+export function verifyStudioTraffic(t, traffic) {
+  if (traffic.name !== `${backendPath(t)}/traffic` || traffic.rolloutPolicy?.codebaseBranch !== STUDIO_STAGING.sourceBranch ||
+      traffic.rolloutPolicy?.disabled !== true) throw Error('Studio must use main with automatic rollouts disabled');
+}
+
+const resolvedProjectNumbers = new WeakMap();
+export function studioProjectNumber(t, describe = project => JSON.parse(command('gcloud',
+  ['projects', 'describe', project, '--format=json', '--quiet'], { timeout: 30_000 }))) {
+  if (t.app !== 'menu-studio' || !allowsEmptyFirstRelease(t)) throw Error('Unmapped Studio staging project');
+  if (!resolvedProjectNumbers.has(t)) {
+    const project = describe(t.project);
+    const number = String(project?.projectNumber ?? '');
+    if (project?.projectId !== t.project || project.lifecycleState !== 'ACTIVE' || !/^\d+$/.test(number)) {
+      throw Error('Studio staging project number could not be verified');
+    }
+    resolvedProjectNumbers.set(t, number);
+  }
+  return resolvedProjectNumbers.get(t);
+}
+
+export async function readStudioReleaseDomain(t, read) {
+  const resource = `${backendPath(t)}/domains/${new URL(STUDIO_STAGING.origin).hostname}`;
+  const result = await read(resource);
+  const status = result?.customDomainStatus;
+  if (result?.name !== resource || status?.ownershipState !== 'OWNERSHIP_ACTIVE' ||
+      status?.hostState !== 'HOST_ACTIVE' || status?.certState !== 'CERT_ACTIVE') {
+    throw Object.assign(Error('Studio staging domain ownership, routing and certificate must be active on the dedicated backend'), { code: 'STUDIO_DOMAIN_MISMATCH' });
+  }
+  return { resource, ownershipState: status.ownershipState, hostState: status.hostState, certState: status.certState };
+}
 
 export async function releaseBackend(t, read) {
   const base = backendPath(t);
@@ -17,15 +48,24 @@ export async function releaseBackend(t, read) {
       ![root, `/${root}`].includes(backend.codebase?.rootDirectory) || link.length !== 3 || !link[0] ||
       link[1] !== 'gitRepositoryLinks' || link[2] !== 'derekfika-fika-os') throw Error('Firebase backend, project, source repository or app root differs from the selected target');
   if (backend.reconciling !== false) throw Error('Selected Firebase backend is still reconciling');
+  if (t.app === 'menu-studio' && (!allowsEmptyFirstRelease(t) || backend.serviceAccount !== STUDIO_STAGING.serviceAccount ||
+      (backend.overrideEnv !== undefined && (!Array.isArray(backend.overrideEnv) || backend.overrideEnv.length !== 0)))) {
+    throw Error('Studio staging requires its dedicated App Hosting account and no environment overrides');
+  }
   return backend;
 }
 
 export function verifiedReleaseServing(t, read) {
-  return serving(t, read, { projectNumber: PROJECT_NUMBER[t.project], repository: REPO });
+  const projectNumber = t.app === 'menu-studio' ? studioProjectNumber(t) : PROJECT_NUMBER[t.project];
+  return serving(t, read, { projectNumber, repository: REPO });
 }
 
 export async function releasePrestate(t, read) {
-  const snapshot = await recoverySnapshot(t, read, verifiedReleaseServing);
+  const snapshot = await recoverySnapshot(t, t.app === 'menu-studio' ? async resource => {
+    const response = await read(resource);
+    if (resource === `${backendPath(t)}/traffic`) verifyStudioTraffic(t, response);
+    return response;
+  } : read, verifiedReleaseServing);
   const { traffic } = snapshot;
   const terminal = (items, states) => items.every(item => !item.reconciling && states.includes(item.state));
   const targetMatches = traffic.target.length === 0 ||

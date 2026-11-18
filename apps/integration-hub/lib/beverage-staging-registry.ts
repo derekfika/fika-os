@@ -4,6 +4,7 @@ import { auditEvent } from "./authmod-core/audit";
 import {
   BEVERAGE_AUTHMOD_APP_ID, BEVERAGE_AUTHMOD_NORMAL_BUNDLE, BEVERAGE_AUTHMOD_NORMAL_RESOURCE, isEffectiveBeverageAccess,
 } from "./authmod-core/beverage-admission";
+import { STUDIO_AUTHMOD_APP, STUDIO_PREVIEW_BUNDLE, STUDIO_PREVIEW_RESOURCE, STUDIO_STAGING_ORIGIN } from "./authmod-core/hospitality-studio-admission";
 import { FirestoreAuthModRepository } from "./authmod-core/firestore-repository";
 import { idempotentId, normalizeEmail, type AccessAuditEvent, type ApplicationRegistryEntry } from "./authmod-core/model";
 import { getAuthmodReferenceReadPackage, rebuildAuthmodReferenceReadPackage } from "./authmod-reference-read-package";
@@ -12,14 +13,16 @@ import { invalidateAuthmodReferenceCaches } from "./authmod-reference-cache";
 import { db } from "./firebase-admin";
 import { bumpCacheDatasets } from "./integration-cache-server";
 
-const application = {
+const beverageApplication = {
   appId: BEVERAGE_AUTHMOD_APP_ID, displayName: "Beverage Innovation", enabled: true, launchVisible: false,
   scopeModel: "oploc", standardBundleId: BEVERAGE_AUTHMOD_NORMAL_BUNDLE, standardResource: BEVERAGE_AUTHMOD_NORMAL_RESOURCE,
   standardActions: ["View"], version: 1, provenance: "migration",
 } satisfies Omit<ApplicationRegistryEntry, "createdAt" | "updatedAt">;
-const commandId = idempotentId("staging", BEVERAGE_AUTHMOD_APP_ID, "registry", "v1");
-const auditId = idempotentId("application-registered", commandId);
-const auditReason = "Owner-approved Beverage Innovation #115 staging scope: register the hidden View-only application.";
+const studioApplication = {
+  appId: STUDIO_AUTHMOD_APP, displayName: "Hospitality Menu Studio", enabled: true, launchVisible: false,
+  baseUrl: STUDIO_STAGING_ORIGIN, scopeModel: "none", standardBundleId: STUDIO_PREVIEW_BUNDLE,
+  standardResource: STUDIO_PREVIEW_RESOURCE, standardActions: ["View"], version: 1, provenance: "migration",
+} satisfies Omit<ApplicationRegistryEntry, "createdAt" | "updatedAt">;
 const denied = () => new Error("A uniquely bound, active person with direct AUTHMOD Administer authority is required.");
 
 export function resolveBeverageRegistryOperator(
@@ -39,9 +42,24 @@ export function resolveBeverageRegistryOperator(
 type RegistryOperator = ReturnType<typeof resolveBeverageRegistryOperator>;
 type RegistryReceipt = AccessAuditEvent & { reason: string };
 
-export async function provisionBeverageStagingRegistry(operator: RegistryOperator, execute: boolean) {
+export function provisionBeverageStagingRegistry(operator: RegistryOperator, execute: boolean) {
+  return provisionStagingRegistry(operator, execute, beverageApplication,
+    "Owner-approved Beverage Innovation #115 staging scope: register the hidden View-only application.");
+}
+
+export function provisionStudioStagingRegistry(operator: RegistryOperator, execute: boolean) {
+  return provisionStagingRegistry(operator, execute, studioApplication,
+    "Owner-approved Hospitality Menu Studio #586 staging scope: register the hidden synthetic authoring application.");
+}
+
+async function provisionStagingRegistry(
+  operator: RegistryOperator, execute: boolean,
+  application: Omit<ApplicationRegistryEntry, "createdAt" | "updatedAt">, auditReason: string,
+) {
+  const commandId = idempotentId("staging", application.appId, "registry", "v1");
+  const auditId = idempotentId("application-registered", commandId);
   const run = async (transaction: FirebaseFirestore.Transaction) => {
-    const repository = new FirestoreAuthModRepository("beverage-staging-registry", undefined, transaction);
+    const repository = new FirestoreAuthModRepository(`${application.appId}-staging-registry`, undefined, transaction);
     const identities = await repository.findIdentitiesByExternal("firebase", operator.uid, 2);
     const identity = identities[0];
     const at = new Date();
@@ -67,7 +85,7 @@ export async function provisionBeverageStagingRegistry(operator: RegistryOperato
           receipt.targetType !== "ApplicationRegistry" || receipt.targetId !== application.appId ||
           receipt.action !== "application-registered" || receipt.outcome !== "committed" || receipt.reason !== auditReason ||
           !isDeepStrictEqual(receipt.afterState, existing)) {
-        throw new Error("The existing Beverage registry or audit differs from this command. Review it without overwriting.");
+        throw new Error("The existing application registry or audit differs from this command. Review it without overwriting.");
       }
       return { status: "already-registered" as const, application: existing, auditId };
     }
@@ -93,7 +111,9 @@ export async function provisionBeverageStagingRegistry(operator: RegistryOperato
   return result;
 }
 
-export async function publishBeverageRegistryReferences(expected: ApplicationRegistryEntry) {
+export const publishBeverageRegistryReferences = publishStagingRegistryReferences;
+
+export async function publishStagingRegistryReferences(expected: ApplicationRegistryEntry) {
   const readCurrent = async () => (await getAuthmodReferenceReadPackage()).applications.find(app => app.appId === expected.appId);
   let current;
   try { current = await readCurrent(); }
@@ -102,5 +122,5 @@ export async function publishBeverageRegistryReferences(expected: ApplicationReg
     await rebuildAuthmodReferenceReadPackage();
     current = await readCurrent();
   }
-  if (!isDeepStrictEqual(current, expected)) throw new Error("The current AUTHMOD reference package differs from the registered Beverage entry.");
+  if (!isDeepStrictEqual(current, expected)) throw new Error("The current AUTHMOD reference package differs from the registered entry.");
 }

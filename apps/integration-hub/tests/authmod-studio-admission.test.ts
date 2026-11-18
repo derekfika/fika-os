@@ -4,7 +4,7 @@ import { evaluateAuthority, resolveUserAccess } from "../lib/authmod-core/evalua
 import {
   readStudioPreviewAccess, STUDIO_AUTHMOD_APP, STUDIO_PREVIEW_BUNDLE, STUDIO_PREVIEW_RESOURCE, STUDIO_STAGING_ORIGIN,
 } from "../lib/authmod-core/hospitality-studio-admission";
-import type { AppAssignment, ApplicationRegistryEntry, AuthIdentity, AuthorityGrant } from "../lib/authmod-core/model";
+import { idempotentId, type AppAssignment, type ApplicationRegistryEntry, type AuthIdentity, type AuthorityGrant } from "../lib/authmod-core/model";
 import type { AuthModRepository } from "../lib/authmod-core/repository";
 import { launcherDestination } from "../lib/safe-return-to";
 
@@ -24,7 +24,7 @@ const app: ApplicationRegistryEntry = {
 };
 const assignment: AppAssignment = {
   ...stamps, id: "fixture:studio-assignment", identityId: identity.id, appId: STUDIO_AUTHMOD_APP,
-  status: "active", bundleId: STUDIO_PREVIEW_BUNDLE, source: "standard-app-access",
+  status: "active", bundleId: idempotentId("standard-app-access", identity.id, STUDIO_AUTHMOD_APP), source: "standard-app-access",
 };
 const grant: AuthorityGrant = {
   ...stamps, id: "fixture:studio-view", subjectType: "interactive", subjectId: identity.id, appId: STUDIO_AUTHMOD_APP,
@@ -51,6 +51,21 @@ test("the staging preview returns only the bound person reference and explicit V
   });
   assert.equal(await readStudioPreviewAccess(fixture(), { ...session, identityKind: "operational" }, at), null);
   await assert.rejects(readStudioPreviewAccess(fixture(), { ...session, firebaseUid: "fixture:other-uid" }, at), { status: 503 });
+});
+
+test("authoring requires a separate current direct Manage grant in addition to View", async () => {
+  const manage = { ...grant, id: "fixture:studio-manage", action: "Manage" as const };
+  assert.deepEqual((await readStudioPreviewAccess(fixture({ grants: [grant, manage] }), session, at))?.permissions,
+    { View: true, Manage: true });
+  assert.equal(await readStudioPreviewAccess(fixture({ grants: [manage] }), session, at), null);
+  for (const inactive of [
+    { ...manage, delegationSourceGrantId: "fixture:source" },
+    { ...manage, effectiveTo: at.toISOString() },
+    { ...manage, provenance: "standard-app-access" as const },
+  ]) assert.deepEqual((await readStudioPreviewAccess(fixture({ grants: [grant, inactive] }), session, at))?.permissions, { View: true });
+  assert.equal(await readStudioPreviewAccess(fixture({
+    assignments: [{ ...assignment, bundleId: STUDIO_PREVIEW_BUNDLE }], grants: [grant, manage],
+  }), session, at), null);
 });
 
 test("no preview permission follows an absent app, different return origin or broader registry", async () => {

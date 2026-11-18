@@ -2,7 +2,7 @@ import { sessionCookieConfig } from "@fika/server-shared/runtime-config";
 import { StudioProblem } from "./problem";
 
 const stage = {
-  projectId: "fika-os-dev",
+  projectId: "fika-menu-studio-dev",
   hub: "https://staging-os.fikacatering.com",
   origin: "https://menu-studio-staging.fikacatering.com",
   databaseId: "hospitality-menu-studio",
@@ -30,10 +30,15 @@ export function studioRuntime(env = process.env) {
   if (config.mode !== "staging" || config.projectId !== stage.projectId || hub !== stage.hub ||
       env.FIKA_STUDIO_ORIGIN !== stage.origin || env.FIKA_STUDIO_FIRESTORE_DATABASE !== stage.databaseId ||
       config.domain !== ".fikacatering.com" || env.FIKA_STUDIO_LOCAL_PREVIEW ||
-      (env.GCLOUD_PROJECT && env.GCLOUD_PROJECT !== stage.projectId)) {
+      env.GOOGLE_APPLICATION_CREDENTIALS ||
+      [env.GCLOUD_PROJECT, env.GOOGLE_CLOUD_PROJECT].some(value => value && value !== stage.projectId)) {
     throw new StudioProblem(503, "RUNTIME_UNAVAILABLE", "The Studio environment is unavailable.");
   }
-  // Operational writes remain unavailable until the isolated writer and
-  // separate Studio authority are verified. Configuration cannot enable them.
-  return { ...config, ...stage, writes: false, fixture: false };
+  return { ...config, ...stage, writes: true, fixture: false };
+}
+
+export function assertStudioDraftCommand(action: string) {
+  if (!["save-dish", "save-menu", "restore-draft", "review"].includes(action)) {
+    throw new StudioProblem(403, "STUDIO_WRITE_DENIED", "Studio staging only permits draft authoring.");
+  }
 }

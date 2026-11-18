@@ -1,21 +1,27 @@
 import { backendPath, cloud, command } from './runtime.mjs';
-import { APPS } from './policy.mjs';
-import { releaseBackend } from './release-prestate.mjs';
+import { APPS, STUDIO_STAGING, target } from './policy.mjs';
+import { releaseBackend, readStudioReleaseDomain } from './release-prestate.mjs';
 
 export const studioStaging = Object.freeze({
-  app: 'menu-studio',
-  environment: 'staging',
-  project: 'fika-os-dev',
-  region: 'europe-west4',
-  backend: 'fika-menu-studio-staging',
-  sourceBranch: 'main',
-  origin: 'https://menu-studio-staging.fikacatering.com',
-  serviceAccount: 'fika-menu-studio-staging@fika-os-dev.iam.gserviceaccount.com',
-  database: 'hospitality-menu-studio',
+  ...target('menu-studio', 'staging'),
+  ...STUDIO_STAGING,
 });
 
+export function verifyStudioStagingOverlay(source) {
+  const pins = {
+    FIKA_RUNTIME_MODE: 'staging',
+    FIREBASE_PROJECT_ID: STUDIO_STAGING.project,
+    FIKA_HUB_BASE_URL: STUDIO_STAGING.hub,
+    FIKA_STUDIO_ORIGIN: STUDIO_STAGING.origin,
+    FIKA_STUDIO_FIRESTORE_DATABASE: STUDIO_STAGING.database,
+    FIKA_SESSION_COOKIE_DOMAIN: '.fikacatering.com',
+  };
+  const expected = 'env:\n' + Object.entries(pins).map(([name, value]) =>
+    `  - variable: ${name}\n    value: ${value}\n    availability: [RUNTIME]`).join('\n');
+  if (source.replaceAll('\r\n', '\n').trim() !== expected) throw Error('Selected source does not declare the exact Studio staging overlay');
+}
+
 const base = backendPath(studioStaging);
-const domain = `${base}/domains/${new URL(studioStaging.origin).hostname}`;
 const database = `projects/${studioStaging.project}/databases/${studioStaging.database}`;
 const artifactRepository = 'firebaseapphosting-images';
 const packagesPath = `projects/${studioStaging.project}/locations/${studioStaging.region}/repositories/${artifactRepository}/packages/`;
@@ -74,10 +80,10 @@ export async function studioStagingPreflight({ read = cloud, describeResource = 
       if (backend?.name !== base) return false;
       backendExists = true;
       // Validate the release binding without losing separately observable traffic and domain evidence.
-      try { await releaseBackend(studioStaging, async () => backend); }
-      catch { return false; }
-      return backend.serviceAccount === studioStaging.serviceAccount &&
-        (backend.overrideEnv === undefined || (Array.isArray(backend.overrideEnv) && backend.overrideEnv.length === 0));
+      try {
+        await releaseBackend(studioStaging, async () => backend);
+        return true;
+      } catch { return false; }
     }),
     observe(async () => {
       const account = await describeResource(['iam', 'service-accounts', 'describe', studioStaging.serviceAccount]);
@@ -86,7 +92,8 @@ export async function studioStagingPreflight({ read = cloud, describeResource = 
     }),
     observe(async () => {
       const store = await describeResource(['firestore', 'databases', 'describe', '--database', studioStaging.database]);
-      return store.name === database && store.type === 'FIRESTORE_NATIVE';
+      return store.name === database && store.type === 'FIRESTORE_NATIVE' &&
+        store.locationId === studioStaging.region && store.deleteProtectionState === 'DELETE_PROTECTION_ENABLED';
     }),
     managedArtifactScope(describeResource),
   ]);
@@ -100,10 +107,11 @@ export async function studioStagingPreflight({ read = cloud, describeResource = 
         emptyTraffic(traffic.current) && emptyTraffic(traffic.target);
     }),
     observe(async () => {
-      const result = await read(domain);
-      const status = result.customDomainStatus;
-      return result.name === domain && status?.ownershipState === 'OWNERSHIP_ACTIVE' &&
-        status.hostState === 'HOST_ACTIVE' && status.certState === 'CERT_ACTIVE';
+      try { return Boolean(await readStudioReleaseDomain(studioStaging, read)); }
+      catch (error) {
+        if (error.code === 'STUDIO_DOMAIN_MISMATCH') return false;
+        throw error;
+      }
     }),
     observe(async () => {
       const [builds, rollouts] = await Promise.all([read(`${base}/builds?pageSize=1`), read(`${base}/rollouts?pageSize=1`)]);
@@ -122,7 +130,7 @@ export async function studioStagingPreflight({ read = cloud, describeResource = 
       'Effective IAM and isolated named Firestore runtime binding',
       'Managed build identity and artifact isolation',
       'Storage, Workspace and outbound side-effect isolation',
-      'Reviewed release enablement, including first-release and exact-source probes',
+      'Owner approval of the #181 exception and the exact merged first-release plan',
     ],
   };
 }

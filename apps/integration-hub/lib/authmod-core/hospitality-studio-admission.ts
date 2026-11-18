@@ -1,4 +1,4 @@
-import { isEffective, type EffectivePeriod } from "./model";
+import { idempotentId, isEffective, type EffectivePeriod } from "./model";
 import type { AuthModRepository, AuthmodRuntimeAccessPackage } from "./repository";
 
 export const STUDIO_AUTHMOD_APP = "hospitality-menu-studio";
@@ -36,10 +36,17 @@ export async function readStudioPreviewAccess(authority: PreviewAuthority, sessi
   }
   if (!effectiveDirect(identity, at)) return null;
   const assigned = appAssignments.some(assignment => assignment.identityId === identity.id &&
-    assignment.appId === STUDIO_AUTHMOD_APP && assignment.bundleId === STUDIO_PREVIEW_BUNDLE && effectiveDirect(assignment, at));
-  const mayView = authorityGrants.some(grant => grant.subjectId === identity.id && grant.subjectType === "interactive" &&
-    grant.appId === STUDIO_AUTHMOD_APP && grant.resource === STUDIO_PREVIEW_RESOURCE && grant.action === "View" &&
+    assignment.appId === STUDIO_AUTHMOD_APP && assignment.source === "standard-app-access" &&
+    assignment.bundleId === idempotentId("standard-app-access", identity.id, STUDIO_AUTHMOD_APP) && effectiveDirect(assignment, at));
+  if (!assigned) return null;
+  const permits = (action: "View" | "Manage") => authorityGrants.some(grant =>
+    grant.subjectId === identity.id && grant.subjectType === "interactive" &&
+    grant.appId === STUDIO_AUTHMOD_APP && grant.resource === STUDIO_PREVIEW_RESOURCE && grant.action === action &&
     grant.provenance === "explicit-special-authority" && grant.scope.kind === "organisation" &&
     Array.isArray(grant.scope.ids) && grant.scope.ids.length === 0 && grant.delegationSourceGrantId === undefined && effectiveDirect(grant, at));
-  return assigned && mayView ? { principal: { id: identity.id, displayName: identity.displayName }, permissions: { View: true as const } } : null;
+  if (!permits("View")) return null;
+  return {
+    principal: { id: identity.id, displayName: identity.displayName },
+    permissions: { View: true as const, ...(permits("Manage") ? { Manage: true as const } : {}) },
+  };
 }
