@@ -55,16 +55,23 @@ function forbidden() {
 export function requireSameOrigin(request: Request, runtime = studioRuntime()) {
   const origin = request.headers.get("origin");
   const address = new URL(request.url);
-  if (!origin || origin !== address.origin || request.headers.get("sec-fetch-site") === "cross-site") {
+  // Next can normalize the request URL to localhost even for a 127.0.0.1 request.
+  // The governed dev server binds to loopback, and only a loopback Host is accepted here.
+  const host = request.headers.get("host") || address.host;
+  const expectedOrigin = runtime.mode === "local"
+    ? isLoopbackHost(host) ? "http://" + host : null
+    : address.origin;
+  if (!origin || origin !== expectedOrigin || request.headers.get("sec-fetch-site") === "cross-site") {
     throw new StudioProblem(403, "STUDIO_ORIGIN_DENIED", "Studio changes must come from this site.");
-  }
-  if (runtime.fixture && !["localhost", "127.0.0.1"].includes(address.hostname)) {
-    throw new StudioProblem(403, "STUDIO_ORIGIN_DENIED", "Local Studio is available on loopback only.");
   }
 }
 
 export function assertLocalPreviewHost(runtime: ReturnType<typeof studioRuntime>, host: string | null) {
-  if (runtime.fixture && !/^(?:localhost|127\.0\.0\.1):\d+$/.test(host || "")) {
+  if (runtime.fixture && !isLoopbackHost(host)) {
     throw new StudioProblem(403, "STUDIO_ORIGIN_DENIED", "Local Studio is available on loopback only.");
   }
+}
+
+function isLoopbackHost(host: string | null) {
+  return /^(?:localhost|127\.0\.0\.1):\d+$/.test(host || "");
 }
