@@ -17,6 +17,9 @@ const handlers = studioHandlers(async request => {
   const cookie = (request as NextRequest).cookies.get(config.name)?.value;
   if (!cookie || config.fixture) throw catalogueUnavailable();
   return readStudioCatalogue(config.hub, studioSessionCookie(config, cookie));
+}, () => {
+  const config = studioRuntime();
+  return config.mode === "local" && config.projectId === "demo-fika-os" && !config.fixture;
 });
 
 export const GET = handlers.GET;

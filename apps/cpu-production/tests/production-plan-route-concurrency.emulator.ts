@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import net from "node:net";
@@ -1096,4 +1097,94 @@ test("Ad-Hoc order: mark planned, sign both roles on the Ad-Hoc lineage, then a 
   assert.ok((after.allergenReleaseHistory as Array<{ releaseId: string }>).some(release => release.releaseId === signed.currentAllergenRelease.releaseId), "the withdrawn release is kept as history");
   assert.ok((after.audit as Array<{ action: string }>).some(entry => entry.action === "allergen-release-revoked"));
 
+});
+
+test("Studio pre-booking allergen checker signs exact reviewed evidence and atomically revokes it", async () => {
+  const {
+    matchesStudioDishRelease, studioDishReviewKey, studioDishReviewRecords, studioDishReviewRequests, studioDishReviewSubject, studioDishSafetyFences,
+  } = await import("../../shared/hospitality-menu-studio-safety");
+  const { db } = await import("../lib/firebase-admin");
+  const { GET, POST } = await import("../app/api/studio-dish-review/[dishId]/[revision]/route");
+  const dish = {
+    id: randomUUID(), version: 1, name: "Synthetic pastry box", category: "other", temperature: null,
+    kitchenDescription: "Pack both components.", customerDescription: "Pastry box",
+    assortment: { expectedTotal: 24, unit: "pieces", components: [
+      { id: "pastry", name: "Pastry", quantity: 12 }, { id: "muffin", name: "Muffin", quantity: 12 },
+    ] },
+  };
+  const subject = studioDishReviewSubject(dish);
+  const key = studioDishReviewKey(dish.id, 1);
+  const source = db.collection(studioDishReviewRequests).doc(key);
+  const head = db.collection(studioDishReviewRecords).doc(key);
+  const fence = db.collection(studioDishSafetyFences).doc(key);
+  const release = head.collection("releases").doc("1");
+  const productionBefore = await snapshotEvidence(db, dish.id);
+  await source.create({ contract: "hospitality-menu-studio.dish-review-request.v1", subject, dish, requestedAt: new Date().toISOString(), requestedBy: "synthetic-author" });
+  const restoreFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
+    assert.match(String(input), /^http:\/\/(?:127\.0\.0\.1|localhost):\d+\/api\/cpu-production\/access$/);
+    const actor = new Headers(init?.headers).get("cookie")?.split("=")[1];
+    if (!actor) return Response.json({ error: { code: "FIKA_SESSION_MISSING" } }, { status: 401 });
+    return Response.json({ allOplocs: actor !== "site-only", principal: { id: actor, identityKind: actor === "shared" ? "operational" : "person" } });
+  }) as typeof fetch;
+  const context = { params: Promise.resolve({ dishId: dish.id, revision: "1" }) };
+  const url = "http://localhost:3400/api/studio-dish-review";
+  const get = (actor?: string) => GET(new NextRequest(url, { headers: actor ? { cookie: "test=" + actor } : {} }), context);
+  const post = (actor: string, body: unknown, origin = "http://localhost:3400") => POST(new NextRequest(url, { method: "POST",
+    headers: { cookie: "test=" + actor, origin, "content-type": "application/json" }, body: JSON.stringify(body) }), context);
+  const input = (data: object, expectedVersion: number) => ({ ...data, expectedVersion, commandId: randomUUID(), sourceHash: subject.sourceHash });
+  const row = (rowId: string, allergens: object, noKeyAllergens = false) => ({ action: "check-row", rowId, allergens, noKeyAllergens, mayContainNotes: "", allergenDetailNotes: "" });
+  const reviewed = async (response: Response) => {
+    const body = await response.json();
+    assert.equal(response.status, 200, JSON.stringify(body).slice(0, 600));
+    return body;
+  };
+  try {
+    assert.equal((await get()).status, 403);
+    assert.equal((await get("site-only")).status, 403);
+    assert.equal((await get("shared")).status, 403);
+    assert.equal((await post("first-chef", {}, "https://different.example")).status, 403);
+    const initial = await reviewed(await get("first-chef"));
+    assert.equal(initial.status, "in_review");
+    assert.equal(initial.menuItems[0].subItems[0].allergens.milk, undefined);
+    assert.equal(initial.checked, false);
+    assert.equal((await post("first-chef", input(row("pastry", {}), 0))).status, 422);
+    assert.equal((await post("first-chef", { ...input(row("pastry", { milk: "contains" }), 0), sourceHash: "a".repeat(64) })).status, 409);
+    assert.equal((await post("first-chef", input(row("fake-component", { milk: "contains" }), 0))).status, 422);
+    assert.equal((await head.get()).exists, false);
+    const pastry = input(row("pastry", { milk: "may_contain" }), 0);
+    const duplicate = await Promise.all([post("first-chef", pastry), post("first-chef", pastry)]);
+    for (const response of duplicate) {
+      const saved = await reviewed(response);
+      assert.equal(saved.version, 1);
+      assert.equal(saved.menuItems[0].subItems[0].allergens.milk, "may_contain");
+      assert.equal(saved.menuItems[0].subItems[0].allergenReview.confirmedBy, "first-chef");
+    }
+    const completed = await reviewed(await post("first-chef", input(row("muffin", {}, true), 1)));
+    assert.equal(completed.checked, true);
+    assert.equal(completed.menuItems[0].subItems[1].allergenReview.confirmedBy, "first-chef");
+    const signature = (role: string) => ({ action: "sign", role, matrixHash: completed.matrixHash, printedName: "Test Chef", attested: true,
+      signatureDataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZ1sAAAAASUVORK5CYII=" });
+    assert.equal((await post("first-chef", { ...input(signature("production_chef"), 2), matrixHash: "b".repeat(64) })).status, 409);
+    const firstSign = await reviewed(await post("first-chef", input(signature("production_chef"), 2)));
+    assert.equal(firstSign.signatures.length, 1);
+    assert.equal((await fence.get()).exists, false);
+    assert.equal((await post("first-chef", input(signature("head_chef_site_manager"), 3))).status, 409);
+    assert.equal((await post("second-chef", input(row("pastry", { milk: "contains" }), 3))).status, 409);
+    const second = input(signature("head_chef_site_manager"), 3);
+    const signed = await reviewed(await post("second-chef", second));
+    assert.equal(signed.status, "current");
+    const savedRelease = (await release.get()).data()!;
+    assert.equal(matchesStudioDishRelease(savedRelease as never, (await fence.get()).data() as never), true);
+    assert.ok(!JSON.stringify(signed).includes("signatureDataUrl"));
+    const revoked = await reviewed(await post("second-chef", input({ action: "reopen", reason: "Review revised supplier declaration." }, 4)));
+    assert.equal(revoked.status, "revoked");
+    assert.equal(revoked.checked, false);
+    assert.equal((await fence.get()).data()?.status, "revoked");
+    assert.deepEqual((await release.get()).data(), savedRelease);
+    assert.equal((await reviewed(await post("second-chef", second))).status, "revoked");
+    assert.deepEqual(await snapshotEvidence(db, dish.id), productionBefore);
+  } finally {
+    globalThis.fetch = restoreFetch;
+  }
 });

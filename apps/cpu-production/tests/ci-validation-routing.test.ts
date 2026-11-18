@@ -34,7 +34,7 @@ test("CPU unit, shared-contract, emulator, typecheck and exact-source build all 
   assert.match(application, /if: matrix\.app == 'cpu'\n\s+run: npm --prefix apps\/cpu-production run test:unit/);
   assert.match(application, /Shared contract tests \(apps\/shared\/\*\.test\.ts\)/);
   assert.match(application, /if: matrix\.app == 'cpu'\n\s+run: find apps\/shared/);
-  assert.match(application, /Firebase CLI for Ad-Hoc emulator tests\n\s+if: matrix\.app == 'adhoc'/);
+  assert.match(application, /Firebase CLI for Firestore emulator tests\n\s+if: matrix\.app == 'adhoc' \|\| matrix\.app == 'menu-studio'/);
   assert.match(validation, /if: needs\.scope\.outputs\.cpu == 'true'/);
   assert.match(validation, /npm --prefix apps\/cpu-production run typecheck/);
   assert.match(validation, /test "\$\(git rev-parse HEAD\)" = "\$SOURCE_SHA"/);
