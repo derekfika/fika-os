@@ -25,6 +25,8 @@ test("published preview binds publication, dish version and evidence before disp
   assert.equal(publishedKitchenPreview({ ...result, safety: { ...result.safety, subject: { ...result.safety.subject, revision: 1 } } }, "menu-1", "pub-1", selected, 4), null);
   assert.equal(publishedKitchenPreview({ ...result, quantities: { ...result.quantities, total: 24 } }, "menu-1", "pub-1", selected, 4), null);
   assert.equal(publishedKitchenPreview(result, "menu-1", "pub-1", selected, 1), null);
+  const zeroComponent = { ...result, dish: { ...result.dish, assortment: { ...result.dish.assortment, components: [{ id: "a", name: "A", quantity: 0 }, { id: "b", name: "B", quantity: 24 }] } }, quantities: { ...result.quantities, components: [{ id: "a", name: "A", perBox: 0, total: 0 }, { id: "b", name: "B", perBox: 24, total: 96 }] } };
+  assert.equal(publishedKitchenPreview(zeroComponent, "menu-1", "pub-1", selected, 4), null);
   const plain = { ...result, dish: { ...result.dish, assortment: null }, quantities: undefined };
   assert.ok(publishedKitchenPreview(plain, "menu-1", "pub-1", selected, undefined));
   assert.equal(publishedKitchenPreview(plain, "menu-1", "pub-1", selected, 1), null);

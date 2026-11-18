@@ -8,13 +8,13 @@ const indexSchema = z.object({
   items: z.array(z.object({ id, name: z.string(), version: positive })),
   nextCursor: id.nullable(),
 });
-const component = z.object({ id, name: z.string(), quantity: count });
+const component = z.object({ id, name: z.string(), quantity: positive });
 const previewSchema = z.object({
   kind: z.literal("published-content-preview"),
   publication: z.object({ id, menuId: id, revision: positive, effectiveDate: z.string() }),
   safety: z.object({ subject: z.object({ dishId: id, revision: positive, sourceHash: hash }), releaseId: id, matrixHash: hash }),
   dish: z.object({ id, name: z.string(), version: positive, kitchenDescription: z.string(), assortment: z.object({ expectedTotal: positive, unit: z.string().min(1), components: z.array(component).min(1) }).nullable() }),
-  quantities: z.object({ boxes: positive, unit: z.string().min(1), perBox: positive, total: count, components: z.array(z.object({ id, name: z.string(), perBox: count, total: count })) }).optional(),
+  quantities: z.object({ boxes: positive, unit: z.string().min(1), perBox: positive, total: count, components: z.array(z.object({ id, name: z.string(), perBox: positive, total: positive })) }).optional(),
 });
 export type PublishedDish = z.infer<typeof indexSchema>["items"][number];
 export type KitchenPreview = z.infer<typeof previewSchema>;

@@ -50,7 +50,7 @@ export default function PublishedKitchenPreview({ menuId, publications, historyL
       setNextCursor(page.nextCursor); setLoaded(true);
     } catch (cause) {
       if (!generation.current.isCurrent(token)) return;
-      setDishes([]); setNextCursor(null); setDishId(""); setLoaded(false); setError(message(cause));
+      setDishes([]); setNextCursor(null); setDishId(""); setLoaded(false); setHasAssortment(false); setBoxes("1"); setError(message(cause));
     } finally { if (generation.current.isCurrent(token)) setBusy(false); }
   }
   function choosePublication(value: string) {
@@ -111,7 +111,7 @@ export default function PublishedKitchenPreview({ menuId, publications, historyL
       {preview && <div>
         <h3>{preview.dish.name} · Dish version {preview.dish.version}</h3>
         <p>Publication revision {preview.publication.revision} · Effective {preview.publication.effectiveDate}</p>
-        <p>Signed evidence was verified when this preview was loaded. Check again before use; evidence can change.</p>
+        <p>Signed evidence was verified when this preview was loaded. Open a fresh preview to recheck it.</p>
         <h3>Frozen kitchen description</h3><p style={{ whiteSpace: "pre-wrap" }}>{preview.dish.kitchenDescription || "No kitchen description recorded."}</p>
         {preview.quantities && <>
           <p>{preview.quantities.perBox} {preview.quantities.unit} per box × {preview.quantities.boxes} boxes = {preview.quantities.total} {preview.quantities.unit} total</p>
