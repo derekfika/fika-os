@@ -1,0 +1,24 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { assortmentTotal, moveDish, retainedDraftMatchesRequest } from "./studio-model";
+
+test("section ordering preserves all IDs and leaves the source unchanged", () => {
+  const original = ["a", "b", "c"];
+  assert.deepEqual(moveDish(original, 1, -1), ["b", "a", "c"]);
+  assert.deepEqual(moveDish(original, 1, 1), ["a", "c", "b"]);
+  assert.deepEqual(original, ["a", "b", "c"]);
+  assert.deepEqual(moveDish(original, 0, -1), original);
+  assert.deepEqual(moveDish(original, 2, 1), original);
+});
+
+test("assortment counts sum components without conflating box count", () => {
+  assert.equal(assortmentTotal([{ quantity: 10 }, { quantity: 14 }]), 24);
+  assert.equal(assortmentTotal([]), 0);
+});
+
+test("acknowledgement clears only the exact retained snapshot", () => {
+  const request = { id: "dish-a", version: 3, name: "First" };
+  assert.equal(retainedDraftMatchesRequest(JSON.stringify(request), request), true);
+  assert.equal(retainedDraftMatchesRequest(JSON.stringify({ ...request, name: "Newer" }), request), false);
+  assert.equal(retainedDraftMatchesRequest(null, request), false);
+});
