@@ -23,7 +23,22 @@ export function menuDishIds(menu: Menu, eventDate?: string): string[] {
 
 export function draftReadiness(
   menu: Menu, dishes: Dish[], effectiveDate: string, scope: PublicationScope, today = londonDate(),
+  safety: Review["safety"] = { status: "unavailable" },
 ): Review {
+  const { issues, changes } = draftContentReview(menu, dishes, effectiveDate, scope, today);
+  return {
+    canPublish: false,
+    issues: [...issues, ...(safety.status === "unavailable" ? ["Signed dish verification is unavailable."]
+      : safety.status === "unverified" ? ["Every dish revision requires current signed allergen verification."] : []),
+    "Publication requires verified catalogue eligibility and a booking impact review."],
+    changes,
+    reviewToken: null,
+    safety,
+    impact: { status: "unavailable" },
+  };
+}
+
+export function draftContentReview(menu: Menu, dishes: Dish[], effectiveDate: string, scope: PublicationScope, today: string) {
   const issues: string[] = [];
   if (!menu.name.trim()) issues.push("Enter a menu name.");
   if (!menu.startDate || !menu.endDate || menu.endDate < menu.startDate) issues.push("Enter a valid menu date range.");
@@ -71,14 +86,7 @@ export function draftReadiness(
     ? [`${scopedSection.name || "Unnamed section"}${scope.week ? ` · Week ${scope.week}` : ""}${scope.dishId ? ` · ${byId.get(scope.dishId)?.name || "Dish"}` : ""}`]
     : scope.dishId ? [byId.get(scope.dishId)?.name || "Dish"] : menu.sections.map(section => section.name || "Unnamed section");
 
-  return {
-    canPublish: false,
-    issues: [...issues, "Signed dish verification, catalogue eligibility and booking impact are unavailable."],
-    changes,
-    reviewToken: null,
-    safety: { status: "unavailable" },
-    impact: { status: "unavailable" },
-  };
+  return { issues, changes };
 }
 
 export function draftCustomerChoices(menu: Menu, dishes: Dish[], eventDate: string) {

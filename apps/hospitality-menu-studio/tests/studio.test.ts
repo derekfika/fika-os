@@ -5,7 +5,7 @@ import { londonDate, rotationWeek, type Dish, type Menu } from "../lib/contract"
 import { studioHandlers } from "../lib/http";
 import { StudioProblem } from "../lib/problem";
 import { assortmentIsComplete, draftCustomerChoices, draftReadiness, kitchenQuantities } from "../lib/review";
-import { studioRuntime } from "../lib/runtime";
+import { localStudioCheckerOrigin, studioRuntime } from "../lib/runtime";
 import { commandSchema, dateSchema } from "../lib/schema";
 
 const dish: Dish = {
@@ -79,6 +79,15 @@ const staging = {
   FIKA_RUNTIME_MODE: "staging", FIREBASE_PROJECT_ID: "fika-os-dev",
   FIKA_HUB_BASE_URL: "https://staging-os.fikacatering.com",
 };
+
+test("the Studio checker link accepts only an explicitly configured loopback HTTP origin", () => {
+  assert.equal(localStudioCheckerOrigin("http://localhost:13486"), "http://localhost:13486");
+  assert.equal(localStudioCheckerOrigin("http://127.0.0.1:13486"), "http://127.0.0.1:13486");
+  for (const invalid of ["http://localhost", "http://localhost:80", "http://localhost:65536", "http://localhost:13486/path",
+    "http://localhost:13486@other.test", "https://localhost:13486", "http://other.test:13486", "http://127.0.0.1.nip.io:13486"]) {
+    assert.equal(localStudioCheckerOrigin(invalid), undefined);
+  }
+});
 
 test("runtime rejects cross-project configuration and local fixture settings in staging", () => {
   assert.equal(studioRuntime(staging).name, "fika_os_session_staging");

@@ -54,6 +54,8 @@ export type Publication = {
   publishedAt: string;
   publishedBy: string;
   scope: PublicationScope;
+  sourceDraftVersion?: number;
+  contentHash?: string;
 };
 export type Review = {
   canPublish: boolean;
@@ -62,7 +64,9 @@ export type Review = {
   reviewToken: string | null;
   impact: { status: "unavailable" } | {
     status: "available";
-    bookings: { id: string; eventDate: string; site: string; selections: string[] }[];
+    coverage?: "complete" | "partial";
+    reasons?: string[];
+    bookings: { id: string; eventDate: string; site: string; selections: string[]; selectionIds?: string[] }[];
   };
   safety: { status: "unavailable" | "unverified" | "verified" };
 };

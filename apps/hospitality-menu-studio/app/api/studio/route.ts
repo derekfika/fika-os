@@ -1,8 +1,9 @@
 import type { NextRequest } from "next/server";
 import { assertLocalPreviewHost, authoriseStudio, requireSameOrigin, studioSessionCookie } from "../../../lib/auth";
+import { readStudioBookingImpact } from "../../../lib/booking-impact";
 import { catalogueUnavailable, readStudioCatalogue } from "../../../lib/catalogue";
 import { studioHandlers } from "../../../lib/http";
-import { studioRuntime } from "../../../lib/runtime";
+import { localStudioCheckerOrigin, studioRuntime } from "../../../lib/runtime";
 import { studioStore } from "../../../lib/store";
 
 export const runtime = "nodejs";
@@ -17,6 +18,14 @@ const handlers = studioHandlers(async request => {
   const cookie = (request as NextRequest).cookies.get(config.name)?.value;
   if (!cookie || config.fixture) throw catalogueUnavailable();
   return readStudioCatalogue(config.hub, studioSessionCookie(config, cookie));
+}, () => {
+  const config = studioRuntime();
+  return config.mode === "local" && config.projectId === "demo-fika-os" && !config.fixture;
+}, localStudioCheckerOrigin, (request, target) => {
+  const config = studioRuntime();
+  const cookie = (request as NextRequest).cookies.get(config.name)?.value;
+  return cookie && !config.fixture ? readStudioBookingImpact(config.hub, studioSessionCookie(config, cookie), target)
+    : Promise.resolve({ status: "unavailable" });
 });
 
 export const GET = handlers.GET;

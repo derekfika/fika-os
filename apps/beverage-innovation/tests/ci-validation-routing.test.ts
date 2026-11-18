@@ -23,8 +23,8 @@ test("Beverage uses its app lockfile without dropping tests, typecheck, build or
   const application = job("application-tests");
   const gate = job("merge-gate");
   assert.match(application, /beverage\) path=apps\/beverage-innovation/);
-  assert.match(application, /if: matrix\.app == 'beverage'\n\s+with:\n\s+node-version: '22'\n\s+cache: npm\n\s+cache-dependency-path: apps\/beverage-innovation\/package-lock\.json/);
-  assert.match(application, /- run: npm ci\n\s+if: matrix\.app != 'hospitality' && matrix\.app != 'menu' && matrix\.app != 'beverage'/);
+  assert.match(application, /if: matrix\.app == 'beverage' \|\| matrix\.app == 'menu-studio'\n\s+with:\n\s+node-version: '22'\n\s+cache: npm\n\s+cache-dependency-path: \$\{\{ steps\.app\.outputs\.path \}\}\/package-lock\.json\n/);
+  assert.match(application, /- run: npm ci\n\s+if: matrix\.app != 'hospitality' && matrix\.app != 'menu' && matrix\.app != 'beverage' && matrix\.app != 'menu-studio'\n/);
   assert.match(application, /- run: npm ci --prefix '\$\{\{ steps\.app\.outputs\.path \}\}'/);
   assert.match(application, /- run: npm --prefix '\$\{\{ steps\.app\.outputs\.path \}\}' test/);
   assert.match(application, /- run: npm --prefix '\$\{\{ steps\.app\.outputs\.path \}\}' run typecheck/);
