@@ -5,6 +5,7 @@ export const STUDIO_AUTHMOD_APP = "hospitality-menu-studio";
 export const STUDIO_PREVIEW_RESOURCE = "hospitality-menu-studio.preview";
 export const STUDIO_PREVIEW_BUNDLE = "hospitality-menu-studio-preview";
 export const STUDIO_STAGING_ORIGIN = "https://menu-studio-staging.fikacatering.com";
+const directAccessTypes = [undefined, "permanent", "temporary", "cover"];
 
 type StudioSession = { authmodIdentityId: string; firebaseUid: string; identityKind: "person" | "operational" };
 type PreviewAuthority = Pick<AuthModRepository, "getApplication"> & {
@@ -12,8 +13,8 @@ type PreviewAuthority = Pick<AuthModRepository, "getApplication"> & {
 };
 
 function effectiveDirect(record: EffectivePeriod & { status: string; accessType?: string }, at: Date) {
-  return record.accessType !== "delegated" &&
-    [record.effectiveFrom, record.effectiveTo].every(value => value === undefined || Number.isFinite(Date.parse(value))) &&
+  return directAccessTypes.includes(record.accessType) &&
+    [record.effectiveFrom, record.effectiveTo].every(value => value === undefined || (typeof value === "string" && Number.isFinite(Date.parse(value)))) &&
     isEffective(record, at);
 }
 

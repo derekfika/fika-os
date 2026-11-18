@@ -68,6 +68,8 @@ test("Full Access, standard grants, Rotations, delegated access and malformed or
     { grants: [{ ...grant, delegationSourceGrantId: "fixture:delegator" }] },
     { grants: [{ ...grant, scope: { kind: "oploc", ids: ["fixture:site"] } }] },
     { grants: [{ ...grant, effectiveTo: "invalid-date" }] },
+    { grants: [{ ...grant, effectiveFrom: 2026 as unknown as string }] },
+    { grants: [{ ...grant, accessType: "unknown" as AuthorityGrant["accessType"] }] },
     { grants: [{ ...grant, effectiveTo: at.toISOString() }] },
   ] satisfies Parameters<typeof fixture>[0][];
   for (const options of cases) assert.equal(await readStudioPreviewAccess(fixture(options), session, at), null);
