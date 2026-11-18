@@ -50,6 +50,7 @@ test("content publication freezes current menu, dish and signed evidence with an
     return response.json();
   };
   const publish = (reviewToken: string, input = action) => post({ ...input, action: "publish", confirmed: true, reviewToken });
+  const preview = (publicationId: string, boxes = "4", dishId = dish.id) => handlers.GET(new Request(`${url}?menuId=${menu.id}&publicationId=${publicationId}&kitchenDishId=${dishId}&boxes=${boxes}`));
   const status = db.collection(studioDishSafetyFences).doc(studioDishReviewKey(dish.id, 1));
   let createdSchedule = false;
   try {
@@ -142,6 +143,30 @@ test("content publication freezes current menu, dish and signed evidence with an
 
     await store.save("dishes", actor.id, { ...firstDish, kitchenDescription: "Revised packing instructions." });
     assert.equal((await readReview(amendment)).safety.status, "unverified");
+    const kitchenResponse = await preview(first.id);
+    assert.equal(kitchenResponse.status, 200);
+    assert.equal(kitchenResponse.headers.get("cache-control"), "private, no-store");
+    const kitchen = await kitchenResponse.json();
+    assert.equal(kitchen.kind, "published-content-preview");
+    assert.equal(kitchen.dish.version, 1);
+    assert.equal(kitchen.dish.kitchenDescription, dish.kitchenDescription);
+    assert.equal(kitchen.quantities.perBox, 24);
+    assert.equal(kitchen.quantities.boxes, 4);
+    assert.equal(kitchen.quantities.unit, "pieces");
+    assert.equal(kitchen.quantities.total, 96);
+    assert.deepEqual(kitchen.quantities.components.map((row: { total: number }) => row.total), [48, 48]);
+    assert.equal((await preview(first.id, "1.5")).status, 422);
+    assert.equal((await preview(first.id, "4", randomUUID())).status, 404);
+    await status.update({ status: "revoked" });
+    const revoked = await preview(first.id);
+    assert.equal(revoked.status, 409);
+    assert.doesNotMatch(await revoked.text(), /Pack 12 of each/);
+    const replacement = { ...evidence, releaseId: `cpu-studio-dish-release:${status.id}:v2` };
+    const newSignatures = signatures.map(signature => ({ ...signature, eventId: randomUUID() }));
+    await reader.collection("releases").doc("2").create({ ...replacement, signatures: newSignatures });
+    await Promise.all(newSignatures.map(signature => reader.collection("events").doc(signature.eventId).create({ ...signature, source: "cpu-production", action: "sign" })));
+    await status.set(replacement);
+    assert.equal((await preview(first.id)).status, 409, "a fresh release cannot silently replace frozen publication evidence");
     const replay = await publish(accepted.reviewToken!);
     assert.deepEqual((await replay.json()).publication, first);
     assert.equal((await head.collection("publications").get()).size, 2);

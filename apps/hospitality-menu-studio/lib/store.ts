@@ -13,7 +13,7 @@ import { canonicalJson, decodeLocalPublicationPackage, publicationHash, publicat
   type DishSafety, type PublicationImpactTarget, type PublicationRequest, type SeasonWindow } from "./publication";
 import { studioRuntime } from "./runtime";
 import { dishSchema, menuSchema } from "./schema";
-import { assortmentIsComplete, menuDishIds } from "./review";
+import { assortmentIsComplete, kitchenQuantities, menuDishIds } from "./review";
 
 const root = "fikaHospitalityMenuStudioV1";
 const pageSize = 50;
@@ -61,6 +61,32 @@ export class StudioStore {
 
   async reviewPublication(request: PublicationRequest, inputs: ReviewInputs) {
     return this.db.runTransaction(async transaction => (await this.publicationCandidate(transaction, request, inputs)).review, { readOnly: true });
+  }
+
+  async previewPublishedKitchen(menuId: string, publicationId: string, dishId: string, boxes?: number) {
+    const head = this.draftHead("menus", menuId);
+    return this.db.runTransaction(async transaction => {
+      const history = await transaction.get(head.collection("publications").doc(publicationId));
+      if (!history.exists) throw new StudioProblem(404, "PUBLICATION_NOT_FOUND", "This publication could not be found.");
+      const publication = history.data() as Publication;
+      if (publication.id !== publicationId) throw publicationIntegrity();
+      const payload = await this.readPublicationPackage(transaction, head, publication);
+      const frozen = payload.dishes.find(item => item.dish.id === dishId);
+      if (!frozen) throw new StudioProblem(404, "PUBLISHED_DISH_NOT_FOUND", "This publication does not include the selected dish.");
+      const current = (await this.readDishSafetyBatch(transaction, [frozen.dish])).get(dishId);
+      if (current?.status === "unavailable") {
+        throw new StudioProblem(503, "PUBLISHED_DISH_SAFETY_UNAVAILABLE", "The saved dish's signing evidence could not be verified.");
+      }
+      if (current?.status !== "verified" || current.fence?.releaseId !== frozen.safety.releaseId || current.fence.matrixHash !== frozen.safety.matrixHash) {
+        throw new StudioProblem(409, "PUBLISHED_DISH_SAFETY_CHANGED", "The signed evidence for this publication changed. Review and publish a new revision before using this specification.");
+      }
+      const { id, name, version, kitchenDescription, assortment } = frozen.dish;
+      if (!assortment && boxes !== undefined) throw new StudioProblem(422, "BOX_QUANTITIES_UNAVAILABLE", "Box counts apply to fixed assortments.");
+      const preview = { kind: "published-content-preview" as const, publication, safety: frozen.safety, dish: { id, name, version, kitchenDescription, assortment } };
+      if (!assortment) return preview;
+      const { kitchenDescription: _description, ...quantities } = kitchenQuantities(frozen.dish, boxes ?? 1);
+      return { ...preview, quantities };
+    }, { readOnly: true });
   }
 
   async publicationImpactTarget(request: PublicationRequest) {

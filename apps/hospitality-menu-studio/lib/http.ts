@@ -20,7 +20,9 @@ const readSchema = z.union([
   z.object({ list: z.literal("catalogue") }).strict(),
   z.object({ menuId: idSchema, fromVersion: versionQuerySchema, toVersion: versionQuerySchema }).strict(),
   z.object({ menuId: idSchema, eventDate: dateSchema, siteId: idSchema.optional() }).strict(),
-  z.object({ menuId: idSchema, publicationId: idSchema, kitchenDishId: idSchema }).strict(),
+  z.object({ menuId: idSchema, publicationId: idSchema, kitchenDishId: idSchema,
+    boxes: z.string().regex(/^\d{1,16}$/).transform(Number).pipe(z.number().int().positive()).optional(),
+  }).strict(),
   z.object({ menuId: idSchema }).strict(),
   z.object({ dishId: idSchema, reviewVersion: versionQuerySchema }).strict(),
   z.object({ dishId: idSchema }).strict(),
@@ -89,7 +91,10 @@ export function studioHandlers(
         if (!safetyAvailable()) return { status: "unavailable" };
         return (await db.dishSafety([dish])).get(dish.id);
       }
-      if ("kitchenDishId" in query) throw blocked("Current signed kitchen specifications are unavailable.");
+      if ("kitchenDishId" in query) {
+        if (!safetyAvailable()) throw blocked("Current signed kitchen specifications are unavailable.");
+        return db.previewPublishedKitchen(query.menuId, query.publicationId, query.kitchenDishId, query.boxes);
+      }
       const menu = await db.read<Menu>("menus", query.menuId);
       if ("eventDate" in query) {
         if (!query.siteId) {
