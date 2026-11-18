@@ -9,10 +9,29 @@ import { releaseBackend, verifiedReleaseServing, releasePrestate } from './relea
 import { recoverySnapshot, isDomainOperationTarget, isReleaseRelevantOperation, reconcileIntent, resubmitNeverSubmitted, submissionAttempts, describeSubmissionEvidence } from './recovery.mjs';
 import { readCreateAuditEvents } from './audit.mjs';
 import { assertCpuAdoptionTarget, observeCpuAdoption, adoptCompletedCpu } from './cpu-prod-adoption.mjs';
+import { configurationDigest, prepareHotfixRelease } from './hotfix-release.mjs';
+import { assertHotfixFilesReconciled, assertMainReconciled, hotfixBranch } from './hotfix.mjs';
 
 export function releaseRecord(branch) {
   const sha = ref(`refs/remotes/origin/${branch}`);
   return sha ? { commit: sha, record: JSON.parse(git('show', `${sha}:release.json`)) } : undefined;
+}
+
+/** Read-only source/config baseline template for a prospective app-specific hotfix. */
+export async function inspectHotfixBaseline(app, releaseId, { read = cloud } = {}) {
+  const t = target(app,'prod');
+  const branch = hotfixBranch(app,releaseId);
+  const backend = await releaseBackend(t,read);
+  const serving = await releasePrestate(t,read);
+  const rollout = await read(`${backendPath(t)}/rollouts/${serving.rollout}`);
+  const build = await read(rollout.build);
+  const configurationHash = configurationDigest(backend,build);
+  return { dryRun:true, target:t, releaseId, branch, serving, configurationHash,
+    manifestTemplate:{schema:'fika.hotfix.v1',app,releaseId,environment:'prod',branch,
+      baselineSha:serving.sourceSha,baselineRollout:serving.rollout,reviewedHeadSha:'<exact PR head SHA>',
+      paths:[],diffHash:'<sha256 of sorted path/blob manifest>',configurationHash,
+      manifestHash:'<sha256 of canonical manifest fields excluding manifestHash and reviewedHeadSha>'},
+    note:'Read-only. No branch, approval, release journal or production state was created.' };
 }
 export function appendRecord(t, record, expected) {
   // Release branches are append-only records, NEVER application source trees.
@@ -322,7 +341,7 @@ export function rollbackSelection(t, current, options = {}, before) {
   if (!current) throw Error('No verified release history for rollback');
   const { record } = current;
   if (record.configurationOnly) throw Error('The current release changed only backend configuration; prepare a separately approved configuration-only restore instead of rolling back application source');
-  const isPrevious = ['baseline', 'deploy', 'rollback'].includes(record.kind) && record.sourceSha !== before?.sourceSha;
+  const isPrevious = ['baseline', 'deploy', 'rollback', 'hotfix'].includes(record.kind) && record.sourceSha !== before?.sourceSha;
   const requested = options.record || (before && isPrevious ? current.commit : record.previousGoodRecord);
   if (requested) {
     const record = validateRecord(JSON.parse(git('show', `${exactSha(requested)}:release.json`)), t);
@@ -333,7 +352,7 @@ export function rollbackSelection(t, current, options = {}, before) {
   for (const commit of git('rev-list', '--first-parent', current.commit).split(/\r?\n/).slice(1)) {
     let record;
     try { record = JSON.parse(command('git', ['show', `${commit}:release.json`], {stdio:['ignore','pipe','pipe']})); } catch { break; }
-    if (!['baseline','deploy','rollback'].includes(record.kind)) continue;
+    if (!['baseline','deploy','rollback','hotfix'].includes(record.kind)) continue;
     validateRecord(record,t);
     if (record.sourceSha === current.record.previousGood?.sourceSha && record.rollout === current.record.previousGood?.rollout) return {record:commit,sha:options.sha || record.sourceSha};
   }
@@ -386,6 +405,14 @@ function planRelease(t, options, pointer, before, access) {
   if (before.sourceSha) {
     assertServingLineage(plan, before, ancestor(before.sourceSha, sourceSha), scopeHash(t.app, before.sourceSha) === plan.scopeHash);
     if (t.environment === 'prod') plan.productionDelta = productionDelta(before.sourceSha, sourceSha);
+  }
+  if (!rollback && pointer?.record.kind === 'hotfix' && pointer.record.mainReconciliation?.status === 'pending') {
+    const priorHotfix = pointer.record.hotfix;
+    if (!priorHotfix || !ancestor(priorHotfix.sourceSha, sourceSha)) throw Error('Production promotion is held until the hotfix source is merged through a protected, green main PR');
+    assertHotfixFilesReconciled(priorHotfix, sourceSha, (sha, file) => git('rev-parse', `${sha}:${file}`));
+    plan.mainReconciliation = { hotfixSourceSha:priorHotfix.sourceSha, diffHash:priorHotfix.diffHash,
+      mainPrMerged:true, mainCheckGreen:true, recordCommit:sourceSha };
+    assertMainReconciled(pointer.record, plan.mainReconciliation);
   }
   // Retain the historical field name so journals and ledgers remain readable across CLI versions.
   if (options.execute) plan.approval = executionEvidence(t, sourceSha, { ...options, action: rollback ? 'rollback' : 'deploy' }, access);
@@ -595,17 +622,27 @@ export async function deploy(app, environment, options, {
 } = {}) {
   return asyncLock(`release-${app}-${environment}`, async () => {
     const t = target(app, environment);
+    if (options.hotfix && (environment !== 'prod' || options.rollback || options.record || options['config-only'] || !options['release-id'])) {
+      throw Error('Hotfix route is production-only and cannot be a rollback, configuration release or ledger selection');
+    }
     assertClean(git('status', '--porcelain')); git('fetch', 'origin');
     if (options['config-only']) return deployConfigurationOnly(t,options,{read,github,env,smoke,preflight,audit,patch,submit});
     const journalFile = path.join(stateDir(), `release-${app}-${environment}.json`);
     let journal = existsSync(journalFile) ? jsonFile(journalFile) : undefined;
     let pointer = releaseRecord(t.branch), plan;
+    if (options.hotfix && !options.resume && (pointer?.record.kind === 'intent' || (journal && !['completed','abandoned'].includes(journal.state)))) {
+      throw Error('A pending release intent or journal blocks hotfix preparation; reconcile it through the existing recovery path first');
+    }
     if (pointer?.record.kind === 'intent') {
       if (!options.resume) throw Error('Pending distributed release intent: use --resume; never submit another rollout');
       if (!journal) throw Error('Missing original release journal; restore it before resuming');
       const pinned = journal.plan;
       const sourceSha = exactSha(options.sha || pinned.sourceSha);
       plan = { ...pinned, ...t, sourceSha, scopeHash: scopeHash(app, sourceSha) };
+      if (Boolean(pinned.hotfix) !== Boolean(options.hotfix)) throw Error('Hotfix intent must be resumed only through its dedicated route');
+      if (pinned.hotfix && (options['release-id'] !== pinned.releaseId || !options['activate-hotfix'] || options['approve-hash'] !== pinned.hotfixApprovalHash)) {
+        throw Error('Hotfix resume must retain the original release ID, explicit activation and exact SHA-bound approval hash');
+      }
       if (pinned.rollbackRecord !== pointer.record.rollbackRecord || (options.record && options.record !== pinned.rollbackRecord) || (options.rollback && !pinned.rollback)) throw Error('Resume rollback differs from original intent');
       assertResume(pointer.record, journal, plan);
       if (journal.intentCommit && journal.intentCommit !== (pointer.record.retryClaim?.originalIntent || pointer.commit)) throw Error('Resume intent commit differs from the original journal');
@@ -615,6 +652,16 @@ export async function deploy(app, environment, options, {
     } else if (options.resume) throw Error('No matching pending release to resume');
 
     const backend = await releaseBackend(t, read);
+    if (options.resume && plan.hotfix) {
+      const branch = hotfixBranch(app, plan.releaseId);
+      git('fetch', 'origin', `refs/heads/${branch}:refs/remotes/origin/${branch}`);
+      if (git('rev-parse', `refs/remotes/origin/${branch}`) !== plan.sourceSha) throw Error('Hotfix resume branch no longer points to the original exact candidate');
+      const prepared = await prepareHotfixRelease({ app, releaseId:plan.releaseId, sourceSha:plan.sourceSha,
+        serving:journal.before, backend, github, read, requireApproval:false });
+      if (digest(prepared.observed) !== digest(plan.hotfix)) throw Error('Hotfix governance, source, configuration or approval evidence changed since the original intent');
+      if (!plan.approval?.actor || plan.approval.approvalSourceSha !== plan.sourceSha ||
+          plan.approval.approvalHash !== plan.hotfixApprovalHash) throw Error('Original hotfix approval evidence is incomplete');
+    }
     if (!options.resume) {
       if (pointer) validateRecord(pointer.record, t);
       const prior = pointer?.record;
@@ -631,7 +678,39 @@ export async function deploy(app, environment, options, {
       const firstRelease = before.state === 'EMPTY';
       if (firstRelease && (options.rollback || options.record)) throw Error('The first release has no earlier verified rollback target');
       if (before.sourceSha && !ref(before.sourceSha)) git('fetch', 'origin', before.sourceSha);
-      plan = planRelease(t, options, pointer, before, { github, env });
+      if (options.hotfix) {
+        if (pointer?.record.kind === 'hotfix' && pointer.record.mainReconciliation?.status === 'pending') {
+          throw Error('A previous production hotfix must be reconciled through main before another hotfix release');
+        }
+        const sourceSha = exactSha(options.sha || '');
+        const branch = hotfixBranch(app, options['release-id']);
+        git('fetch', 'origin', `refs/heads/${branch}:refs/remotes/origin/${branch}`);
+        if (git('rev-parse', `refs/remotes/origin/${branch}`) !== sourceSha) throw Error('Hotfix base branch does not point to the exact requested merged candidate');
+        let candidate = await prepareHotfixRelease({ app, releaseId:options['release-id'], sourceSha, serving:before,
+          backend, github, read, requireApproval:false });
+        const approvalHash = digest({ candidate:candidate.observed, releasePointer:pointer?.commit || null,
+          releaseRecord:pointer?.record || null, rollbackBaseline:pointer?.record?.sourceSha || before.sourceSha });
+        plan = { ...t, sourceSha, scopeHash:scopeHash(app,sourceSha), rollback:false, hotfix:true,
+          releaseId:options['release-id'], hotfix:candidate.observed, diffHash:candidate.observed.diffHash,
+          hotfixApprovalHash:approvalHash,
+          productionDelta:productionDelta(before.sourceSha,sourceSha) };
+        if (options.execute) {
+          if (!options['activate-hotfix']) throw Error('Hotfix execution remains disabled; require the explicit --activate-hotfix action');
+          if (!options.reason?.trim()) throw Error('Hotfix execution requires an explicit reason');
+          if (options['approve-hash'] !== approvalHash) throw Error(`Hotfix approval hash mismatch; review ${approvalHash} and retry explicitly`);
+          const approval = { ...executionEvidence(t,sourceSha,{...options,action:'hotfix', 'release-id':options['release-id']},{github,env}),
+            approvalApp:app, approvalSourceSha:sourceSha, approvalReason:options.reason.trim(), approvalId:approvalHash,
+            approvalHash, approvalAt:new Date().toISOString() };
+          const prepared = candidate;
+          candidate = await prepareHotfixRelease({ app, releaseId:options['release-id'], sourceSha, serving:before,
+            backend, github, read, requireApproval:true, releaseState:{explicitApproval:true,...approval,approvalActor:approval.actor} });
+          if (candidate.approvalHash !== prepared.approvalHash) throw Error('Hotfix evidence changed while binding the exact-source approval');
+          plan.approval = { ...approval, approvalHash };
+        }
+        plan.hotfix = candidate.observed;
+      } else {
+        plan = planRelease(t, options, pointer, before, { github, env });
+      }
       const staleLedger = firstRelease ? !abandonedFirst && prior?.kind !== 'empty-baseline' :
         !matchesServing(prior, before) && !(prior?.kind === 'abandoned' && matchesServing(prior.previousGood, before));
       if (!options.execute) return { dryRun:true, plan, before, url:backend.uri, ...(staleLedger ? { willRecordObservedBaseline:true } : {}),
@@ -650,6 +729,16 @@ export async function deploy(app, environment, options, {
         if (!staleLedger && prior?.kind !== 'abandoned') return { alreadyServing:true, before, smoke:health };
       } else {
         preflight(t);
+      }
+
+      if (plan.hotfix && options.execute) {
+        const freshBackend = await releaseBackend(t,read), freshServing = await releasePrestate(t,read);
+        if (digest(freshServing) !== digest(before)) throw Error('Production serving baseline changed after hotfix approval; prepare a new SHA-bound approval');
+        const fresh = await prepareHotfixRelease({ app, releaseId:options['release-id'], sourceSha:plan.sourceSha,
+          serving:freshServing, backend:freshBackend, github, read, requireApproval:false });
+        const freshHash = digest({ candidate:fresh.observed, releasePointer:pointer?.commit || null,
+          releaseRecord:pointer?.record || null, rollbackBaseline:pointer?.record?.sourceSha || freshServing.sourceSha });
+        if (freshHash !== plan.hotfixApprovalHash) throw Error('Hotfix governance, source, configuration or approval evidence changed before intent; obtain a fresh approval');
       }
 
       // Adopt observed serving state prospectively, keeping the old ledger as first parent.
@@ -673,6 +762,7 @@ export async function deploy(app, environment, options, {
       }
       if (alreadyServing) {
         const record = { schema:'fika.release.v1', ...plan, ...before, kind:plan.rollback ? 'rollback' : 'deploy',
+          ...(plan.mainReconciliation ? { mainReconciliation:{status:'complete',...plan.mainReconciliation} } : {}),
           previousGood, previousGoodRecord, releaseId:randomUUID(), reverifiedServing:true, completedAt:new Date().toISOString(), smoke:health };
         validateRecord(record, t);
         const commit = appendRecord(t, record, pointer.commit);
@@ -717,7 +807,12 @@ export async function deploy(app, environment, options, {
       };
       try {
         if (!pointer.record.retryClaim && (journal.submissionFailure || !journal.submissionStartedAt)) {
-          mergedSource(plan.sourceSha, github, { historicalRollback:plan.rollback });
+          if (!plan.hotfix) mergedSource(plan.sourceSha, github, { historicalRollback:plan.rollback });
+          else {
+            const prepared = await prepareHotfixRelease({ app:plan.app, releaseId:plan.releaseId, sourceSha:plan.sourceSha,
+              serving:journal.before, backend, github, read, requireApproval:false });
+            if (digest(prepared.observed) !== digest(plan.hotfix)) throw Error('Hotfix candidate changed before retrying its proven-never-submitted intent');
+          }
           await resubmitNeverSubmitted({ intent: pointer.record, journal }, { ...io, preflight: () => preflight(t) });
           resubmissionNote = 'Original submission was proven never to have reached Firebase and was resubmitted once for the same intent.';
         }
@@ -737,7 +832,10 @@ export async function deploy(app, environment, options, {
     if (digest(verified) !== digest(await verifiedReleaseServing(t, read))) throw Error('Serving revision changed during verification; preserve pending intent');
     git('fetch', 'origin'); const latest = releaseRecord(plan.branch);
     if (latest?.record.releaseId !== journal.releaseId || latest.record.kind !== 'intent') throw Error('Release intent changed unexpectedly; do not overwrite it');
-    const record = { schema: 'fika.release.v1', ...plan, ...verified, kind: plan.rollback ? 'rollback' : 'deploy', previousGood: journal.firstRelease ? null : journal.before, previousGoodRecord:journal.previousGoodRecord,
+    const record = { schema: 'fika.release.v1', ...plan, ...verified, kind: plan.hotfix ? 'hotfix' : plan.rollback ? 'rollback' : 'deploy',
+      ...(plan.hotfix ? { mainReconciliation:{status:'pending',required:true,sourceSha:plan.sourceSha,diffHash:plan.hotfix.diffHash} } :
+        plan.mainReconciliation ? { mainReconciliation:{status:'complete',...plan.mainReconciliation} } : {}),
+      previousGood: journal.firstRelease ? null : journal.before, previousGoodRecord:journal.previousGoodRecord,
       firstReleaseBaselineRecord:journal.firstReleaseBaselineRecord, releaseId: journal.releaseId, completedAt: new Date().toISOString(), smoke: health };
     validateRecord(record, plan); const commit = appendRecord(plan, record, latest.commit);
     save(journalFile, { ...journal, state: 'completed', record, commit }); return { commit, record };
