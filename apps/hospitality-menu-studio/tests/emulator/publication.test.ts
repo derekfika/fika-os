@@ -51,6 +51,7 @@ test("content publication freezes current menu, dish and signed evidence with an
   };
   const publish = (reviewToken: string, input = action) => post({ ...input, action: "publish", confirmed: true, reviewToken });
   const preview = (publicationId: string, boxes = "4", dishId = dish.id) => handlers.GET(new Request(`${url}?menuId=${menu.id}&publicationId=${publicationId}&kitchenDishId=${dishId}&boxes=${boxes}`));
+  const kitchenIndex = (publicationId: string, cursor?: string) => handlers.GET(new Request(`${url}?menuId=${menu.id}&publicationId=${publicationId}&list=published-kitchen-dishes${cursor ? `&cursor=${cursor}` : ""}`));
   const status = db.collection(studioDishSafetyFences).doc(studioDishReviewKey(dish.id, 1));
   let createdSchedule = false;
   try {
@@ -157,9 +158,14 @@ test("content publication freezes current menu, dish and signed evidence with an
     assert.deepEqual(kitchen.quantities.components.map((row: { total: number }) => row.total), [48, 48]);
     assert.equal((await preview(first.id, "1.5")).status, 422);
     assert.equal((await preview(first.id, "4", randomUUID())).status, 404);
+    assert.deepEqual(await (await kitchenIndex(first.id)).json(), { items: [{ id: dish.id, name: dish.name, version: 1 }], nextCursor: null });
+    assert.deepEqual(await (await kitchenIndex(first.id, dish.id)).json(), { items: [], nextCursor: null });
+    assert.equal((await kitchenIndex(first.id, randomUUID())).status, 422);
+    assert.equal((await kitchenIndex("missing-publication")).status, 404);
     await status.update({ status: "revoked" });
     const revoked = await preview(first.id);
     assert.equal(revoked.status, 409);
+    assert.equal((await kitchenIndex(first.id)).status, 200, "the index identifies historical membership independently of current signature readiness");
     assert.doesNotMatch(await revoked.text(), /Pack 12 of each/);
     const replacement = { ...evidence, releaseId: `cpu-studio-dish-release:${status.id}:v2` };
     const newSignatures = signatures.map(signature => ({ ...signature, eventId: randomUUID() }));
