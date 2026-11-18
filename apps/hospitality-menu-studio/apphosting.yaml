@@ -1,0 +1,5 @@
+# Default to a closed runtime when App Hosting has no recognised environment.
+env:
+  - variable: FIKA_RUNTIME_MODE
+    value: unconfigured
+    availability: [RUNTIME]
