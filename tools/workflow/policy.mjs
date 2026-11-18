@@ -1,5 +1,16 @@
 import { createHash } from 'node:crypto';
 
+export const STUDIO_STAGING = Object.freeze({
+  project: 'fika-os-dev',
+  backend: 'fika-menu-studio-staging',
+  origin: 'https://menu-studio-staging.fikacatering.com',
+  hub: 'https://staging-os.fikacatering.com',
+  sourceBranch: 'main',
+  database: 'hospitality-menu-studio',
+  artifactRepository: 'firebaseapphosting-images',
+  serviceAccount: 'fika-menu-studio-staging@fika-os-dev.iam.gserviceaccount.com',
+});
+
 export const APPS = {
   hub: { path: 'apps/integration-hub', staging: 'fika-os-staging', prod: 'fika-os-prod-hub' },
   hospitality: { path: 'apps/hospitality-booking', staging: 'fika-hospitality-staging', prod: 'fika-os-prod-hospitality' },
@@ -10,8 +21,7 @@ export const APPS = {
   adhoc: { path: 'apps/ad-hoc-production', staging: 'fika-os-staging-adhoc', prod: 'fika-os-prod-adhoc' },
   // Restricted no-write Beverage preview. There is deliberately no production target.
   beverage: { path: 'apps/beverage-innovation', staging: 'fika-beverage-staging', prod: null },
-  // Studio staging provisioning is inspectable through studio-preflight; release targets remain closed.
-  'menu-studio': { path: 'apps/hospitality-menu-studio', staging: null, prod: null },
+  'menu-studio': { path: 'apps/hospitality-menu-studio', staging: STUDIO_STAGING.backend, prod: null },
 };
 export const REPO = 'derekfika/fika-os';
 export const MAIN_CHECK = 'Workflow / merge-gate';
@@ -25,7 +35,14 @@ export function supportedTargets(apps = Object.keys(APPS)) {
 }
 export function target(app, environment) {
   if (!Object.hasOwn(APPS, app) || !supportedEnvironments(app).includes(environment)) throw Error('Unknown application/environment');
-  return { app, environment, project: environment === 'prod' ? 'fika-os' : 'fika-os-dev', backend: APPS[app][environment], region: 'europe-west4', branch: `release/${environment}/${app}` };
+  const project = environment === 'prod' ? 'fika-os' : 'fika-os-dev';
+  return { app, environment, project, backend: APPS[app][environment], region: 'europe-west4', branch: `release/${environment}/${app}` };
+}
+export function allowsEmptyFirstRelease(t) {
+  return (t.app === 'adhoc' && t.environment === 'prod') ||
+    (t.app === 'beverage' && t.environment === 'staging') ||
+    (t.app === 'menu-studio' && t.environment === 'staging' && t.project === STUDIO_STAGING.project &&
+      t.backend === STUDIO_STAGING.backend && t.region === 'europe-west4');
 }
 export function exactSha(value) { if (!/^[a-f0-9]{40}$/.test(value || '')) throw Error('A full lowercase 40-character source SHA is required'); return value; }
 export function affected(paths, { rootRuntimeChanged = true } = {}) {
@@ -46,12 +63,12 @@ export function assertClean(status) { if (status.trim()) throw Error('Dirty work
 export function validateRecord(record, { app, environment } = {}) {
   if (record?.schema !== 'fika.release.v1' || !Object.hasOwn(APPS, record.app) || !['staging', 'prod'].includes(record.environment)) throw Error('Invalid release record');
   const expected = target(record.app, record.environment);
-  const firstReleaseBackend = record.kind === 'empty-baseline' && ((record.app === 'adhoc' && record.environment === 'prod') || (record.app === 'beverage' && record.environment === 'staging'))
+  const firstReleaseBackend = record.kind === 'empty-baseline' && allowsEmptyFirstRelease(expected)
     ? [expected.backend, `projects/${expected.project}/locations/${expected.region}/backends/${expected.backend}`].includes(record.backend)
     : record.backend === expected.backend;
   if (record.project !== expected.project || !firstReleaseBackend || (app && record.app !== app) || (environment && record.environment !== environment)) throw Error('Release target mismatch');
   if (record.kind === 'empty-baseline') {
-    const allowedFirstRelease = (record.app === 'adhoc' && record.environment === 'prod') || (record.app === 'beverage' && record.environment === 'staging');
+    const allowedFirstRelease = allowsEmptyFirstRelease(expected);
     if (!allowedFirstRelease || record.sourceSha != null || record.rollout != null || record.state !== 'EMPTY' || record.percent !== 0 || !record.scopeHash || record.recovery?.firstRelease !== true || record.recovery?.noPreviousRelease !== true) throw Error('Invalid first-release empty baseline');
     return record;
   }
@@ -74,9 +91,9 @@ export function validateRecord(record, { app, environment } = {}) {
       if (record.percent !== 0 || (record.rollout != null && !/^[a-z][a-z0-9-]{2,100}$/.test(record.rollout))) throw Error('Abandoned release does not identify its failed attempt');
     } else throw Error('Abandoned release has an unsupported terminal state');
     if (recovery.firstRelease === true) {
-      const allowedFirstRelease = (record.app === 'adhoc' && record.environment === 'prod') || (record.app === 'beverage' && record.environment === 'staging');
+      const allowedFirstRelease = allowsEmptyFirstRelease(expected);
       if (!allowedFirstRelease || recovery.noPreviousRelease !== true || record.previousGood != null || record.previousGoodRecord != null ||
-          !/^[a-f0-9]{40}$/.test(record.firstReleaseBaselineRecord || '') || recovery.operator.sourceSha !== record.sourceSha || record.smoke.ok !== false) throw Error('Invalid abandoned Ad-Hoc first-release evidence');
+          !/^[a-f0-9]{40}$/.test(record.firstReleaseBaselineRecord || '') || recovery.operator.sourceSha !== record.sourceSha || record.smoke.ok !== false) throw Error('Invalid abandoned first-release evidence');
     } else {
       const previous = record.previousGood;
       if (!previous || !/^[a-f0-9]{40}$/.test(record.previousGoodRecord || '') || !/^[a-f0-9]{40}$/.test(previous.sourceSha || '') ||

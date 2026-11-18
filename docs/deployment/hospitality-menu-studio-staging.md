@@ -1,35 +1,63 @@
-# Hospitality Menu Studio staging
+# Hospitality Menu Studio integrated staging
 
-Studio's first staging slice is a read-only preview with its own AUTHMOD admission and data boundary. The proposed target below is reserved in source for provisioning checks. It is excluded from release, rollback, bootstrap, protection and hosted-runner target selection. App Hosting has a closed default runtime while the reviewed enablement is pending. Cloud writes, signing, publication, collection activation and operational UAT require independent acceptance.
+[#586](https://github.com/derekfika/fika-os/issues/586) · [Managed build and data IAM plan](hospitality-menu-studio-isolation.md) · [Governed releases](workflow.md)
 
-| Setting | Proposed value |
+| Setting | Existing target |
 | --- | --- |
-| Governed app key | `menu-studio` |
-| Firebase project and App Hosting region | `fika-os-dev` / `europe-west4` |
-| App Hosting backend, environment and root | `fika-menu-studio-staging` / `staging` / `apps/hospitality-menu-studio` |
-| Source | `derekfika/fika-os`, branch `main`, through the staging project GitHub connection |
-| Runtime service account | `fika-menu-studio-staging@fika-os-dev.iam.gserviceaccount.com` |
-| Studio Firestore | Named database `hospitality-menu-studio` in `fika-os-dev` |
-| Browser origin and authority | `https://menu-studio-staging.fikacatering.com/` and `https://staging-os.fikacatering.com/` |
-| Storage and Google Workspace | No application data bucket, secret, Workspace or downstream integration binding for the first preview |
-| Production | No Studio backend or release mapping |
+| Project, region and backend | `fika-os-dev`, `europe-west4`, `fika-menu-studio-staging` |
+| Source and root | `derekfika/fika-os`, `main`, `apps/hospitality-menu-studio` |
+| Environment and account to attach after approval | `staging`, `fika-menu-studio-staging@fika-os-dev.iam.gserviceaccount.com` |
+| Named Firestore | `projects/fika-os-dev/databases/hospitality-menu-studio` |
+| Browser and admission authority | `https://menu-studio-staging.fikacatering.com/` and `https://staging-os.fikacatering.com/` |
 
-## Read-only preflight
+Read-only checks on 18 November 2026 confirmed the dedicated account and delete-protected database exist. The backend points at the expected repository and root, has automatic rollouts disabled, and has zero builds, rollouts and current or target traffic. Its environment is unset and the default shared compute account is attached. App Hosting reports the existing domain's ownership, routing and certificate active. DNS work is complete for those observed states. Reread the same backend before first release, and capture fresh Firebase records only if its domain status requires a change.
 
-From the checkout containing this runbook, use the existing authorised local Google Cloud identity.
+## 1. Integrate and serve the Hub admission route
+
+Integrate #609 through the protected merge gate. Use the exact merged source to plan the Hub staging release. Compare its Hub and shared-runtime delta to the verified serving SHA. Be sure the effective Hub environment remains staging and Hospitality email delivery remains disabled.
+
+```powershell
+npm run fika -- deploy hub --staging --sha $studioMergeSha
+```
+
+Execute this governed Hub rollout only under the owner's staging Hub direction, limited to the reviewed admission delta. Verify the serving SHA and that the unauthenticated Studio access route returns an admission error from the staging Hub. The previous serving SHA `2e3b1df8ccdd4d06c7315997d638a22fd9781e00` returned 404. Production and generic application admission stay closed to Studio.
+
+The authorised staging Hub operator can preview registration using user Application Default Credentials. Set the exact staging project and governed snapshot bucket, then run from `apps/integration-hub`:
+
+```powershell
+$env:FIKA_RUNTIME_MODE = 'staging'
+$env:FIREBASE_PROJECT_ID = 'fika-os-dev'
+$env:FIKA_SNAPSHOT_BUCKET = 'fika-os-dev-staging-read-packages-europe-west4'
+npx --no-install tsx scripts/provision-beverage-staging-registry.ts --studio
+```
+
+After the owner approves the exact plan, add `--execute` to register the hidden app and publish its current references. Using existing audited AUTHMOD account actions, invite only the approved, already Firebase-bound person. Give Sam the standard assignment to `hospitality-menu-studio` and separate direct organisation `View` and `Manage` grants with empty scope IDs on `hospitality-menu-studio.preview`. The registry's standard action list stays `["View"]`. Record the approved expiry and current access package. The existing Hub [public-safe catalogue package](../../apps/integration-hub/app/api/hospitality-catalogue/public-package/route.ts) still independently requires Hub `canonical.view` for browser sessions. Use access Sam already has or obtain approval for that grant only if the pilot needs catalogue mapping.
+
+## 2. Isolate the managed build and Studio database
+
+Follow the [permission plan](hospitality-menu-studio-isolation.md) for the exact account and resources. The owner must explicitly accept the shared managed image repository and any verified managed source-bucket exposure. The deployment uses a named Studio data grant and no extra direct access to Hub, Hospitality, CPU, allergen or production data. Use the existing account and database. Verify the data and storage allow/deny matrix before rollout and separately approve publishing the deny-all client rules if the current rules cannot be verified.
+
+With owner approval, set the existing backend environment to `staging` and attach its dedicated account. Update only `environment` and `serviceAccount`, using the current backend ETag. Leave overrides empty, preserve the Git connection, and keep automatic rollouts disabled. Verify the returned backend, branch, traffic, builds and rollouts. [App Hosting backend update](https://firebase.google.com/docs/reference/apphosting/rest/v1beta/projects.locations.backends/patch)
+
+## 3. Approve one Studio first release and verify the pilot
+
+From a clean governed checkout, after effective policy and Hub admission evidence are available:
 
 ```powershell
 npm run fika -- studio-preflight --staging
+npm run fika -- deploy menu-studio --staging --sha $studioMergeSha
 ```
 
-The command inspects the exact staging App Hosting backend, any environment overrides, the configured branch, automatic rollout and traffic settings, the custom-domain linkage, the dedicated service account and the named database metadata. It prints only the proposed target, evidence statuses and open gates. `MISSING` means the cloud service explicitly reported that the resource does not exist. `MISMATCH` indicates observed conflicting settings. `UNVERIFIED` covers unreadable, unavailable or unconfirmed evidence. The overall result remains `BLOCKED` with a nonzero exit even when every resource is present, until reviewed release enablement. The command reads metadata only and requires no hosted identity, live app session, document read, deployment or cloud mutation.
+Provide the owner the exact merge SHA, `studioFirstReleaseApprovalHash`, shared build scope, verified isolation and Hub admission evidence. After approval, run:
 
-On 18 November 2026, read-only Firebase metadata showed the staging backend linked to the expected repository and root on `main`, with automatic rollouts disabled and no current or target traffic. Its environment name was unset and it used the default App Hosting compute identity. The proposed dedicated service account and named database returned `NOT_FOUND`. The custom domain was registered in App Hosting, with ownership missing, the host unhosted and the certificate validating. There is no Studio serving SHA to verify. The AUTHMOD round trip and operational UAT are blocked.
+```powershell
+npm run fika -- deploy menu-studio --staging --sha $studioMergeSha --execute --approve-hash $approvedStudioHash --reason $ownerApprovalReference
+```
 
-## Provisioning and verification gates
+The CLI verifies the custom domain serves the exact build and denies an unauthenticated Studio API call. Sam's authenticated browser acceptance on the custom domain covers create and edit, week copy, reload, conflict and recovery, history, restore and date preview using fictional `DEMO` data. Keep signing, publication, activation, customer booking and operational writes closed during this first pilot. Preserve an ambiguous first rollout's journal for governed recovery. An empty baseline has no prior Studio rollout to restore.
 
-1. **Backend and identity.** With separate owner authorisation, provision only the staging target and dedicated user-managed runtime identity. Disable automatic rollouts at creation, skip the initial build, and verify the linked repository and root. Leave backend environment overrides empty. Inspect the effective build and runtime service accounts and environment on the eventual serving revision. Keep runtime credentials separate from the existing deployment operator and grant no new hosted release identity for this slice. [App Hosting backend configuration](https://firebase.google.com/docs/app-hosting/configure)
-2. **Firestore and credentials.** Wire Studio's server-side Admin SDK explicitly to the named staging database before allowing an App Hosting rollout. The current store opens the default database. Keep cloud writes closed and limit the preview runtime to named-database reads with resource-scoped least privilege. Review effective IAM for both build and runtime principals, including inherited, group and conditional grants and impersonation paths. Record denied access to the staging default database, production Firestore, buckets, secrets and infrastructure. A missing or unreadable policy result leaves the gate blocked. Keep security rules closed to client access. [Firestore database access](https://docs.cloud.google.com/firestore/native/docs/manage-databases), [effective IAM troubleshooting](https://docs.cloud.google.com/policy-intelligence/docs/troubleshoot-access)
-3. **AUTHMOD and custom domain.** Obtain owner authorisation for the exact staging DNS and App Hosting domain records and the Hub registration. Register `hospitality-menu-studio` as its own AUTHMOD app, use explicit Studio capabilities and configure the exact approved stage return origin. The current foundation asks Hub for legacy Rotation permissions, which cannot grant Studio access. Use a current-only authority read that fails closed on missing or stale evidence, including a missing access package. Confirm permitted-view, denied, expired-session and wrong-origin behaviour through the custom-domain authentication round trip. Bind any real test actor or reviewer only under separately approved staging grants.
-4. **Storage and side effects.** Verify that the build and runtime principals have no effective access to application data buckets. The App Hosting Compute Runner role includes Storage permissions. Scope any permissions needed for managed build artifacts to the required staging artifact resources and verify the effective boundary before release. Verify there are no production secrets, service-account keys, Workspace delegation, Drive ACLs, Calendar or mail scopes, notification integrations, scheduler/job triggers or downstream append/write permissions for this preview. Confirm application calls stay within the staging Hub and named database, including recovery and failure paths. Future package or export storage needs a separately reviewed staging-only bucket, scoped IAM and source/hash verification. Future Workspace use requires separate credentials and exact isolated Drive ACLs. [App Hosting roles and permissions](https://docs.cloud.google.com/iam/docs/roles-permissions/firebaseapphosting), [#181 staging isolation requirements](https://github.com/derekfika/fika-os/issues/181)
-5. **Release and acceptance.** Submit a separately reviewed source change for active staging mapping, exact first-release verification and read-only smoke of build identity and unauthenticated API denial. Run the preflight and preserve the operator's effective IAM, AUTHMOD, side-effect and runtime binding evidence in the staging record. Once authorised, use the governed exact-main release CLI and verify Firebase traffic plus exact build identity through the custom domain. An owner-authorised authenticated session and verified isolation are prerequisites for staging UAT. Draft writes, data refresh/import, real allergen signing and publication each require their own authorised scope and evidence. [Release workflow](workflow.md), [Studio source and cutover ADR](../architecture/hospitality-menu-studio.md)
+## 4. Extend the pilot through the authorised cross-app path
+
+Refresh and review the authority and consumer increments after #609 integrates. Sequence #596 for CPU allergen evidence and #597 for Hub booking impact before #600 for immutable publication. Keep the scoped amendment and kitchen preview successors (#601 and #605) behind their provider. Review #598's frozen CPU consumer before #604's trusted Hub handoff. #603 overlaps the now-integrated admission and needs reconciliation before any reuse.
+
+Existing Booking and Quote records keep frozen selection evidence. The remaining cross-app cutover must author a Studio publication reference through the trusted Hospitality/Hub booking writer, verify the current signed evidence and commercial offering, then append the canonical Production Order. CPU renders the frozen kitchen version carried by that order. Approve a dedicated staging test booking and its reuse/cleanup procedure separately, with external delivery guarded and real records excluded. A draft save is never a cross-app release.
