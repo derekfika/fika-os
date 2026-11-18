@@ -1,0 +1,8 @@
+{
+  "firestore": [
+    {
+      "database": "hospitality-menu-studio",
+      "rules": "firestore.rules"
+    }
+  ]
+}

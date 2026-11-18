@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { cookieOptions, createFikaSessionCookie, principalFromSession, requireFikaSession, resolveSessionIdentity, assertRecentVerifiedFirebaseIdentity } from "../lib/fika-session";
+import { cookieOptions, createFikaSessionCookie, principalFromSession, requireBoundFikaSession, requireFikaSession, resolveSessionIdentity, assertRecentVerifiedFirebaseIdentity } from "../lib/fika-session";
 import { assertSameOrigin } from "../lib/csrf";
 import { sessionCookieConfig } from "../lib/runtime-config";
 import { MemoryAuthModRepository } from "../lib/authmod-core";
@@ -134,6 +134,20 @@ test("unknown and inactive identities cannot create a trusted session", async ()
   await assert.rejects(() => resolveSessionIdentity(repository, { uid: "unknown", email: "unknown@fikacatering.com", name: "Unknown" }), /not been enrolled/);
   const identity = await createAuthIdentity(repository, { actor, displayName: "Inactive", email: "inactive@fikacatering.com", externalProvider: "firebase", externalUid: "inactive", status: "inactive" });
   await assert.rejects(() => resolveSessionIdentity(repository, { uid: identity.externalUid!, email: identity.normalizedEmail, name: identity.displayName }), /inactive/);
+});
+
+test("bound-only session reads reject first sign-in without writing an external identity binding", async () => {
+  const repository = new MemoryAuthModRepository();
+  const identity = await createAuthIdentity(repository, {
+    actor, displayName: "An enrolled test person", email: "user@fikacatering.com", provenance: "import",
+  });
+  const initialAudits = repository.audits.length;
+  const authApi = { createSessionCookie: async () => "", verifySessionCookie: async () => decoded() };
+  await assert.rejects(requireBoundFikaSession(request("valid-cookie"), repository, authApi), { code: "AUTHMOD_IDENTITY_NOT_FOUND" });
+  assert.equal((await repository.getIdentity(identity.id))?.externalUid, undefined);
+  assert.equal(repository.audits.length, initialAudits);
+  await requireFikaSession(request("valid-cookie"), repository, authApi);
+  assert.equal((await requireBoundFikaSession(request("valid-cookie"), repository, authApi)).authmodIdentityId, identity.id);
 });
 
 test("requireFikaSession rejects missing and invalid cookies, and preserves operational identity", async () => {

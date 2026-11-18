@@ -4,7 +4,7 @@ import { Activity, ArrowRight, Bell, CalendarDays, ChartNoAxesCombined, ChefHat,
 import { Children, useEffect, useMemo, useState } from "react";
 import { getFikaFirebaseAuth, getFikaGoogleProvider, hasFikaFirebaseClientConfig } from "@/lib/firebase-client";
 import { getRedirectResult, signInWithPopup, signInWithRedirect, signOut } from "firebase/auth";
-import { validateReturnTo } from "@/lib/safe-return-to";
+import { launcherDestination } from "@/lib/safe-return-to";
 import { launcherGreeting } from "@/lib/launcher-greeting";
 import styles from "./launcher.module.css";
 import { clearIdentityScopedCaches } from "./integration-cache-client";
@@ -34,10 +34,102 @@ const navItems: { icon: LucideIcon; label: string; active: boolean }[] = [[House
 function today() { return new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(new Date()); }
 
 export default function Launcher() {
-  const [state, setState] = useState<State>("loading"); const [data, setData] = useState<LauncherData | null>(null); const [local, setLocal] = useState<boolean | null>(null); const [runtimeMode, setRuntimeMode] = useState<"local" | "staging" | "production" | null>(null); const [localEmulatorAvailable, setLocalEmulatorAvailable] = useState(false); const [googleWorkspaceAvailable, setGoogleWorkspaceAvailable] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const [returnTo, setReturnTo] = useState("/"); const [launchError, setLaunchError] = useState<LaunchError | null>(null); const firebaseConfigured = hasFikaFirebaseClientConfig();
-  async function load() { try { const runtime = await fetch("/api/auth/runtime", { cache: "no-store" }); if (runtime.ok) { const config = await runtime.json() as { local?: boolean; mode?: "local" | "staging" | "production"; localEmulatorAvailable?: boolean; googleWorkspaceAvailable?: boolean }; setLocal(config.local === true); setRuntimeMode(config.mode || null); setLocalEmulatorAvailable(config.localEmulatorAvailable === true); setGoogleWorkspaceAvailable(config.googleWorkspaceAvailable === true); } const session = await fetch("/api/auth/session", { cache: "no-store" }); if (session.status === 401) { setState("login"); return; } if (session.status === 403) { setState("denied"); setError("Your FIKA OS access is currently inactive or needs administrator review."); return; } if (!session.ok) throw new Error("FIKA OS could not load your session."); const launcher = await fetch("/api/launcher", { cache: "no-store" }); if (launcher.status === 401) { setState("login"); return; } if (launcher.status === 403) { setState("denied"); setError("Your FIKA OS access is currently inactive or needs administrator review."); return; } if (!launcher.ok) throw new Error("FIKA OS could not load your applications."); setData(await launcher.json()); setState("launcher"); } catch (cause) { setError((cause as Error).message); setState("login"); } }
-  useEffect(() => { let destination = "/"; const params = new URLSearchParams(window.location.search); try { destination = validateReturnTo(params.get("returnTo")); } catch { /* Invalid destinations fall back to the launcher. */ } setReturnTo(destination); const appId = params.get("appId"); const code = params.get("launchError"); if (appId && code) { const label = appDefinitions.find(app => app.appId === appId)?.label || appId; const message = code === "FIKA_SESSION_INVALID" ? "Your FIKA OS session is no longer valid. Sign in again to continue." : "Your FIKA OS session has expired. Sign in again to continue."; setLaunchError({ appId, label, code, message }); } void load(); void (async () => { try { const authInstance = getFikaFirebaseAuth(); const result = await getRedirectResult(authInstance); if (result) { setBusy(true); await exchange(result.user, authInstance); } } catch { /* Missing client config is expected for local fixture mode. */ } finally { setBusy(false); } })(); }, []);
-  async function exchange(user: { getIdToken(): Promise<string> }, authInstance: ReturnType<typeof getFikaFirebaseAuth>) { const idToken = await user.getIdToken(); const csrfResponse = await fetch("/api/auth/csrf", { cache: "no-store", credentials: "include" }); const csrf = await csrfResponse.json() as { csrfToken: string }; const response = await fetch("/api/auth/session", { method: "POST", headers: { "content-type": "application/json", origin: window.location.origin }, credentials: "include", body: JSON.stringify({ idToken, csrfToken: csrf.csrfToken }) }); await signOut(authInstance); if (!response.ok) { const body = await response.json().catch(() => ({})); const code = body.error?.code; if (code === "FIKA_EMAIL_NOT_ELIGIBLE") throw new Error("This Google account cannot access FIKA OS. Use your FIKA Workspace account."); if (code === "AUTHMOD_IDENTITY_NOT_FOUND") throw new Error("Your FIKA OS account has not been set up yet. Contact an administrator."); if (code === "AUTHMOD_IDENTITY_INACTIVE") throw new Error("Your FIKA OS access is currently inactive."); if (code === "AUTHMOD_EMAIL_IDENTITY_CONFLICT" || code === "AUTHMOD_EXTERNAL_IDENTITY_CONFLICT") throw new Error("Your FIKA OS account needs administrator review before you can sign in."); throw new Error("FIKA OS could not complete sign-in. Try again."); } window.location.assign(returnTo); }
+  const [state, setState] = useState<State>("loading"); const [data, setData] = useState<LauncherData | null>(null); const [local, setLocal] = useState<boolean | null>(null); const [runtimeMode, setRuntimeMode] = useState<"local" | "staging" | "production" | null>(null); const [localEmulatorAvailable, setLocalEmulatorAvailable] = useState(false); const [googleWorkspaceAvailable, setGoogleWorkspaceAvailable] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const [launchError, setLaunchError] = useState<LaunchError | null>(null); const firebaseConfigured = hasFikaFirebaseClientConfig();
+  function currentDestination() {
+    const params = new URLSearchParams(window.location.search);
+    try { return launcherDestination(params.get("returnTo"), params.get("appId"), window.location.origin); }
+    catch { return { href: "/", kind: "launcher" as const }; }
+  }
+
+  async function load(studioPreview: boolean) {
+    try {
+      const runtime = await fetch("/api/auth/runtime", { cache: "no-store" });
+      const config = runtime.ok ? await runtime.json() as {
+        local?: boolean; localEmulatorAvailable?: boolean; googleWorkspaceAvailable?: boolean; mode?: string; projectId?: string;
+      } : null;
+      if (config) {
+        setLocal(config.local === true);
+        setLocalEmulatorAvailable(config.localEmulatorAvailable === true);
+        setGoogleWorkspaceAvailable(config.googleWorkspaceAvailable === true);
+      }
+      if (studioPreview) {
+        if (config?.mode !== "staging" || config.projectId !== "fika-os-dev") {
+          setState("denied");
+          setError("Studio preview sign-in is unavailable.");
+        } else {
+          setState("login");
+        }
+        return;
+      }
+      const session = await fetch("/api/auth/session", { cache: "no-store" });
+      if (session.status === 401) { setState("login"); return; }
+      if (session.status === 403) { setState("denied"); setError("Your FIKA OS access is currently inactive or needs administrator review."); return; }
+      if (!session.ok) throw new Error("FIKA OS could not load your session.");
+      const launcher = await fetch("/api/launcher", { cache: "no-store" });
+      if (launcher.status === 401) { setState("login"); return; }
+      if (launcher.status === 403) { setState("denied"); setError("Your FIKA OS access is currently inactive or needs administrator review."); return; }
+      if (!launcher.ok) throw new Error("FIKA OS could not load your applications.");
+      setData(await launcher.json());
+      setState("launcher");
+    } catch (cause) {
+      setError((cause as Error).message);
+      setState(studioPreview ? "denied" : "login");
+    }
+  }
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const appId = params.get("appId");
+    const code = params.get("launchError");
+    if (appId && code) {
+      const label = appDefinitions.find(app => app.appId === appId)?.label || appId;
+      const message = code === "FIKA_SESSION_INVALID" ? "Your FIKA OS session is no longer valid. Sign in again to continue." : "Your FIKA OS session has expired. Sign in again to continue.";
+      setLaunchError({ appId, label, code, message });
+    }
+    const destination = currentDestination();
+    if (destination.kind === "studio-denied") {
+      setState("denied");
+      setError("Studio preview sign-in requires its staging Hub and return URL.");
+      return;
+    }
+    void load(destination.kind === "studio");
+    void (async () => {
+      try {
+        const authInstance = getFikaFirebaseAuth();
+        const provider = getFikaGoogleProvider();
+        provider.setCustomParameters({ hd: "fikacatering.com" });
+        const result = await getRedirectResult(authInstance);
+        if (result) { setBusy(true); await exchange(result.user, authInstance); }
+      } catch (cause) {
+        if (destination.kind === "studio") setError((cause as Error).message);
+      } finally { setBusy(false); }
+    })();
+  }, []);
+
+  async function exchange(user: { getIdToken(): Promise<string> }, authInstance: ReturnType<typeof getFikaFirebaseAuth>) {
+    const destination = currentDestination();
+    if (destination.kind === "studio-denied") throw new Error("Studio preview sign-in requires its staging Hub and return URL.");
+    const idToken = await user.getIdToken();
+    const csrfResponse = await fetch("/api/auth/csrf", { cache: "no-store", credentials: "include" });
+    const csrf = await csrfResponse.json() as { csrfToken: string };
+    const endpoint = destination.kind === "studio" ? "/api/hospitality-studio-access" : "/api/auth/session";
+    const response = await fetch(endpoint, {
+      method: "POST", headers: { "content-type": "application/json", origin: window.location.origin },
+      credentials: "include", body: JSON.stringify({ idToken, csrfToken: csrf.csrfToken }),
+    });
+    await signOut(authInstance);
+    if (!response.ok) {
+      if (destination.kind === "studio") throw new Error("FIKA OS could not verify your Studio preview access.");
+      const body = await response.json().catch(() => ({}));
+      const code = body.error?.code;
+      if (code === "FIKA_EMAIL_NOT_ELIGIBLE") throw new Error("This Google account cannot access FIKA OS. Use your FIKA Workspace account.");
+      if (code === "AUTHMOD_IDENTITY_NOT_FOUND") throw new Error("Your FIKA OS account has not been set up yet. Contact an administrator.");
+      if (code === "AUTHMOD_IDENTITY_INACTIVE") throw new Error("Your FIKA OS access is currently inactive. Contact an administrator.");
+      if (code === "AUTHMOD_EMAIL_IDENTITY_CONFLICT" || code === "AUTHMOD_EXTERNAL_IDENTITY_CONFLICT") throw new Error("Your FIKA OS account needs administrator review before you can sign in.");
+      throw new Error("FIKA OS could not complete sign-in. Try again.");
+    }
+    window.location.assign(destination.href);
+  }
   async function googleSignIn() {
     if (!firebaseConfigured || !googleWorkspaceAvailable) { setError(local ? "Google Workspace sign-in is not configured for this local runtime. Use a local emulator fixture or configure cloud Firebase Auth." : "FIKA OS Google sign-in is not configured. Contact an administrator."); return; }
     setBusy(true); setError("");
@@ -54,7 +146,7 @@ export default function Launcher() {
     } catch (cause) { setError((cause as Error).message.includes("FIKA") ? (cause as Error).message : "FIKA OS could not complete sign-in. Try again."); }
     finally { setBusy(false); }
   }
-  async function localSignIn(role: string) { setBusy(true); setError(""); try { const response = await fetch("/api/auth/local-session", { method: "POST", headers: { "content-type": "application/json", origin: window.location.origin }, credentials: "include", body: JSON.stringify({ role }) }); if (!response.ok) throw new Error("Local development sign-in is unavailable."); window.location.assign(returnTo); } catch (cause) { setError((cause as Error).message); } finally { setBusy(false); } }
+  async function localSignIn(role: string) { setBusy(true); setError(""); try { const response = await fetch("/api/auth/local-session", { method: "POST", headers: { "content-type": "application/json", origin: window.location.origin }, credentials: "include", body: JSON.stringify({ role }) }); if (!response.ok) throw new Error("Local development sign-in is unavailable."); window.location.assign(currentDestination().href); } catch (cause) { setError((cause as Error).message); } finally { setBusy(false); } }
   async function logout() { await fetch("/api/auth/session", { method: "DELETE", credentials: "include" }); await clearIdentityScopedCaches(); await clearFoodDataCache(); setData(null); setState("login"); }
   if (state === "loading") return <main className={styles.page}><div className={styles.loading}>Loading FIKA OS…</div></main>;
   if (state === "denied") return <main className={styles.page}><section className={styles.message}><ShieldCheck size={34} /><h1>FIKA OS</h1><p>{error}</p><a href="/">Return to sign in</a></section></main>;
