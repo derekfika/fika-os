@@ -8,6 +8,7 @@ export const studioStaging = Object.freeze({
   project: 'fika-os-dev',
   region: 'europe-west4',
   backend: 'fika-menu-studio-staging',
+  sourceBranch: 'main',
   origin: 'https://menu-studio-staging.fikacatering.com',
   serviceAccount: 'fika-menu-studio-staging@fika-os-dev.iam.gserviceaccount.com',
   database: 'hospitality-menu-studio',
@@ -25,7 +26,11 @@ function describe(args) {
 
 async function observe(check) {
   try { return await check() ? 'VERIFIED' : 'MISMATCH'; }
-  catch (error) { return error?.status === 404 ? 'MISSING' : 'UNVERIFIED'; }
+  catch (error) {
+    const missing = error?.status === 404 ||
+      /^ERROR: \(gcloud\.(?:iam\.service-accounts|firestore\.databases)\.describe\) NOT_FOUND:/m.test(String(error?.stderr || ''));
+    return missing ? 'MISSING' : 'UNVERIFIED';
+  }
 }
 
 function emptyTraffic(state) {
@@ -34,10 +39,15 @@ function emptyTraffic(state) {
 }
 
 export async function studioStagingPreflight({ read = cloud, describeResource = describe } = {}) {
-  let backend;
+  let backendExists = false;
   const [appHosting, serviceAccount, firestore] = await Promise.all([
     observe(async () => {
-      backend = await releaseBackend(studioStaging, read);
+      const backend = await read(base);
+      if (backend?.name !== base) return false;
+      backendExists = true;
+      // Validate the release binding without losing separately observable traffic and domain evidence.
+      try { await releaseBackend(studioStaging, async () => backend); }
+      catch { return false; }
       return backend.serviceAccount === studioStaging.serviceAccount &&
         (backend.overrideEnv === undefined || (Array.isArray(backend.overrideEnv) && backend.overrideEnv.length === 0));
     }),
@@ -52,10 +62,11 @@ export async function studioStagingPreflight({ read = cloud, describeResource = 
     }),
   ]);
 
-  const [rolloutPolicy, customDomain] = backend ? await Promise.all([
+  const [rolloutPolicy, customDomain] = backendExists ? await Promise.all([
     observe(async () => {
       const traffic = await read(`${base}/traffic`);
       return traffic.name === `${base}/traffic` && traffic.rolloutPolicy?.disabled === true &&
+        traffic.rolloutPolicy.codebaseBranch === studioStaging.sourceBranch &&
         (traffic.reconciling === undefined || traffic.reconciling === false) &&
         emptyTraffic(traffic.current) && emptyTraffic(traffic.target);
     }),
