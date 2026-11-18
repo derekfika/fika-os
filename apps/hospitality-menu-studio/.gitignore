@@ -1,0 +1,2 @@
+# Next generates environment declarations for the active dev or build directory.
+next-env.d.ts

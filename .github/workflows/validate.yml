@@ -87,11 +87,12 @@ jobs:
             logistics) path=apps/logistics ;;
             adhoc) path=apps/ad-hoc-production ;;
             beverage) path=apps/beverage-innovation ;;
+            menu-studio) path=apps/hospitality-menu-studio ;;
             *) echo "Unknown app: $APP" >&2; exit 1 ;;
           esac
           echo "path=$path" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        if: matrix.app != 'hospitality' && matrix.app != 'menu' && matrix.app != 'beverage'
+        if: matrix.app != 'hospitality' && matrix.app != 'menu' && matrix.app != 'beverage' && matrix.app != 'menu-studio'
         with:
           node-version: '22'
           cache: npm
@@ -111,11 +112,11 @@ jobs:
           cache: npm
           cache-dependency-path: apps/menu-planning/package-lock.json
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        if: matrix.app == 'beverage'
+        if: matrix.app == 'beverage' || matrix.app == 'menu-studio'
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: apps/beverage-innovation/package-lock.json
+          cache-dependency-path: ${{ steps.app.outputs.path }}/package-lock.json
       - name: Resolve pinned platform specs gitlink
         if: matrix.app == 'hub'
         id: platform-specs
@@ -130,20 +131,20 @@ jobs:
           repository: derekfika/fika-platform-specs
           ref: ${{ steps.platform-specs.outputs.sha }}
           path: fika-platform-specs
-      - name: Java for Ad-Hoc emulator tests
-        if: matrix.app == 'adhoc'
+      - name: Java for Firestore emulator tests
+        if: matrix.app == 'adhoc' || matrix.app == 'menu-studio'
         uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
         with:
           distribution: temurin
           java-version: '21'
-      - name: Firebase CLI for Ad-Hoc emulator tests
-        if: matrix.app == 'adhoc'
+      - name: Firebase CLI for Firestore emulator tests
+        if: matrix.app == 'adhoc' || matrix.app == 'menu-studio'
         run: npm install --global firebase-tools@15.30.2
       - name: Remove Integration Hub source so Ad-Hoc is proven independent of it
         if: matrix.app == 'adhoc'
         run: rm -rf apps/integration-hub
       - run: npm ci
-        if: matrix.app != 'hospitality' && matrix.app != 'menu' && matrix.app != 'beverage'
+        if: matrix.app != 'hospitality' && matrix.app != 'menu' && matrix.app != 'beverage' && matrix.app != 'menu-studio'
       - run: npm ci --prefix '${{ steps.app.outputs.path }}'
       - run: npm --prefix '${{ steps.app.outputs.path }}' test
         if: matrix.app != 'cpu'
@@ -159,6 +160,10 @@ jobs:
         env:
           FIRESTORE_EMULATOR_HOST: 127.0.0.1:8292
           FIKA_RUNTIME_MODE: local
+      - name: Menu Studio service tests on the Firestore emulator
+        if: matrix.app == 'menu-studio'
+        working-directory: apps/hospitality-menu-studio
+        run: firebase emulators:exec --only firestore --project demo-fika-os --config firebase.emulator.json 'npm run test:emulator'
       - run: npm --prefix '${{ steps.app.outputs.path }}' run typecheck
         if: matrix.app != 'hub' && matrix.app != 'logistics' && matrix.app != 'cpu' && matrix.app != 'hospitality' && matrix.app != 'menu'
       - name: Build exact checked-out application source
@@ -330,6 +335,7 @@ jobs:
             logistics) path=apps/logistics ;;
             adhoc) path=apps/ad-hoc-production ;;
             beverage) path=apps/beverage-innovation ;;
+            menu-studio) path=apps/hospitality-menu-studio ;;
             *) echo "Unknown app: $APP" >&2; exit 1 ;;
           esac
           echo "path=$path" >> "$GITHUB_OUTPUT"

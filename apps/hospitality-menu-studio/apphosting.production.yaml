@@ -1,0 +1,13 @@
+env:
+  - variable: FIKA_RUNTIME_MODE
+    value: production
+    availability: [RUNTIME]
+  - variable: FIREBASE_PROJECT_ID
+    value: fika-os
+    availability: [RUNTIME]
+  - variable: FIKA_HUB_BASE_URL
+    value: https://os.fikacatering.com
+    availability: [RUNTIME]
+  - variable: FIKA_SESSION_COOKIE_DOMAIN
+    value: .fikacatering.com
+    availability: [RUNTIME]
