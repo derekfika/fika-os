@@ -92,7 +92,7 @@ test('Beverage staging gets a staging-only empty-first-release proof and cannot 
  assert.throws(()=>target('beverage','prod'),/Unknown application\/environment/);
  assert.throws(()=>validateRecord({...record,environment:'prod',project:'fika-os',backend:'fika-beverage-staging' }),/Unknown application\/environment/);
  for(const [label,mutate] of [['root',s=>s.backend.codebase.rootDirectory='apps/menu-planning'],['environment',s=>s.backend.environment='production'],['rollouts',s=>s.traffic.rolloutPolicy.disabled=false],['active-rollout-operation',s=>s.operations.push({name:'rollout',done:false,metadata:{target:`${base}/rollouts/rollout-1`}})]]){const bad=structuredClone(snapshot);mutate(bad);await assert.rejects(inspectEmptyFirstReleaseState(t,async resource=>resource===base?bad.backend:resource===`${base}/traffic`?bad.traffic:resource.includes('/builds?')?{builds:bad.builds}:resource.includes('/rollouts?')?{rollouts:bad.rollouts}:{operations:bad.operations}),label);}
- await assert.rejects(inspectEmptyFirstReleaseState(target('cpu','staging'),read),/restricted to Ad-Hoc production or Beverage staging/);
+ await assert.rejects(inspectEmptyFirstReleaseState(target('cpu','staging'),read),/does not support first-release state inspection/);
 });
 test('Logistics staging health accepts only its exact unauthenticated staging Hub gate redirect',async()=>{
  const backend='https://fika-logistics-staging--fika-os-dev.europe-west4.hosted.app',url=`${backend}/`;

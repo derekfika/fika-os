@@ -10,7 +10,7 @@ Install from the governed task checkout with `npm ci --prefix apps/hospitality-m
 
 Studio asks Hub to verify the caller's session and explicit organisation-wide Rotations View and Manage grants. Draft mutations need a current version and a same-origin request. Successful changes atomically update the draft and append its exact actor-bound revision. Exact retries of a prior save return its acknowledgement while it is the latest save. Lists read a 50-record page plus one continuation record. Draft previews fetch the dishes for the selected event date. A review reads the saved menu and its referenced dishes. There is no background polling or outbound job.
 
-Cloud draft writes remain closed. The App Hosting environment files describe the allowed project and Hub endpoint. Release requires separate backend provisioning, verified service identity and isolation, and Studio-specific grants. Hub return-to-Studio registration is pending.
+Cloud draft writes and the App Hosting runtime remain closed. Studio staging requires separate backend provisioning, verified service identity and data isolation, Studio-specific grants and Hub return-to-Studio registration. [Studio staging preflight](../../docs/deployment/hospitality-menu-studio-staging.md)
 
 Customer preview is for drafting. Signed menu content, commercial eligibility, booking impact, special activation, booking and production integration and published restore require the remaining #586 increments.
 
