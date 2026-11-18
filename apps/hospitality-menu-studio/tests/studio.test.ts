@@ -127,3 +127,14 @@ test("publication and activation require explicit rights and intent and fail clo
   }
   assert.equal((await make(true).POST(post({ ...publish, confirmed: true }, "https://untrusted.invalid"))).status, 403);
 });
+
+test("local same-origin accepts either exact loopback host when Next normalizes its URL", () => {
+  const runtime = studioRuntime({ NODE_ENV: "test", FIKA_RUNTIME_MODE: "local", FIREBASE_PROJECT_ID: "demo-fika-os" });
+  const call = (host: string, origin: string) => requireSameOrigin(new Request("http://localhost:13686/api/studio", {
+    method: "POST", headers: { host, origin },
+  }), runtime);
+  assert.doesNotThrow(() => call("127.0.0.1:13686", "http://127.0.0.1:13686"));
+  assert.doesNotThrow(() => call("localhost:13686", "http://localhost:13686"));
+  assert.throws(() => call("127.0.0.1:13686", "http://localhost:13686"), { code: "STUDIO_ORIGIN_DENIED" });
+  assert.throws(() => call("unknown.invalid:13686", "http://unknown.invalid:13686"), { code: "STUDIO_ORIGIN_DENIED" });
+});
