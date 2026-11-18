@@ -83,7 +83,13 @@ export function validateRecord(record, { app, environment } = {}) {
     }
     return record;
   }
-  if (!['baseline', 'deploy', 'rollback'].includes(record.kind)) throw Error('Invalid release kind');
+  if (record.kind === 'hotfix') {
+    if (record.environment !== 'prod' || !record.hotfix || record.hotfix.sourceSha !== record.sourceSha ||
+        !/^[a-f0-9]{64}$/.test(record.hotfix.diffHash || '') || record.mainReconciliation?.status !== 'pending' ||
+        record.mainReconciliation.sourceSha !== record.sourceSha || record.mainReconciliation.diffHash !== record.hotfix.diffHash ||
+        record.approval?.sourceSha !== record.sourceSha || record.approval?.approvalSourceSha !== record.sourceSha ||
+        !/^[a-f0-9]{64}$/.test(record.approval?.approvalHash || '')) throw Error('Invalid hotfix release or pending main-reconciliation evidence');
+  } else if (!['baseline', 'deploy', 'rollback'].includes(record.kind)) throw Error('Invalid release kind');
   if (!record.rollout || record.state !== 'SUCCEEDED' || record.percent !== 100 || !record.scopeHash) throw Error('Release is not verified serving state');
   return record;
 }
