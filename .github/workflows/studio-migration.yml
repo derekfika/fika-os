@@ -1,0 +1,38 @@
+name: Studio migration tests
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/studio-migration.yml'
+      - 'tools/hospitality-menu-studio-migration/**'
+      - 'apps/shared/hospitality-rotations.ts'
+      - 'packages/server-shared/src/stable-document-id.ts'
+      - 'package.json'
+      - 'package-lock.json'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/studio-migration.yml'
+      - 'tools/hospitality-menu-studio-migration/**'
+      - 'apps/shared/hospitality-rotations.ts'
+      - 'packages/server-shared/src/stable-document-id.ts'
+      - 'package.json'
+      - 'package-lock.json'
+permissions:
+  contents: read
+concurrency:
+  group: studio-migration-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  migration-planner:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts
+      - run: node --test tools/hospitality-menu-studio-migration/plan.test.mjs
