@@ -13,6 +13,7 @@ export function assortmentIsComplete(dish: Dish): boolean {
 
 export function menuDishIds(menu: Menu, eventDate?: string): string[] {
   if (eventDate && (eventDate < menu.startDate || eventDate > menu.endDate)) return [];
+  if (eventDate) assertRotationPreviewAnchor(menu);
   return [...new Set(menu.sections.flatMap(section => {
     if (section.mode === "static") return section.staticDishIds;
     if (!eventDate) return section.weeks.flat();
@@ -30,7 +31,7 @@ export function draftReadiness(
     issues.push("Choose an effective date within the menu dates and on or after today.");
   }
   if (!menu.sections.length) issues.push("Add at least one section.");
-  if (menu.sections.some(section => section.mode === "rotation") && new Date(calendarDay(menu.anchorMonday)).getUTCDay() !== 1) {
+  if (needsRotationAnchor(menu)) {
     issues.push("Choose a Monday to anchor the six-week cycle.");
   }
 
@@ -82,6 +83,7 @@ export function draftReadiness(
 
 export function draftCustomerChoices(menu: Menu, dishes: Dish[], eventDate: string) {
   if (!Number.isFinite(calendarDay(eventDate)) || !menu.startDate || !menu.endDate || eventDate < menu.startDate || eventDate > menu.endDate) return [];
+  assertRotationPreviewAnchor(menu);
   const byId = new Map(dishes.map(dish => [dish.id, dish]));
   const week = rotationWeek(menu.anchorMonday, eventDate);
   return menu.sections.map(section => ({
@@ -93,6 +95,17 @@ export function draftCustomerChoices(menu: Menu, dishes: Dish[], eventDate: stri
       return { id, name: dish.name, category: dish.category, temperature: dish.temperature, description: dish.customerDescription };
     }),
   }));
+}
+
+function needsRotationAnchor(menu: Menu) {
+  return menu.sections.some(section => section.mode === "rotation") &&
+    new Date(calendarDay(menu.anchorMonday)).getUTCDay() !== 1;
+}
+
+function assertRotationPreviewAnchor(menu: Menu) {
+  if (needsRotationAnchor(menu)) {
+    throw new StudioProblem(422, "ROTATION_ANCHOR_REQUIRED", "Choose a Monday before previewing rotating sections.");
+  }
 }
 
 export function kitchenQuantities(dish: Dish, boxes: number) {
