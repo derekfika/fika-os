@@ -178,10 +178,9 @@ function archivedMenu(value: StoredDraft | undefined, menuId: string, version: n
   return parsed.data;
 }
 
-export function studioStore() {
-  const runtime = studioRuntime();
+export function studioStore(runtime = studioRuntime()) {
   if (runtime.mode === "local") process.env.FIRESTORE_EMULATOR_HOST = runtime.firestoreHost;
   const name = `hospitality-menu-studio-${runtime.projectId}`;
   const app = getApps().find(app => app.name === name) || initializeApp({ projectId: runtime.projectId }, name);
-  return new StudioStore(getFirestore(app));
+  return new StudioStore(runtime.mode === "staging" ? getFirestore(app, runtime.databaseId) : getFirestore(app));
 }

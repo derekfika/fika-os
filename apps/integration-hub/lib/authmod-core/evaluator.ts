@@ -3,6 +3,7 @@ import { isEffective } from "./model";
 import type { AuthPrincipal, AuthorizationDecision, AuthModAction, Scope } from "./model";
 import { isPersonRequiredAuthority } from "./authority";
 import { BEVERAGE_AUTHMOD_APP_ID } from "./beverage-admission";
+import { STUDIO_AUTHMOD_APP } from "./hospitality-studio-admission";
 import { LOGISTICS_VEHICLE_IDS, isLogisticsVehicleId } from "../../../shared/logistics-authority";
 export { LOGISTICS_VEHICLE_IDS, type LogisticsVehicleId } from "../../../shared/logistics-authority";
 
@@ -60,7 +61,7 @@ async function fullAccessScopeAllowed(context: AuthModEvaluationContext, scope: 
   return (await Promise.all(scope.ids.map(id => context.activeOploc(id)))).every(Boolean);
 }
 export async function resolveUserAccess(repository: AuthModRepository, input: { principal: AuthPrincipal; appId?: string; oplocId?: string; oplocIds?: string[] }, context = createAuthModEvaluationContext(repository, input.principal)): Promise<AuthorizationDecision> {
-  if (input.appId === BEVERAGE_AUTHMOD_APP_ID) return deny(input.principal, "app-disabled", { appId: input.appId });
+  if (input.appId === BEVERAGE_AUTHMOD_APP_ID || input.appId === STUDIO_AUTHMOD_APP) return deny(input.principal, "app-disabled", { appId: input.appId });
   try {
     const identity = await context.identity();
     const grants = await context.grants();
@@ -88,7 +89,7 @@ export async function resolveUserAccess(repository: AuthModRepository, input: { 
   } catch { return deny(input.principal, "store-unavailable"); }
 }
 export async function evaluateAuthority(repository: AuthModRepository, input: { principal: AuthPrincipal; appId: string; resource: string; action: AuthModAction; scope?: Scope }, context = createAuthModEvaluationContext(repository, input.principal)): Promise<AuthorizationDecision> {
-  if (input.appId === BEVERAGE_AUTHMOD_APP_ID) return deny(input.principal, "app-disabled", { appId: input.appId, action: input.action });
+  if (input.appId === BEVERAGE_AUTHMOD_APP_ID || input.appId === STUDIO_AUTHMOD_APP) return deny(input.principal, "app-disabled", { appId: input.appId, action: input.action });
   try {
     if (input.resource === "logistics.driver" && (input.principal.type !== "interactive" || input.appId !== "logistics" || input.action !== "Contribute" || input.scope?.kind !== "resource" || !input.scope.ids.length || !input.scope.ids.every(isLogisticsVehicleId))) return deny(input.principal, "authority-not-granted");
     if (input.resource === "logistics.vehicle" && (input.scope?.kind !== "resource" || !input.scope.ids.length || !input.scope.ids.every(isLogisticsVehicleId))) return deny(input.principal, "authority-not-granted");

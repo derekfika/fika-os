@@ -70,11 +70,25 @@ test('the preflight rejects execution, production and configurable targets befor
   }
 });
 
-test('App Hosting defaults to closed without staging or production environment overlays', () => {
+test('App Hosting defaults to closed with only the pinned read-only staging overlay', () => {
   const folder = new URL('../../apps/hospitality-menu-studio/', import.meta.url);
-  assert.deepEqual(readdirSync(folder).filter(name => /^apphosting.*\.ya?ml$/i.test(name)), ['apphosting.yaml']);
+  assert.deepEqual(readdirSync(folder).filter(name => /^apphosting.*\.ya?ml$/i.test(name)).sort(), ['apphosting.staging.yaml', 'apphosting.yaml']);
   const config = readFileSync(new URL('apphosting.yaml', folder), 'utf8').replace(/^#.*\r?\n/gm, '').replaceAll('\r\n', '\n').trim();
   assert.equal(config, 'env:\n  - variable: FIKA_RUNTIME_MODE\n    value: unconfigured\n    availability: [RUNTIME]');
+  const staging = readFileSync(new URL('apphosting.staging.yaml', folder), 'utf8').replaceAll('\r\n', '\n').trim();
+  const bindings = {
+    FIKA_RUNTIME_MODE: 'staging',
+    FIREBASE_PROJECT_ID: studioStaging.project,
+    FIKA_HUB_BASE_URL: 'https://staging-os.fikacatering.com',
+    FIKA_STUDIO_ORIGIN: studioStaging.origin,
+    FIKA_STUDIO_FIRESTORE_DATABASE: studioStaging.database,
+    FIKA_SESSION_COOKIE_DOMAIN: '.fikacatering.com',
+  };
+  assert.equal(staging, 'env:\n' + Object.entries(bindings).map(([key, value]) =>
+    `  - variable: ${key}\n    value: ${value}\n    availability: [RUNTIME]`).join('\n'));
+  const rules = JSON.parse(readFileSync(new URL('firebase.staging.json', folder), 'utf8'));
+  assert.deepEqual(rules, { firestore: [{ database: studioStaging.database, rules: 'firestore.rules' }] });
+  assert.match(readFileSync(new URL('firestore.rules', folder), 'utf8'), /allow read, write: if false;/);
 });
 
 test('preflight observes only scoped metadata and leaves release blocked even when consistent', async () => {
