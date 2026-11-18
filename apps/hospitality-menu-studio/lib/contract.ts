@@ -39,6 +39,12 @@ export type Menu = {
 };
 
 export type PublicationScope = { sectionId?: string; week?: number; dishId?: string };
+export type DraftVersion = {
+  version: number;
+  savedAt: string;
+  actorId: string;
+  restoredFromVersion?: number;
+};
 export type Publication = {
   id: string;
   menuId: string;

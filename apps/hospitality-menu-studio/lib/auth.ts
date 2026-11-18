@@ -24,7 +24,7 @@ export async function authoriseStudio(
   let response: Response;
   try {
     response = await requestHub(`${runtime.hub}/api/hospitality-rotations?mode=access`, {
-      headers: { cookie: `${runtime.name}=${encodeURIComponent(cookie)}`, accept: "application/json" },
+      headers: { cookie: studioSessionCookie(runtime, cookie), accept: "application/json" },
       cache: "no-store",
       redirect: "error",
       signal: AbortSignal.timeout(5000),
@@ -46,6 +46,10 @@ export async function authoriseStudio(
     canManage: runtime.writes && permissions.Manage,
     canPublish: runtime.writes && permissions.Publish,
   };
+}
+
+export function studioSessionCookie(runtime: ReturnType<typeof studioRuntime>, cookie: string) {
+  return `${runtime.name}=${encodeURIComponent(cookie)}`;
 }
 
 function forbidden() {
