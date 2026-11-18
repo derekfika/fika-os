@@ -67,6 +67,8 @@ For the RCoA Calendar catch-up only, `fika deploy hub --prod --config-only --sha
 
 Beverage staging is limited to an authenticated, no-write Stage A visual preview. Its separate `fika deploy beverage --staging` target uses the standard exact-main-source and verification gates; do not create a Beverage production target through this mapping. Functional Beverage persistence requires a separately verified staging authority and is not enabled by this preview configuration.
 
+Hospitality Menu Studio's proposed `fika-menu-studio-staging` backend is on hold pending isolation and Studio-specific AUTHMOD. Use `fika studio-preflight --staging` to inspect provisioning. Studio has no executable release target in either environment. [Studio staging preflight and operator gates](hospitality-menu-studio-staging.md)
+
 Logistics staging's unauthenticated root intentionally redirects to the staging Hub sign-in with `FIKA_SESSION_MISSING`; its build-info route is authentication-protected. The governed post-rollout probe accepts only an exact HTTP 307 to `https://staging-os.fikacatering.com/` carrying the `logistics` app ID, `FIKA_SESSION_MISSING`, and the exact backend root as `returnTo`. Firebase serving source, READY/SUCCEEDED rollout and 100% traffic remain independently verified. Other app probes and production Logistics probe behavior are unchanged.
 
 Automatic rollouts remain disabled. The CLI verifies target/provenance, submits an exact SHA, waits for READY/SUCCEEDED and 100% serving, and performs non-destructive HTTP smoke. Report app-specific acceptance separately. Migrations, real customer bookings, emails and operational test writes require separate authorisation.
