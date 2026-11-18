@@ -248,6 +248,15 @@ function useDraft<T extends Entity>(
         return;
       }
       if (!raw) return;
+      if (!retainedDraftMatchesRequest(raw, next)) {
+        current.current = next;
+        setItem(next);
+        setState("conflict");
+        setError(
+          "This retained copy changed on this device. Return home and select it again; both copies remain intact.",
+        );
+        return;
+      }
       recoveredFrom.current = { key, value: raw };
       current.current = next;
       setItem(next);
