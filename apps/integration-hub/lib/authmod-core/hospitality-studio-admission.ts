@@ -6,6 +6,12 @@ export const STUDIO_PREVIEW_RESOURCE = "hospitality-menu-studio.preview";
 export const STUDIO_PREVIEW_BUNDLE = "hospitality-menu-studio-preview";
 export const STUDIO_STAGING_ORIGIN = "https://menu-studio-staging.fikacatering.com";
 export const STUDIO_AUTH_HUB_ORIGIN = "https://staging-os.fikacatering.com";
+const STAGING_HUB_RUN_HOST = "fika-os-staging-594727519934.europe-west4.run.app";
+
+export function isStudioAuthHubRequestHost(host: string | null) {
+  // App Hosting forwards the custom domain to this exact managed Cloud Run service.
+  return host === new URL(STUDIO_AUTH_HUB_ORIGIN).host || host === STAGING_HUB_RUN_HOST;
+}
 const directAccessTypes = [undefined, "permanent", "temporary", "cover"];
 
 type StudioSession = { authmodIdentityId: string; firebaseUid: string; identityKind: "person" | "operational" };

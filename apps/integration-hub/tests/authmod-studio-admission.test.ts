@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { evaluateAuthority, resolveUserAccess } from "../lib/authmod-core/evaluator";
 import {
-  readStudioPreviewAccess, STUDIO_AUTHMOD_APP, STUDIO_PREVIEW_BUNDLE, STUDIO_PREVIEW_RESOURCE, STUDIO_STAGING_ORIGIN,
+  isStudioAuthHubRequestHost, readStudioPreviewAccess, STUDIO_AUTHMOD_APP, STUDIO_PREVIEW_BUNDLE, STUDIO_PREVIEW_RESOURCE, STUDIO_STAGING_ORIGIN,
 } from "../lib/authmod-core/hospitality-studio-admission";
 import { idempotentId, type AppAssignment, type ApplicationRegistryEntry, type AuthIdentity, type AuthorityGrant } from "../lib/authmod-core/model";
 import type { AuthModRepository } from "../lib/authmod-core/repository";
@@ -102,6 +102,13 @@ test("current authority store errors propagate, and generic AUTHMOD cannot admit
   assert.equal((await evaluateAuthority(repository, {
     principal, appId: STUDIO_AUTHMOD_APP, resource: STUDIO_PREVIEW_RESOURCE, action: "View",
   })).reasonCode, "app-disabled");
+});
+
+test("Hub Studio admission recognises exactly its custom host and managed staging transport", () => {
+  assert.equal(isStudioAuthHubRequestHost("staging-os.fikacatering.com"), true);
+  assert.equal(isStudioAuthHubRequestHost("fika-os-staging-594727519934.europe-west4.run.app"), true);
+  for (const host of [null, "os.fikacatering.com", "another-service-594727519934.europe-west4.run.app",
+    "fika-os-staging--fika-os-dev.europe-west4.hosted.app"]) assert.equal(isStudioAuthHubRequestHost(host), false);
 });
 
 test("Studio returns only from the staging Hub to the exact Studio root", () => {

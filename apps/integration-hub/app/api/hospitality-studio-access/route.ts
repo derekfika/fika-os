@@ -2,11 +2,11 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import { FirestoreAuthModRepository } from "@/lib/authmod-core";
-import { readStudioPreviewAccess, STUDIO_AUTH_HUB_ORIGIN } from "@/lib/authmod-core/hospitality-studio-admission";
+import { isStudioAuthHubRequestHost, readStudioPreviewAccess, STUDIO_AUTH_HUB_ORIGIN } from "@/lib/authmod-core/hospitality-studio-admission";
 import { assertRecentVerifiedFirebaseIdentity, cookieOptions, createFikaSessionCookie, requireBoundFikaSession, resolveSessionIdentity } from "@/lib/fika-session";
 import { auth, db } from "@/lib/firebase-admin";
 import { sessionCookieConfig } from "@/lib/runtime-config";
-import { assertSameOrigin, csrfCookieName, validCsrf } from "@/lib/csrf";
+import { csrfCookieName, validCsrf } from "@/lib/csrf";
 
 export const dynamic = "force-dynamic";
 const headers = { "Cache-Control": "private, no-store" };
@@ -19,7 +19,7 @@ function studioSession(request: NextRequest, action: string, run: () => Promise<
     try {
       const runtime = sessionCookieConfig();
       if (runtime.mode !== "staging" || runtime.projectId !== "fika-os-dev" || runtime.domain !== ".fikacatering.com") return problem(404);
-      if (request.headers.get("host") !== new URL(STUDIO_AUTH_HUB_ORIGIN).host) return problem(403);
+      if (!isStudioAuthHubRequestHost(request.headers.get("host"))) return problem(403);
       return await run();
     } catch (error) {
       const status = (error as { status?: number }).status;
@@ -48,8 +48,10 @@ export function GET(request: NextRequest) {
 
 export function POST(request: NextRequest) {
   return studioSession(request, "integration-hub.hospitality-studio-access.sign-in", async () => {
-    if (request.headers.get("origin") !== STUDIO_AUTH_HUB_ORIGIN) return problem(403);
-    assertSameOrigin(request);
+    // Browser origin and the CSRF token are independent of the upstream Host rewrite.
+    if (request.headers.get("origin") !== STUDIO_AUTH_HUB_ORIGIN || request.headers.get("sec-fetch-site") === "cross-site") {
+      return problem(403);
+    }
     const body = exchange.safeParse(await request.json().catch(() => null));
     if (!body.success || !validCsrf(request.cookies.get(csrfCookieName())?.value, body.data.csrfToken)) return problem(403);
     const { idToken } = body.data;

@@ -95,8 +95,11 @@ export function requireSameOrigin(request: Request, runtime = studioRuntime()) {
   }
 }
 
+const STAGING_STUDIO_RUN_HOST = "fika-menu-studio-staging-594727519934.europe-west4.run.app";
+
 export function assertStudioRequestHost(runtime: ReturnType<typeof studioRuntime>, host: string | null) {
-  if (runtime.mode === "staging" && host !== new URL(runtime.origin).host) {
+  // The managed proxy rewrites Host. Browser changes still require the exact configured origin.
+  if (runtime.mode === "staging" && host !== new URL(runtime.origin).host && host !== STAGING_STUDIO_RUN_HOST) {
     throw new StudioProblem(403, "STUDIO_ORIGIN_DENIED", "Open the Studio preview on its staging domain.");
   }
   if (runtime.fixture && !isLoopbackHost(host)) {
