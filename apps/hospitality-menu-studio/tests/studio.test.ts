@@ -130,6 +130,13 @@ test("staging rejects alternate request hosts and sends sign-in to the pinned Hu
   const runtime = studioRuntime(staging);
   const host = "menu-studio-staging.fikacatering.com";
   assert.doesNotThrow(() => assertStudioRequestHost(runtime, host));
+  const transport = "fika-menu-studio-staging-594727519934.europe-west4.run.app";
+  assert.doesNotThrow(() => assertStudioRequestHost(runtime, transport));
+  const request = (origin: string) => new Request("https://" + host + "/api/studio", {
+    method: "POST", headers: { host: transport, origin },
+  });
+  assert.doesNotThrow(() => requireSameOrigin(request("https://" + host), runtime));
+  assert.throws(() => requireSameOrigin(request("https://os.fikacatering.com"), runtime), { code: "STUDIO_ORIGIN_DENIED" });
   for (const outside of [null, "fika-menu-studio-staging--fika-os-dev.europe-west4.hosted.app", "os.fikacatering.com"]) {
     assert.throws(() => assertStudioRequestHost(runtime, outside), { code: "STUDIO_ORIGIN_DENIED" });
   }
