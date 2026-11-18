@@ -7,7 +7,7 @@ Studio's first staging slice is a read-only preview with its own AUTHMOD admissi
 | Governed app key | `menu-studio` |
 | Firebase project and App Hosting region | `fika-os-dev` / `europe-west4` |
 | App Hosting backend, environment and root | `fika-menu-studio-staging` / `staging` / `apps/hospitality-menu-studio` |
-| Source | `derekfika/fika-os` through the staging project GitHub connection |
+| Source | `derekfika/fika-os`, branch `main`, through the staging project GitHub connection |
 | Runtime service account | `fika-menu-studio-staging@fika-os-dev.iam.gserviceaccount.com` |
 | Studio Firestore | Named database `hospitality-menu-studio` in `fika-os-dev` |
 | Browser origin and authority | `https://menu-studio-staging.fikacatering.com/` and `https://staging-os.fikacatering.com/` |
@@ -22,9 +22,9 @@ From the checkout containing this runbook, use the existing authorised local Goo
 npm run fika -- studio-preflight --staging
 ```
 
-The command inspects the exact staging App Hosting backend, any environment overrides, the automatic rollout and traffic settings, the custom-domain linkage, the dedicated service account and the named database metadata. It prints only the proposed target, evidence statuses and open gates. `MISSING` means the App Hosting API returned a 404. `MISMATCH` indicates observed conflicting settings. `UNVERIFIED` covers unreadable, unavailable or unconfirmed evidence. The overall result remains `BLOCKED` with a nonzero exit even when every resource is present, until reviewed release enablement. The command reads metadata only and requires no hosted identity, live app session, document read, deployment or cloud mutation.
+The command inspects the exact staging App Hosting backend, any environment overrides, the configured branch, automatic rollout and traffic settings, the custom-domain linkage, the dedicated service account and the named database metadata. It prints only the proposed target, evidence statuses and open gates. `MISSING` means the cloud service explicitly reported that the resource does not exist. `MISMATCH` indicates observed conflicting settings. `UNVERIFIED` covers unreadable, unavailable or unconfirmed evidence. The overall result remains `BLOCKED` with a nonzero exit even when every resource is present, until reviewed release enablement. The command reads metadata only and requires no hosted identity, live app session, document read, deployment or cloud mutation.
 
-On 18 November 2026, read-only Firebase backend inventories showed no Studio target in staging or production. The proposed service account returned `NOT_FOUND`, the staging Firestore inventory showed only `(default)`, and the proposed hostname yielded no A record in the local lookup. There is no Studio serving SHA to verify. The AUTHMOD round trip and operational UAT are blocked.
+On 18 November 2026, read-only Firebase metadata showed the staging backend linked to the expected repository and root on `main`, with automatic rollouts disabled and no current or target traffic. Its environment name was unset and it used the default App Hosting compute identity. The proposed dedicated service account and named database returned `NOT_FOUND`. The custom domain was registered in App Hosting, with ownership missing, the host unhosted and the certificate validating. There is no Studio serving SHA to verify. The AUTHMOD round trip and operational UAT are blocked.
 
 ## Provisioning and verification gates
 

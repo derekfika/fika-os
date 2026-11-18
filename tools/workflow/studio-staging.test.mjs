@@ -26,7 +26,7 @@ function evidence() {
         repository: 'projects/fika-os-dev/locations/europe-west4/connections/apphosting-test/gitRepositoryLinks/derekfika-fika-os',
       },
     },
-    [traffic]: { name: traffic, rolloutPolicy: { disabled: true }, current: { splits: [] } },
+    [traffic]: { name: traffic, rolloutPolicy: { disabled: true, codebaseBranch: 'main' }, current: { splits: [] } },
     [domain]: { name: domain, customDomainStatus: {
       ownershipState: 'OWNERSHIP_ACTIVE', hostState: 'HOST_ACTIVE', certState: 'CERT_ACTIVE',
     } },
@@ -83,6 +83,7 @@ test('preflight observes only scoped metadata and leaves release blocked even wh
   assert.deepEqual(fixture.cloudReads, [backend, traffic, domain]);
   assert.deepEqual(fixture.descriptions, [toolAccount, toolDatabase]);
   assert.equal(result.target.rootDirectory, 'apps/hospitality-menu-studio');
+  assert.equal(result.target.sourceBranch, 'main');
   assert.deepEqual(result.checks, {
     appHosting: 'VERIFIED', serviceAccount: 'VERIFIED', firestore: 'VERIFIED', rolloutPolicy: 'VERIFIED', customDomain: 'VERIFIED',
   });
@@ -110,10 +111,10 @@ test('mismatched identity, active traffic, overrides and unfinished domain certi
 
 test('foreign backend skips associated reads and errors yield missing or unverified evidence', async () => {
   const fixture = evidence();
-  fixture.resources[backend].codebase.repository = 'projects/fika-os/locations/europe-west4/connections/test/gitRepositoryLinks/derekfika-fika-os';
+  fixture.resources[backend].name = 'projects/fika-os/locations/europe-west4/backends/unrelated';
   const foreign = await studioStagingPreflight(fixture);
   assert.deepEqual(fixture.cloudReads, [backend]);
-  assert.equal(foreign.checks.appHosting, 'UNVERIFIED');
+  assert.equal(foreign.checks.appHosting, 'MISMATCH');
 
   const missing = await studioStagingPreflight({
     read: async resource => {
@@ -126,4 +127,21 @@ test('foreign backend skips associated reads and errors yield missing or unverif
     appHosting: 'MISSING', serviceAccount: 'UNVERIFIED', firestore: 'UNVERIFIED', rolloutPolicy: 'UNVERIFIED', customDomain: 'UNVERIFIED',
   });
   assert.equal(missing.status, 'BLOCKED');
+});
+
+test('a partially provisioned target reports its independent evidence and wrong branch', async () => {
+  const fixture = evidence();
+  delete fixture.resources[backend].environment;
+  fixture.resources[backend].serviceAccount = 'default-compute@fika-os-dev.iam.gserviceaccount.com';
+  const describeResource = async args => {
+    const operation = args[0] === 'iam' ? 'iam.service-accounts' : 'firestore.databases';
+    throw Object.assign(Error('describe failed'), { stderr: `ERROR: (gcloud.${operation}.describe) NOT_FOUND: Fixture` });
+  };
+  const result = await studioStagingPreflight({ ...fixture, describeResource });
+  assert.deepEqual(fixture.cloudReads, [backend, traffic, domain]);
+  assert.deepEqual(result.checks, {
+    appHosting: 'MISMATCH', serviceAccount: 'MISSING', firestore: 'MISSING', rolloutPolicy: 'VERIFIED', customDomain: 'VERIFIED',
+  });
+  fixture.resources[traffic].rolloutPolicy.codebaseBranch = 'other-branch';
+  assert.equal((await studioStagingPreflight({ ...fixture, describeResource })).checks.rolloutPolicy, 'MISMATCH');
 });
