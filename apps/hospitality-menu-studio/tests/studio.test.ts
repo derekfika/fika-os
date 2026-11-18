@@ -56,6 +56,16 @@ test("draft preview selects by event date and excludes kitchen and assortment ev
   });
 });
 
+test("a rotating draft needs a valid Monday anchor for preview; all-season drafts do not", () => {
+  for (const anchorMonday of ["", "2026-12-01"]) {
+    assert.throws(() => draftCustomerChoices({ ...menu, anchorMonday }, [dish], "2026-12-01"), {
+      code: "ROTATION_ANCHOR_REQUIRED",
+    });
+  }
+  const allSeason = { ...menu, anchorMonday: "", sections: menu.sections.slice(0, 1) };
+  assert.equal(draftCustomerChoices(allSeason, [dish], "2026-12-01")[0].dishes.length, 1);
+});
+
 test("kitchen totals distinguish box count, pieces per box and component totals", () => {
   const result = kitchenQuantities(dish, 4);
   assert.equal(result.perBox, 24);
