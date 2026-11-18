@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { assertLocalPreviewHost, authoriseStudio, requireSameOrigin, studioSessionCookie } from "../../../lib/auth";
 import { catalogueUnavailable, readStudioCatalogue } from "../../../lib/catalogue";
 import { studioHandlers } from "../../../lib/http";
-import { studioRuntime } from "../../../lib/runtime";
+import { localStudioCheckerOrigin, studioRuntime } from "../../../lib/runtime";
 import { studioStore } from "../../../lib/store";
 
 export const runtime = "nodejs";
@@ -20,7 +20,7 @@ const handlers = studioHandlers(async request => {
 }, () => {
   const config = studioRuntime();
   return config.mode === "local" && config.projectId === "demo-fika-os" && !config.fixture;
-});
+}, localStudioCheckerOrigin);
 
 export const GET = handlers.GET;
 export const POST = handlers.POST;

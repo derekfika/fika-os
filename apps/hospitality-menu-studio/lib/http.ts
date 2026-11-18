@@ -31,6 +31,7 @@ export function studioHandlers(
   assertOrigin: (request: Request) => void,
   readCatalogue?: (request: Request) => Promise<CatalogueLoadResult>,
   safetyAvailable: () => boolean = () => false,
+  checkerOrigin: () => string | undefined = () => undefined,
 ) {
   const respond = async (operation: () => Promise<unknown>) => {
     try {
@@ -132,7 +133,9 @@ export function studioHandlers(
       if (command.action === "submit-dish-review") {
         if (!safetyAvailable()) throw blocked("The CPU allergen checker connection is unavailable.");
         const subject = await store().requestDishReview(command.dishId, command.version, actor.id);
-        return { subject, checkerPath: `/allergens/studio/${encodeURIComponent(subject.dishId)}/${subject.revision}` };
+        const checkerPath = `/allergens/studio/${encodeURIComponent(subject.dishId)}/${subject.revision}`;
+        const origin = checkerOrigin();
+        return { subject, checkerPath, ...(origin ? { checkerUrl: new URL(checkerPath, origin).toString() } : {}) };
       }
       if (command.action === "restore-menu") throw blocked("Published revision restoration is unavailable.");
       if (command.action === "restore-draft") {
