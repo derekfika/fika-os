@@ -68,3 +68,35 @@ export function planningTarget(name: string): string | null {
   if (["bowl food", "finger food", "canapés", "canapes"].includes(key)) return "5 meat, 5 fish and 5 combined veggie / vegan";
   return null;
 }
+
+
+export type DishReviewStatus = "unverified" | "in_review" | "verified" | "revoked" | "unavailable";
+export function dishReviewStatus(value: unknown): DishReviewStatus {
+  if (typeof value !== "object" || value === null || !("status" in value)) return "unavailable";
+  const status = value.status;
+  return status === "unverified" || status === "in_review" || status === "verified" || status === "revoked" ? status : "unavailable";
+}
+
+/** Accept only the exact server-returned local CPU handoff for this saved revision. */
+export function checkerHandoff(value: unknown, id: string, version: number): { acknowledged: boolean; url?: string } {
+  if (typeof value !== "object" || value === null) return { acknowledged: false };
+  const result = value as { subject?: { dishId?: unknown; revision?: unknown; sourceHash?: unknown }; checkerPath?: unknown; checkerUrl?: unknown };
+  const path = `/allergens/studio/${encodeURIComponent(id)}/${version}`;
+  if (result.subject?.dishId !== id || result.subject?.revision !== version || typeof result.subject?.sourceHash !== "string" || !/^[a-f0-9]{64}$/.test(result.subject.sourceHash) || result.checkerPath !== path) return { acknowledged: false };
+  if (typeof result.checkerUrl !== "string") return { acknowledged: true };
+  try {
+    const url = new URL(result.checkerUrl);
+    if (url.protocol === "http:" && (url.hostname === "localhost" || url.hostname === "127.0.0.1") && url.port && !url.username && !url.password && url.pathname === path && !url.search && !url.hash) return { acknowledged: true, url: url.href };
+  } catch { /* No link is safer than an invalid destination. */ }
+  return { acknowledged: true };
+}
+
+/** Invalidates pending results when the saved subject or request changes. */
+export class ReviewResponseGuard {
+  private key = "";
+  private generation = 0;
+  select(key: string) { if (this.key !== key) { this.key = key; this.generation++; } }
+  start() { return ++this.generation; }
+  invalidate() { this.generation++; }
+  matches(key: string, generation: number) { return this.key === key && this.generation === generation; }
+}

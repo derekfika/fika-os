@@ -14,6 +14,10 @@ import { kitchenQuantities } from "../lib/review";
 import styles from "./studio.module.css";
 import {
   assortmentTotal,
+  checkerHandoff,
+  dishReviewStatus,
+  ReviewResponseGuard,
+  type DishReviewStatus,
   localDraftKey as localKey,
   groupSelectedDishes,
   moveGroupedDish,
@@ -340,6 +344,64 @@ function SaveNotice({
       {state === "error" && <Button onClick={retry}>Retry save</Button>}
     </div>
   );
+}
+
+function DishSafetyReview({ dish, saved, canManage }: { dish: Dish; saved: boolean; canManage: boolean }) {
+  const key = saved && dish.version > 0 ? `${dish.id}:${dish.version}` : "";
+  const current = useRef(new ReviewResponseGuard());
+  current.current.select(key);
+  const busyRef = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
+  const [result, setResult] = useState<{ key: string; status?: DishReviewStatus; message?: string; url?: string }>({ key: "" });
+  useEffect(() => {
+    setConfirmed(false);
+    setResult({ key: "" });
+    return () => { current.current.invalidate(); };
+  }, [key]);
+  const shown = result.key === key ? result : null;
+  async function check() {
+    if (!key || busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    const generation = current.current.start();
+    try {
+      const response = await request(undefined, `?dishId=${encodeURIComponent(dish.id)}&reviewVersion=${dish.version}`);
+      if (current.current.matches(key, generation)) setResult((previous) => ({ key, status: dishReviewStatus(response), url: previous.key === key ? previous.url : undefined }));
+    } catch {
+      if (current.current.matches(key, generation)) setResult({ key, status: "unavailable", message: "Status could not be checked. Reload the saved dish if it changed elsewhere, then try again." });
+    } finally { busyRef.current = false; setBusy(false); }
+  }
+  async function submit() {
+    if (!key || !confirmed || !canManage || busyRef.current || !shown?.status || shown.status === "unavailable") return;
+    busyRef.current = true;
+    setBusy(true);
+    const generation = current.current.start();
+    try {
+      const response = await request({ action: "submit-dish-review", dishId: dish.id, version: dish.version, confirmed: true });
+      if (!current.current.matches(key, generation)) return;
+      const handoff = checkerHandoff(response, dish.id, dish.version);
+      if (!handoff.acknowledged) throw new Error("Invalid checker handoff");
+      setConfirmed(false);
+      setResult({ key, message: "Review request acknowledged for this saved version. Check status for current evidence.", url: handoff.url });
+    } catch {
+      if (current.current.matches(key, generation)) setResult({ key, status: "unavailable", message: "Review could not be requested. The checker may be unavailable or this dish may have changed; reload and try again." });
+    } finally { busyRef.current = false; setBusy(false); }
+  }
+  const labels: Record<DishReviewStatus, string> = { unverified: "Unverified", in_review: "In review", verified: "Verified", revoked: "Revoked", unavailable: "Unavailable" };
+  return <section className="fika-card">
+    <h2>Food-safety review</h2>
+    <p>Review and signing use the existing FIKA allergen checker. The last checked status applies only to the saved dish version and may change; check again for current evidence.</p>
+    {!key ? <p>Save the current changes before checking or requesting review.</p> : <>
+      <Button disabled={busy} onClick={() => void check()}>{busy ? "Working…" : "Check review status"}</Button>
+      <div role="status" aria-live="polite">{shown?.status && <p>Last checked status: {labels[shown.status]} · Version {dish.version}</p>}{shown?.message && <p>{shown.message}</p>}</div>
+      {shown?.url && <p><a href={shown.url}>Open the existing allergen checker</a></p>}
+      {shown?.status && shown.status !== "unavailable" && canManage && <>
+        <label className="fika-choice"><input type="checkbox" checked={confirmed} disabled={busy} onChange={(e) => setConfirmed(e.target.checked)} /> I confirm requesting review of saved version {dish.version}.</label>
+        <Button disabled={busy || !confirmed} onClick={() => void submit()}>Request food-safety review</Button>
+      </>}
+    </>}
+  </section>;
 }
 
 export default function Studio({ actor }: { actor: StudioActor }) {
@@ -1626,11 +1688,8 @@ export default function Studio({ actor }: { actor: StudioActor }) {
                         </span>
                       </label>
                     </div>
-                    <p className="fika-notice">
-                      Food-safety verification is unavailable here. Review and
-                      signing use the existing FIKA allergen process.
-                    </p>
                   </section>
+                  <DishSafetyReview dish={dish} saved={dishDraft.state === "saved"} canManage={actor.canManage} />
                   <section className="fika-card">
                     <div className={styles.heading}>
                       <div>
