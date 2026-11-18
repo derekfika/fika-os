@@ -45,6 +45,9 @@ html[data-fika-runtime="staging"] .staging-print-warning{display:block;margin:0 
 .collection .category{font-weight:700}
 .collection .quantity{width:21%;text-align:right;font-variant-numeric:tabular-nums}
 .collection .stripe{background:var(--fika-surface-subtle,transparent)}
+.collection .studio-kitchen-spec td,.collection .studio-kitchen-spec-component td{background:var(--fika-surface-subtle,transparent)}
+.studio-kitchen-spec p{margin:1mm 0 0}
+.studio-kitchen-description{white-space:pre-wrap}
 .collection .core-salad{background:var(--fika-status-success-surface,transparent)}
 .core-salad-label{display:inline-block;margin-left:1mm;padding:0 1mm;border:.6pt solid currentColor;border-radius:1mm;color:var(--fika-status-success,currentColor);font-size:7.5pt;font-weight:700;white-space:nowrap}
 .box{display:block;width:6mm;height:6mm;border:1pt solid currentColor;border-radius:.35mm;margin:auto}

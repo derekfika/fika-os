@@ -1,4 +1,5 @@
-import type { ProductionOrder } from "../../lib/production-types";
+import type { ProductionLine, ProductionOrder } from "../../lib/production-types";
+import { studioAssortmentQuantities, studioKitchenSpecError, studioKitchenSpecForLine } from "../../lib/studio-kitchen-spec";
 import {
   collectionDetails,
   collectionServiceDate,
@@ -39,13 +40,28 @@ const londonPrintTimestamp = (date: Date) => new Intl.DateTimeFormat("en-GB", {
   timeZone: "Europe/London", dateStyle: "medium", timeStyle: "short",
 }).format(date);
 
+function printStudioKitchenSpec(order: ProductionOrder, line: ProductionLine) {
+  const spec = studioKitchenSpecForLine(order, line);
+  if (spec === null) throw Error(`${studioKitchenSpecError} Order ${collectionDetails(order).reference}. Nothing was printed.`);
+  if (!spec) return "";
+  return spec.selections.map(selection => {
+    const name = escape(selection.name);
+    const quantities = selection.assortment && studioAssortmentQuantities(selection.assortment);
+    const summary = quantities ? `<p class="studio-kitchen-total">${escape(quantities.summary)}</p>` : "";
+    const components = quantities ? quantities.components.map(({ label }) =>
+      `<tr class="studio-kitchen-spec-component"><td colspan="4">${name} · ${escape(label)}</td></tr>`,
+    ).join("") : "";
+    return `<tr class="studio-kitchen-spec"><td colspan="4"><strong>Kitchen specification · ${name}</strong><p class="studio-kitchen-description">${escape(selection.kitchenDescription)}</p>${summary}</td></tr>${components}`;
+  }).join("");
+}
+
 function printLineRows(order: ProductionOrder) {
   return runSheetMenuSections(order).flatMap(section => [
     `<tr class="menu-section-row"><th colspan="4">${escape(section.label)}</th></tr>`,
     ...section.lines.map(({ line, slotLabel }, index) => {
       const core = isCoreSaladLine(line);
       const style = core ? "core-salad" : index % 2 ? "stripe" : "";
-      return `<tr data-line-id="${escape(line.canonicalId)}" class="${style}"><td class="check"><i class="box"></i></td><td class="category">${escape(slotLabel || "—")}</td><td class="dish">${escape(line.itemName)}${core ? ' <small class="core-salad-label" aria-label="Core Salad">CORE</small>' : ""}</td><td class="quantity"><strong>${escape(collectionQuantity(line))}</strong></td></tr>`;
+      return `<tr data-line-id="${escape(line.canonicalId)}" class="${style}"><td class="check"><i class="box"></i></td><td class="category">${escape(slotLabel || "—")}</td><td class="dish">${escape(line.itemName)}${core ? ' <small class="core-salad-label" aria-label="Core Salad">CORE</small>' : ""}</td><td class="quantity"><strong>${escape(collectionQuantity(line))}</strong></td></tr>${printStudioKitchenSpec(order, line)}`;
     }),
   ]).join("");
 }
@@ -239,7 +255,8 @@ export function paginateDayProduction(doc: Document = document) {
           next.querySelector("header")!.append(label);
           return next;
         };
-        for (const line of lines) {
+        for (let index = 0; index < lines.length; index++) {
+          const line = lines[index];
           if (line.classList.contains("menu-section-row")) {
             section = line;
             continue;
@@ -253,15 +270,40 @@ export function paginateDayProduction(doc: Document = document) {
           if (measured(part, width) > height - 0.5) {
             body.lastElementChild!.remove();
             if (addHeading) body.lastElementChild!.remove();
-            if (!body.children.length)
-              throw Error("A dish description is too large for readable A4 output. Review it before printing.");
-            segments.push(part);
-            part = start();
-            body = part.querySelector("tbody")!;
+            if (body.children.length) {
+              segments.push(part);
+              part = start();
+              body = part.querySelector("tbody")!;
+            }
             if (section) body.append(section.cloneNode(true));
-            body.append(line.cloneNode(true));
-            if (measured(part, width) > height - 0.5)
-              throw Error("A dish description is too large for readable A4 output.");
+            const row = line.cloneNode(true) as HTMLElement;
+            body.append(row);
+            if (measured(part, width) > height - 0.5) {
+              const description = row.querySelector(".studio-kitchen-description");
+              const characters = Array.from(description?.textContent || "");
+              if (!description || !characters.length)
+                throw Error("A dish description is too large for readable A4 output.");
+              // Split only the kitchen description, using its rendered height to preserve every character.
+              let first = 1, last = characters.length, fit = 0;
+              while (first <= last) {
+                const middle = Math.floor((first + last) / 2);
+                description.textContent = characters.slice(0, middle).join("");
+                if (measured(part, width) <= height - 0.5) {
+                  fit = middle;
+                  first = middle + 1;
+                } else last = middle - 1;
+              }
+              if (!fit) throw Error("A kitchen description is too large for readable A4 output.");
+              description.textContent = characters.slice(0, fit).join("");
+              if (fit < characters.length) {
+                const continuation = line.cloneNode(true) as HTMLElement;
+                continuation.querySelector(".studio-kitchen-total")?.remove();
+                continuation.querySelector(".studio-kitchen-description")!.textContent = characters.slice(fit).join("");
+                lines.splice(index + 1, 0, continuation);
+                segments.push(part);
+                part = undefined;
+              }
+            }
           }
         }
         if (part) segments.push(part);
