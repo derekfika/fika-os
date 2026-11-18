@@ -1848,6 +1848,12 @@ export default function Studio({ actor }: { actor: StudioActor }) {
                             Booking rules and final availability remain governed
                             by Hub.
                           </p>
+                          {sitePreview.items.length === 0 && (
+                            <p>
+                              No parent offerings were returned for this site
+                              and date.
+                            </p>
+                          )}
                           {sitePreview.items.map((s) => (
                             <div key={s.id}>
                               <h3>{s.name}</h3>
