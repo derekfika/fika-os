@@ -145,7 +145,10 @@ test("content publication freezes current menu, dish and signed evidence with an
     assert.equal(amendmentResponse.status, 200);
     const second = (await amendmentResponse.json()).publication;
     assert.equal(second.revision, 2);
-    assert.equal(JSON.parse((await head.collection("publicationPackages").doc(second.id).get()).data()!.body).previousPublicationId, first.id);
+    const secondPayload = JSON.parse((await head.collection("publicationPackages").doc(second.id).get()).data()!.body);
+    assert.equal(secondPayload.previousPublicationId, first.id);
+    const alternateWholePackage = canonicalJson({ ...secondPayload, scope: {} });
+    assert.equal(decodeLocalPublicationPackage(alternateWholePackage, { ...second, contentHash: publicationHash(alternateWholePackage) }), undefined);
 
     const revisedDish = await store.save("dishes", actor.id, { ...firstDish, kitchenDescription: "Revised packing instructions." });
     assert.equal((await readReview(amendment)).safety.status, "unverified");

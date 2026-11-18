@@ -129,7 +129,8 @@ export function decodeLocalPublicationPackage(body: string, publication: Publica
   if (payload.publicationId !== publication.id || payload.publicationRevision !== publication.revision
     || payload.publicationId !== publicationIdFor(payload.menu.id, payload.publicationRevision)
     || payload.previousPublicationId !== (payload.publicationRevision === 1 ? null : publicationIdFor(payload.menu.id, payload.publicationRevision - 1))
-    || canonicalJson(payload.scope || {}) !== canonicalJson(publication.scope) || (payload.scope && payload.publicationRevision === 1)
+    || canonicalJson(payload.scope || {}) !== canonicalJson(publication.scope)
+    || (payload.scope && (!hasPublicationScope(payload.scope) || payload.publicationRevision === 1))
     || payload.effectiveDate !== publication.effectiveDate || payload.menu.id !== publication.menuId || payload.menu.name !== publication.menuName
     || payload.sourceDraftVersion !== publication.sourceDraftVersion || payload.menu.version !== payload.sourceDraftVersion) return undefined;
   const dishIds = menuDishIds(payload.menu);
