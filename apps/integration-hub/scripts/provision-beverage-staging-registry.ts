@@ -3,6 +3,8 @@ import { getFikaRuntimeConfig } from "../lib/runtime-config";
 
 async function main() {
   const args = process.argv.slice(2);
+  const studio = args[0] === "--studio";
+  if (studio) args.shift();
   const execute = args.length === 1 && args[0] === "--execute";
   const env = process.env;
   const runtime = getFikaRuntimeConfig(env);
@@ -27,16 +29,17 @@ async function main() {
   if (typeof google?.email !== "string" || !google.email.trim() || google.email_verified !== true ||
       typeof google.sub !== "string" || !google.sub) throw new Error("Google did not return a verified person.");
   const { auth } = await import("../lib/firebase-admin");
-  const { resolveBeverageRegistryOperator, provisionBeverageStagingRegistry, publishBeverageRegistryReferences } =
+  const { resolveBeverageRegistryOperator, provisionBeverageStagingRegistry, provisionStudioStagingRegistry, publishStagingRegistryReferences } =
     await import("../lib/beverage-staging-registry");
   const operator = resolveBeverageRegistryOperator(google, await auth.getUserByEmail(google.email));
-  const result = await provisionBeverageStagingRegistry(operator, execute);
+  const provision = studio ? provisionStudioStagingRegistry : provisionBeverageStagingRegistry;
+  const result = await provision(operator, execute);
   if (!execute || result.status === "planned") {
     console.log(JSON.stringify({ project: runtime.projectId, mode: "plan", ...result }));
     return;
   }
   try {
-    await publishBeverageRegistryReferences(result.application);
+    await publishStagingRegistryReferences(result.application);
   } catch {
     console.error(JSON.stringify({ project: runtime.projectId, status: result.status, auditId: result.auditId, references: "unverified" }));
     process.exitCode = 1;
@@ -46,6 +49,6 @@ async function main() {
 }
 
 main().catch(() => {
-  console.error("Beverage registry command failed. Check the staging target, verified operator authority and existing registry or audit.");
+  console.error("Staging registry command failed. Check the staging target, verified operator authority and existing registry or audit.");
   process.exitCode = 1;
 });

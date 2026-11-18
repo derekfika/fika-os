@@ -13,6 +13,7 @@ import { assertChangelogs, assertChangelogContent } from './changelog.mjs';
 import { governedReleaseOperation } from './workspace-state.mjs';
 import { recoverValidationOperation, recoverDevOperation, recoverDeployOperation } from './workspace-admin.mjs';
 import { installWorkspaceFences } from './workspace-fencing.mjs';
+import { studioStagingPreflight } from './studio-staging.mjs';
 
 export function parse(args) {
   const positional = []; const options = {};
@@ -98,6 +99,10 @@ async function main() {
   } else if (verb === 'dev') {
     if (!Object.hasOwn(APPS, arg)) throw Error('Select a supported app');
     result = devSourceWorkspace(options.workspace, APPS[arg], options.port);
+  } else if (verb === 'studio-preflight') {
+    if (arg !== undefined || !options.staging || Object.keys(options).length !== 1) throw Error('Use only fika studio-preflight --staging');
+    result = await studioStagingPreflight();
+    if (result.status === 'BLOCKED') process.exitCode = 2;
   } else if (verb === 'cleanup') {
     if (options.execute) result = applyCleanup(jsonFile(options.file), options['approve-hash']);
     else { git('fetch', 'origin'); result = cleanupPlan(); if (options.output) save(options.output, result); }
@@ -155,6 +160,7 @@ async function main() {
       'fika affected --base origin/main',
       'fika validate --base origin/main',
       'fika integrate --workspace <task> --pr <number>',
+      'fika studio-preflight --staging',
       'fika deploy cpu --staging [--sha <merged SHA>] [--execute]',
       'fika deploy cpu --prod [--sha <merged SHA>] [--execute] [--reason <note>]',
       'fika deploy hub --prod --config-only --sha <current serving SHA> --config-value <SHA-256> [--execute --approve-hash <plan hash>]',
