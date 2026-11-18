@@ -12,6 +12,7 @@ import {
 } from "../lib/contract";
 import { kitchenQuantities } from "../lib/review";
 import styles from "./studio.module.css";
+import PublishedKitchenPreview from "./published-kitchen-preview";
 import {
   assortmentTotal,
   checkerHandoff,
@@ -429,6 +430,9 @@ export default function Studio({ actor }: { actor: StudioActor }) {
   const [actionError, setActionError] = useState("");
   const [actionBusy, setActionBusy] = useState(false);
   const [history, setHistory] = useState<Publication[]>([]);
+  const [historyCursor, setHistoryCursor] = useState<string | null>(null);
+  const [historyMenu, setHistoryMenu] = useState("");
+  const historyGuard = useRef(new ReviewResponseGuard());
   const [boxCount, setBoxCount] = useState(1);
   const [draftVersions, setDraftVersions] = useState<
     {
@@ -520,6 +524,7 @@ export default function Studio({ actor }: { actor: StudioActor }) {
   }, [actor.id, page]);
   const menu = menuDraft.item;
   const dish = dishDraft.item;
+  historyGuard.current.select(menu?.id || "");
   let kitchen: ReturnType<typeof kitchenQuantities> | null = null;
   if (dish?.assortment) {
     try {
@@ -550,6 +555,9 @@ export default function Studio({ actor }: { actor: StudioActor }) {
   }, [menu, eventDate, siteId]);
   useEffect(() => {
     setHistory([]);
+    setHistoryCursor(null);
+    setHistoryMenu("");
+    setActionBusy(false);
     setDraftVersions([]);
     setDraftVersion("");
     setCompareFrom("");
@@ -722,20 +730,28 @@ export default function Studio({ actor }: { actor: StudioActor }) {
       setActionBusy(false);
     }
   }
-  async function loadHistory() {
+  async function loadHistory(cursor?: string) {
     if (!menu) return;
+    const menuId = menu.id;
+    const generation = historyGuard.current.start();
     setActionBusy(true);
     setActionError("");
     try {
-      const result = await request(
-        undefined,
-        `?list=history&menuId=${encodeURIComponent(menu.id)}`,
-      );
-      setHistory(result.items);
+      const query = new URLSearchParams({ list: "history", menuId });
+      if (cursor) query.set("cursor", cursor);
+      const result = await request(undefined, `?${query}`);
+      if (!Array.isArray(result.items) || !(result.nextCursor === null || typeof result.nextCursor === "string")) throw new Error("Published history is unavailable.");
+      if (!historyGuard.current.matches(menuId, generation)) return;
+      setHistory((current) => cursor ? [...current, ...result.items] : result.items);
+      setHistoryCursor(result.nextCursor);
+      setHistoryMenu(menuId);
     } catch (cause) {
-      setActionError((cause as Error).message);
+      if (historyGuard.current.matches(menuId, generation)) {
+        if (!cursor) { setHistory([]); setHistoryCursor(null); setHistoryMenu(""); }
+        setActionError((cause as Error).message);
+      }
     } finally {
-      setActionBusy(false);
+      if (historyGuard.current.matches(menuId, generation)) setActionBusy(false);
     }
   }
   async function loadDraftVersions() {
@@ -2318,7 +2334,7 @@ export default function Studio({ actor }: { actor: StudioActor }) {
                       >
                         Load published history
                       </Button>
-                      {history.map((p) => (
+                      {historyMenu === menu.id && history.map((p) => (
                         <div className={styles.row} key={p.id}>
                           <span>
                             Revision {p.revision} · Effective {p.effectiveDate}{" "}
@@ -2349,6 +2365,9 @@ export default function Studio({ actor }: { actor: StudioActor }) {
                           </Button>
                         </div>
                       ))}
+                      {historyMenu === menu.id && history.length === 0 && <p>No published versions are recorded for this menu.</p>}
+                      {historyMenu === menu.id && historyCursor && <Button disabled={actionBusy} onClick={() => void loadHistory(historyCursor)}>Load more published versions</Button>}
+                      <PublishedKitchenPreview key={menu.id} menuId={menu.id} publications={historyMenu === menu.id ? history : []} historyLoaded={historyMenu === menu.id} />
                       {menu.kind === "collection" && (
                         <>
                           <h2>Collection activation</h2>
