@@ -13,3 +13,5 @@ Studio asks Hub to verify the caller's session and explicit organisation-wide Ro
 Cloud draft writes remain closed. The App Hosting environment files describe the allowed project and Hub endpoint. Release requires separate backend provisioning, verified service identity and isolation, and Studio-specific grants. Hub return-to-Studio registration is pending.
 
 Customer preview is for drafting. Signed menu content, commercial eligibility, booking impact, special activation, booking and production integration and published restore require the remaining #586 increments.
+
+Where the editor also has Hub `canonical.view`, Studio can check site-level parent offerings for a selected event date. It uses the current public-safe Hub catalogue manifest, verifies the raw gzip hash before decoding, and reuses the verified package only while the current manifest matches. The check covers prices, minimums, unavailable and quote-only offerings, and product Friday exclusions. Area-specific rules, notice context and dish-selection acceptance still belong to booking validation. The catalogue does not need Studio Firestore reads or broad listeners.
