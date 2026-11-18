@@ -43,7 +43,7 @@ export default function MenuExporter({ weeks, currentSnapshot, unsavedCurrent, o
   const dayCount = selectedWeeks.reduce((total, week) => total + selected[week.id].length, 0);
   const toggleWeek = (week: WeekOption) => setSelected(previous => {
     const next = { ...previous };
-    if (next[week.id]?.length) delete next[week.id];
+    if ((next[week.id]?.length || 0) === (week.id === currentSnapshot.week.id ? currentSnapshot.days.slice(0, 5).length : 5)) delete next[week.id];
     else next[week.id] = week.id === currentSnapshot.week.id
       ? currentSnapshot.days.slice(0, 5).map(day => day.date)
       : weekdays(week.weekCommencing);
