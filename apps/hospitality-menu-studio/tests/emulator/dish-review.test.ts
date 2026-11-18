@@ -18,7 +18,7 @@ test("Studio submits only a saved exact dish revision and verifies the CPU relea
   const store = new StudioStore(db);
   const url = "http://localhost:13686/api/studio";
   const actor = { id: "test-studio-author", name: "Studio Author", canManage: true, canPublish: true };
-  const handlers = studioHandlers(async () => actor, () => store, () => {}, undefined, () => true);
+  const handlers = studioHandlers(async () => actor, () => store, () => {}, undefined, () => true, () => "http://127.0.0.1:13486");
   const disabled = studioHandlers(async () => actor, () => store, () => {});
   const dish: Dish = { id: randomUUID(), version: 0, name: "Synthetic test dish", category: "other", temperature: null,
     customerDescription: "Customer description", kitchenDescription: "Exact kitchen description", assortment: null, updatedAt: "" };
@@ -42,6 +42,7 @@ test("Studio submits only a saved exact dish revision and verifies the CPU relea
     const handoff = await a.json();
     assert.deepEqual(await b.json(), handoff);
     assert.equal(handoff.checkerPath, "/allergens/studio/" + dish.id + "/1");
+    assert.equal(handoff.checkerUrl, "http://127.0.0.1:13486" + handoff.checkerPath);
     const saved = (await source.get()).data() as StudioDishReviewRequest;
     assert.equal(saved.dish.kitchenDescription, dish.kitchenDescription);
     assert.equal(saved.requestedBy, actor.id);

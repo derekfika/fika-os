@@ -32,7 +32,7 @@ test("content publication freezes current menu, dish and signed evidence with an
     source: "network", contentHash: catalogueHash, generatedAt: now.toISOString(), downloaded: true, notes: [],
     catalogue: { contract: CATALOGUE_PACKAGE_CONTRACT, schemaVersion: 2, exceptions: [], oplocs: [],
       items: [{ id: itemId, name: "Synthetic item", category: "Hospitality", defaultPrices: [{ amount: 1, vatRate: 0, from: "2026-01-01" }], dietaryInformation: [], allergenInformation: [] }] },
-  }), () => true, async (_request, target) => {
+  }), () => true, undefined, async (_request, target) => {
     assert.deepEqual(target.catalogueItemIds, [itemId]);
     return advisory;
   });

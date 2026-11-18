@@ -32,3 +32,13 @@ export function studioRuntime(env = process.env) {
   // separate Studio authority are verified. Configuration cannot enable them.
   return { ...config, hub, writes: false, fixture: false };
 }
+
+export function localStudioCheckerOrigin(value = process.env.FIKA_STUDIO_CPU_BASE_URL) {
+  if (!value || !/^http:\/\/(?:localhost|127\.0\.0\.1):[1-9][0-9]{0,4}$/.test(value)) return undefined;
+  try {
+    const url = new URL(value);
+    return url.port ? url.origin : undefined;
+  } catch {
+    return undefined;
+  }
+}
