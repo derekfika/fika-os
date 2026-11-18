@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { boxCount, publishedDishPage, publishedKitchenPreview } from "../components/published-kitchen-model";
+import { boxCount, publishedDishPage, publishedKitchenPreview, KitchenRequestGuard } from "../components/published-kitchen-model";
 
 const selected = { id: "dish-1", name: "Frozen dish", version: 2 };
 const result = {
@@ -15,6 +15,8 @@ test("index requires real frozen dish identities and a bounded cursor", () => {
   assert.equal(publishedDishPage({ items: [selected, selected], nextCursor: null }), null);
   assert.equal(publishedDishPage({ items: [{ ...selected, version: 0 }], nextCursor: null }), null);
   assert.equal(publishedDishPage({ items: [selected] }), null);
+  assert.equal(publishedDishPage({ items: [selected], nextCursor: "other" }), null);
+  assert.deepEqual(publishedDishPage({ items: [selected], nextCursor: selected.id }), { items: [selected], nextCursor: selected.id });
 });
 test("published preview binds publication, dish version and evidence before displaying quantities", () => {
   assert.equal(publishedKitchenPreview(result, "menu-1", "pub-1", selected, 4)?.quantities?.total, 96);
@@ -30,4 +32,17 @@ test("published preview binds publication, dish version and evidence before disp
 test("box input accepts only positive safe whole values", () => {
   assert.equal(boxCount("4"), 4);
   for (const value of ["", "0", "-1", "1.5", "1e2", "9007199254740992"]) assert.equal(boxCount(value), null);
+});
+
+test("changed selection, count or unmount invalidates late preview results", () => {
+  const guard = new KitchenRequestGuard();
+  const prior = guard.next();
+  guard.invalidate();
+  assert.equal(guard.isCurrent(prior), false);
+  const olderRequest = guard.next();
+  const latestRequest = guard.next();
+  assert.equal(guard.isCurrent(olderRequest), false);
+  assert.equal(guard.isCurrent(latestRequest), true);
+  guard.invalidate();
+  assert.equal(guard.isCurrent(latestRequest), false);
 });

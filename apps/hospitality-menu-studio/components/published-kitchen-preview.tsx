@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import type { Publication } from "../lib/contract";
-import { boxCount, publishedDishPage, publishedKitchenPreview, type KitchenPreview, type PublishedDish } from "./published-kitchen-model";
+import { boxCount, publishedDishPage, publishedKitchenPreview, KitchenRequestGuard, type KitchenPreview, type PublishedDish } from "./published-kitchen-model";
 
 async function read(query: URLSearchParams) {
   const response = await fetch(`/api/studio?${query}`, { cache: "no-store" });
@@ -28,40 +28,45 @@ export default function PublishedKitchenPreview({ menuId, publications, historyL
   const [preview, setPreview] = useState<KitchenPreview | null>(null);
   const [hasAssortment, setHasAssortment] = useState(false);
   const [boxes, setBoxes] = useState("1");
-  const generation = useRef(0);
-  useEffect(() => () => { generation.current++; }, []);
+  const generation = useRef(new KitchenRequestGuard());
+  useEffect(() => () => { generation.current.invalidate(); }, []);
+  useEffect(() => {
+    if (publicationId && !publications.some(item => item.id === publicationId)) {
+      generation.current.invalidate(); setPublicationId(""); setDishes([]); setNextCursor(null); setDishId(""); setLoaded(false); setPreview(null); setHasAssortment(false); setError(""); setBusy(false);
+    }
+  }, [publicationId, publications]);
 
   async function loadDishes(pubId: string, cursor?: string) {
-    const token = ++generation.current;
+    const token = generation.current.next();
     setBusy(true); setError(""); setPreview(null);
     try {
       const query = new URLSearchParams({ menuId, publicationId: pubId, list: "published-kitchen-dishes" });
       if (cursor) query.set("cursor", cursor);
       const page = publishedDishPage(await read(query));
       if (!page || (cursor && page.nextCursor === cursor)) throw new Error("Invalid dish index");
-      if (generation.current !== token) return;
+      if (!generation.current.isCurrent(token)) return;
       if (cursor && page.items.some(item => dishes.some(existing => existing.id === item.id))) throw new Error("Duplicate dish page");
       setDishes(cursor ? [...dishes, ...page.items] : page.items);
       setNextCursor(page.nextCursor); setLoaded(true);
     } catch (cause) {
-      if (generation.current !== token) return;
+      if (!generation.current.isCurrent(token)) return;
       setDishes([]); setNextCursor(null); setDishId(""); setLoaded(false); setError(message(cause));
-    } finally { if (generation.current === token) setBusy(false); }
+    } finally { if (generation.current.isCurrent(token)) setBusy(false); }
   }
   function choosePublication(value: string) {
-    generation.current++; setPublicationId(value); setDishId(""); setDishes([]); setNextCursor(null);
+    generation.current.invalidate(); setPublicationId(value); setDishId(""); setDishes([]); setNextCursor(null);
     setLoaded(false); setPreview(null); setHasAssortment(false); setBoxes("1"); setError(""); setBusy(false);
     if (value) void loadDishes(value);
   }
   function chooseDish(value: string) {
-    generation.current++; setBusy(false); setDishId(value); setPreview(null); setHasAssortment(false); setBoxes("1"); setError("");
+    generation.current.invalidate(); setBusy(false); setDishId(value); setPreview(null); setHasAssortment(false); setBoxes("1"); setError("");
   }
   async function showPreview(withBoxes: boolean) {
     const selected = dishes.find(item => item.id === dishId);
     if (!selected || !publicationId) return;
     const count = withBoxes ? boxCount(boxes) : undefined;
-    if (withBoxes && count === null) { generation.current++; setPreview(null); setError("Enter a positive whole number of boxes."); return; }
-    const token = ++generation.current;
+    if (withBoxes && count === null) { generation.current.invalidate(); setPreview(null); setError("Enter a positive whole number of boxes."); return; }
+    const token = generation.current.next();
     if (!withBoxes) setBoxes("1");
     setBusy(true); setPreview(null); setError("");
     try {
@@ -69,11 +74,11 @@ export default function PublishedKitchenPreview({ menuId, publications, historyL
       if (count !== undefined && count !== null) query.set("boxes", String(count));
       const result = publishedKitchenPreview(await read(query), menuId, publicationId, selected, count ?? undefined);
       if (!result) throw new Error("Invalid preview response");
-      if (generation.current !== token) return;
+      if (!generation.current.isCurrent(token)) return;
       setPreview(result); setHasAssortment(Boolean(result.dish.assortment));
     } catch (cause) {
-      if (generation.current === token) { setPreview(null); setError(message(cause)); }
-    } finally { if (generation.current === token) setBusy(false); }
+      if (generation.current.isCurrent(token)) { setPreview(null); setError(message(cause)); }
+    } finally { if (generation.current.isCurrent(token)) setBusy(false); }
   }
   return <div className="fika-card">
     <h3>Published kitchen content preview</h3>
@@ -98,7 +103,7 @@ export default function PublishedKitchenPreview({ menuId, publications, historyL
       </>}
       {hasAssortment && <>
         <label className="fika-field">Number of boxes
-          <input className="fika-input" type="number" min="1" step="1" value={boxes} onChange={event => { generation.current++; setBusy(false); setBoxes(event.target.value); setPreview(null); setError(""); }} />
+          <input className="fika-input" type="number" min="1" step="1" value={boxes} onChange={event => { generation.current.invalidate(); setBusy(false); setBoxes(event.target.value); setPreview(null); setError(""); }} />
         </label>
         <button type="button" className="fika-button fika-button--secondary" disabled={busy} onClick={() => void showPreview(true)}>Calculate published quantities</button>
       </>}
@@ -106,8 +111,8 @@ export default function PublishedKitchenPreview({ menuId, publications, historyL
       {preview && <div>
         <h3>{preview.dish.name} · Dish version {preview.dish.version}</h3>
         <p>Publication revision {preview.publication.revision} · Effective {preview.publication.effectiveDate}</p>
-        <p>Current signed evidence verified for this preview. Check again before use; evidence can change.</p>
-        <h3>Frozen kitchen description</h3><p>{preview.dish.kitchenDescription || "No kitchen description recorded."}</p>
+        <p>Signed evidence was verified when this preview was loaded. Check again before use; evidence can change.</p>
+        <h3>Frozen kitchen description</h3><p style={{ whiteSpace: "pre-wrap" }}>{preview.dish.kitchenDescription || "No kitchen description recorded."}</p>
         {preview.quantities && <>
           <p>{preview.quantities.perBox} {preview.quantities.unit} per box × {preview.quantities.boxes} boxes = {preview.quantities.total} {preview.quantities.unit} total</p>
           <ul>{preview.quantities.components.map(item => <li key={item.id}>{item.name}: {item.perBox} {preview.quantities!.unit} per box · {item.total} {preview.quantities!.unit} total</li>)}</ul>
