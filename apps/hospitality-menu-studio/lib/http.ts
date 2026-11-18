@@ -4,8 +4,9 @@ import { catalogueUnavailable, siteOfferings, studioCatalogueOptions } from "./c
 import type { Menu, StudioActor } from "./contract";
 import { StudioProblem } from "./problem";
 import { draftCustomerChoices, draftReadiness, menuDishIds } from "./review";
-import { commandSchema, dateSchema, idSchema } from "./schema";
+import { commandSchema, dateSchema, idSchema, versionQuerySchema } from "./schema";
 import type { StudioStore } from "./store";
+import { compareMenuDrafts } from "./versions";
 
 const noStore = { "Cache-Control": "private, no-store" };
 const maxBytes = 700_000;
@@ -13,7 +14,10 @@ const maxBytes = 700_000;
 const readSchema = z.union([
   z.object({ list: z.enum(["menus", "dishes"]), cursor: idSchema.optional() }).strict(),
   z.object({ list: z.literal("history"), menuId: idSchema, cursor: idSchema.optional() }).strict(),
+  z.object({ list: z.literal("versions"), menuId: idSchema, cursor: versionQuerySchema.optional() }).strict(),
+  z.object({ list: z.literal("versions"), dishId: idSchema, cursor: versionQuerySchema.optional() }).strict(),
   z.object({ list: z.literal("catalogue") }).strict(),
+  z.object({ menuId: idSchema, fromVersion: versionQuerySchema, toVersion: versionQuerySchema }).strict(),
   z.object({ menuId: idSchema, eventDate: dateSchema, siteId: idSchema.optional() }).strict(),
   z.object({ menuId: idSchema, publicationId: idSchema, kitchenDishId: idSchema }).strict(),
   z.object({ menuId: idSchema }).strict(),
@@ -49,7 +53,17 @@ export function studioHandlers(
       const db = store();
       if ("list" in query) {
         if (query.list === "history") return db.listHistory(query.menuId, query.cursor);
+        if (query.list === "versions") return "menuId" in query
+          ? db.listVersions("menus", query.menuId, query.cursor)
+          : db.listVersions("dishes", query.dishId, query.cursor);
         return db.list(query.list, query.cursor);
+      }
+      if ("fromVersion" in query) {
+        const [before, after] = await Promise.all([
+          db.readMenuRevision(query.menuId, query.fromVersion),
+          db.readMenuRevision(query.menuId, query.toVersion),
+        ]);
+        return { changes: compareMenuDrafts(before, after) };
       }
       if ("dishId" in query) return { item: await db.read("dishes", query.dishId) };
       if ("kitchenDishId" in query) throw blocked("Current signed kitchen specifications are unavailable.");
@@ -102,6 +116,9 @@ export function studioHandlers(
       }
       if (!actor.canManage) throw denied("Studio authoring is read-only for this environment or account.");
       if (command.action === "restore-menu") throw blocked("Published revision restoration is unavailable.");
+      if (command.action === "restore-draft") {
+        return store().restoreMenuDraft(actor.id, command.menuId, command.version, command.sourceVersion);
+      }
       if (command.action === "save-menu") return { item: await store().save("menus", actor.id, command.item) };
       return { item: await store().save("dishes", actor.id, command.item) };
     }),
