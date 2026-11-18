@@ -15,7 +15,9 @@ import styles from "./studio.module.css";
 import {
   assortmentTotal,
   localDraftKey as localKey,
-  moveDish,
+  groupSelectedDishes,
+  moveGroupedDish,
+  planningTarget,
   retainedDraftMatchesRequest,
 } from "./studio-model";
 
@@ -375,6 +377,10 @@ export default function Studio({ actor }: { actor: StudioActor }) {
     }[]
   >([]);
   const [draftVersion, setDraftVersion] = useState("");
+  const [compareFrom, setCompareFrom] = useState("");
+  const [compareTo, setCompareTo] = useState("");
+  const [comparison, setComparison] = useState<string[] | null>(null);
+  const comparisonGeneration = useRef(0);
   const [restoreConfirmed, setRestoreConfirmed] = useState(false);
   const [scopeSection, setScopeSection] = useState("");
   const [scopeWeek, setScopeWeek] = useState("");
@@ -484,6 +490,10 @@ export default function Studio({ actor }: { actor: StudioActor }) {
     setHistory([]);
     setDraftVersions([]);
     setDraftVersion("");
+    setCompareFrom("");
+    setCompareTo("");
+    setComparison(null);
+    comparisonGeneration.current++;
     setRestoreConfirmed(false);
     setActivationId("");
     setActivationConfirmed(false);
@@ -685,6 +695,27 @@ export default function Studio({ actor }: { actor: StudioActor }) {
     } finally {
       setActionBusy(false);
     }
+  }
+  async function compareDraftVersions() {
+    if (!menu || !compareFrom || !compareTo) return;
+    const generation = ++comparisonGeneration.current;
+    setComparison(null);
+    setActionError("");
+    setActionBusy(true);
+    try {
+      const result = await request(undefined, `?menuId=${encodeURIComponent(menu.id)}&fromVersion=${encodeURIComponent(compareFrom)}&toVersion=${encodeURIComponent(compareTo)}`);
+      if (!Array.isArray(result.changes) || !result.changes.every((change: unknown) => typeof change === "string")) throw new Error("Comparison is unavailable.");
+      if (generation === comparisonGeneration.current) setComparison(result.changes);
+    } catch {
+      if (generation === comparisonGeneration.current) setActionError("Draft comparison is unavailable. Try again.");
+    } finally {
+      setActionBusy(false);
+    }
+  }
+  function changeComparison(setter: (value: string) => void, value: string) {
+    comparisonGeneration.current++;
+    setComparison(null);
+    setter(value);
   }
   const nav: [Page, string][] = [
     ["home", "Home"],
@@ -1140,6 +1171,12 @@ export default function Studio({ actor }: { actor: StudioActor }) {
                       </button>
                       <h1>{section.name}</h1>
                       <p>Edit one section at a time.</p>
+                      <label className="fika-field">
+                        Selected section
+                        <select className="fika-select" value={sectionId} onChange={(e) => { setSectionId(e.target.value); setWeek(0); }}>
+                          {menu.sections.map((s) => <option key={s.id} value={s.id}>{s.name || "Untitled section"}</option>)}
+                        </select>
+                      </label>
                     </div>
                     <SaveNotice
                       state={menuDraft.state}
@@ -1297,53 +1334,28 @@ export default function Studio({ actor }: { actor: StudioActor }) {
                         : "All season"}{" "}
                       · {selected.length} dishes
                     </h2>
-                    {selected.map((id, index) => {
-                      const item = dishes.find((d) => d.id === id);
-                      return (
-                        <div className={styles.row} key={id}>
-                          <span>
-                            <strong>{item?.name || "Dish unavailable"}</strong>{" "}
-                            <small>
-                              {item
-                                ? `${title(item.category)}${item.temperature ? ` · ${title(item.temperature)}` : ""}`
-                                : id}
-                            </small>
-                          </span>
-                          <div className={styles.actions}>
-                            <Button
-                              label={`Move ${item?.name || "dish"} up`}
-                              disabled={!actor.canManage || index === 0}
-                              onClick={() => {
-                                updateSelected(moveDish(selected, index, -1));
-                              }}
-                            >
-                              Move up
-                            </Button>
-                            <Button
-                              label={`Move ${item?.name || "dish"} down`}
-                              disabled={
-                                !actor.canManage ||
-                                index === selected.length - 1
-                              }
-                              onClick={() => {
-                                updateSelected(moveDish(selected, index, 1));
-                              }}
-                            >
-                              Move down
-                            </Button>
-                            <Button
-                              label={`Remove ${item?.name || "dish"} from section`}
-                              disabled={!actor.canManage}
-                              onClick={() =>
-                                updateSelected(selected.filter((x) => x !== id))
-                              }
-                            >
-                              Remove
-                            </Button>
-                          </div>
-                        </div>
-                      );
-                    })}
+                    {planningTarget(section.name) && (
+                      <p className="fika-notice">Planning guide: {planningTarget(section.name)}. These are suggestions, not limits. Veggie / Vegan combines two distinct classifications.</p>
+                    )}
+                    <p className="fika-help">Dishes are grouped here by classification. Move controls reorder within each group; saved menu order is retained across groups. Load more dishes to resolve selections not yet loaded.</p>
+                    {groupSelectedDishes(selected, dishes).map((group) => (
+                      <div key={group.label} className={styles.dishGroup}>
+                        <h3>{group.label} · {group.ids.length}</h3>
+                        {group.ids.map((id, index) => {
+                          const item = dishes.find((d) => d.id === id);
+                          return (
+                            <div className={styles.row} key={id}>
+                              <span><strong>{item?.name || "Dish not loaded"}</strong><small>{item ? `${title(item.category)}${item.temperature ? ` · ${title(item.temperature)}` : ""}` : id}</small></span>
+                              <div className={styles.actions}>
+                                <Button label={`Move ${item?.name || "dish"} up within ${group.label}`} disabled={!actor.canManage || index === 0} onClick={() => updateSelected(moveGroupedDish(selected, group.ids, id, -1))}>Move up</Button>
+                                <Button label={`Move ${item?.name || "dish"} down within ${group.label}`} disabled={!actor.canManage || index === group.ids.length - 1} onClick={() => updateSelected(moveGroupedDish(selected, group.ids, id, 1))}>Move down</Button>
+                                <Button label={`Remove ${item?.name || "dish"} from section`} disabled={!actor.canManage} onClick={() => updateSelected(selected.filter((x) => x !== id))}>Remove</Button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ))}
                     {!selected.length && <p>No dishes in this section yet.</p>}
                     <div className={styles.formGrid}>
                       <label className="fika-field">
@@ -2148,6 +2160,28 @@ export default function Studio({ actor }: { actor: StudioActor }) {
                       </Button>
                       {draftVersions.length > 0 && (
                         <>
+                          <ul aria-label="Saved draft history">
+                            {draftVersions.map((v) => <li key={v.version}>Version {v.version} · {v.savedAt} · Saved by {v.actorId}{v.restoredFromVersion !== undefined ? ` · Restored from version ${v.restoredFromVersion}` : ""}</li>)}
+                          </ul>
+                          <h3>Compare saved drafts</h3>
+                          <p>Compare saved menu structure. This is not a published revision comparison and does not include changes to independently saved dish details.</p>
+                          <div className={styles.formGrid}>
+                            <label className="fika-field">From version
+                              <select className="fika-select" value={compareFrom} onChange={(e) => changeComparison(setCompareFrom, e.target.value)}>
+                                <option value="">Select a version</option>
+                                {draftVersions.map((v) => <option key={v.version} value={v.version}>Version {v.version} · {v.savedAt}</option>)}
+                              </select>
+                            </label>
+                            <label className="fika-field">To version
+                              <select className="fika-select" value={compareTo} onChange={(e) => changeComparison(setCompareTo, e.target.value)}>
+                                <option value="">Select a version</option>
+                                {draftVersions.map((v) => <option key={v.version} value={v.version}>Version {v.version} · {v.savedAt}</option>)}
+                              </select>
+                            </label>
+                          </div>
+                          <Button disabled={actionBusy || !compareFrom || !compareTo} onClick={() => void compareDraftVersions()}>Compare saved drafts</Button>
+                          {comparison && <div role="status"><h3>Version {compareFrom} to {compareTo}</h3>{comparison.length ? <ul>{comparison.map((change, i) => <li key={i}>{change}</li>)}</ul> : <p>No structural differences found.</p>}</div>}
+                          <h3>Restore a draft</h3>
                           <label className="fika-field">
                             Saved draft version
                             <select
