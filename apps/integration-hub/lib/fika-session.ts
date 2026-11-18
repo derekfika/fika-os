@@ -31,11 +31,11 @@ export function assertRecentVerifiedFirebaseIdentity(decoded: Pick<DecodedIdToke
   if (!decoded.auth_time || nowSeconds - decoded.auth_time > 5 * 60) throw new FikaSessionError("Sign-in is too old. Authenticate again to create a FIKA OS session.", 401, "FIKA_RECENT_AUTH_REQUIRED");
 }
 
-export async function resolveSessionIdentity(repository: AuthModRepository, decoded: Pick<DecodedIdToken, "uid" | "email" | "name">, actor?: AuthPrincipal) {
+export async function resolveSessionIdentity(repository: AuthModRepository, decoded: Pick<DecodedIdToken, "uid" | "email" | "name">, actor?: AuthPrincipal, allowEmailBinding = true) {
   const externalMatches = await repository.findIdentitiesByExternal("firebase", decoded.uid, 2);
   if (externalMatches.length > 1) throw new FikaSessionError("This external identity needs administrator review.", 403, "AUTHMOD_EXTERNAL_IDENTITY_CONFLICT");
   let identity = externalMatches[0];
-  if (!identity && decoded.email) {
+  if (!identity && decoded.email && allowEmailBinding) {
     const emailMatches = await repository.findIdentitiesByEmail(decoded.email, 2);
     if (emailMatches.length > 1) throw new FikaSessionError("This FIKA OS account needs administrator review before sign-in.", 403, "AUTHMOD_EMAIL_IDENTITY_CONFLICT");
     identity = emailMatches[0];
@@ -60,14 +60,25 @@ export async function createFikaSessionCookie(idToken: string, expiresInSeconds 
   return authApi.createSessionCookie(idToken, { expiresIn: expiresInSeconds * 1000 });
 }
 
-export async function requireFikaSession(request: { cookies: { get(name: string): { value?: string } | undefined }; headers?: { get(name: string): string | null } }, repository: AuthModRepository = new FirestoreAuthModRepository(), authApi: SessionAuth = auth): Promise<FikaSessionPrincipal> {
+type SessionRequest = { cookies: { get(name: string): { value?: string } | undefined }; headers?: { get(name: string): string | null } };
+
+export function requireFikaSession(request: SessionRequest, repository: AuthModRepository = new FirestoreAuthModRepository(), authApi: SessionAuth = auth) {
+  return readSession(request, repository, authApi, true);
+}
+
+/** Reporting requests can read existing identity bindings without performing enrolment. */
+export function requireBoundFikaSession(request: SessionRequest, repository: AuthModRepository, authApi: SessionAuth = auth) {
+  return readSession(request, repository, authApi, false);
+}
+
+async function readSession(request: SessionRequest, repository: AuthModRepository, authApi: SessionAuth, allowEmailBinding: boolean): Promise<FikaSessionPrincipal> {
   const cookie = request.cookies.get(sessionCookieConfig().name)?.value;
   if (!cookie) { logAuthDiagnostic(request, { authStage: "firebase-session-cookie-read", status: 401, code: "FIKA_SESSION_MISSING", cookieName: sessionCookieConfig().name }); throw new FikaSessionError("Authentication is required.", 401, "FIKA_SESSION_MISSING"); }
   let decoded: DecodedIdToken;
   try { decoded = await authApi.verifySessionCookie(cookie, true); }
   catch { logAuthDiagnostic(request, { authStage: "firebase-session-cookie-verification", status: 401, code: "FIKA_SESSION_INVALID", cookieName: sessionCookieConfig().name }); throw new FikaSessionError("The FIKA OS session is invalid or expired."); }
   logAuthDiagnostic(request, { authStage: "firebase-session-cookie-verification", status: 200, code: "FIKA_SESSION_VERIFIED", cookieName: sessionCookieConfig().name });
-  const identity = await resolveSessionIdentity(repository, { uid: decoded.uid, email: decoded.email, name: decoded.name });
+  const identity = await resolveSessionIdentity(repository, { uid: decoded.uid, email: decoded.email, name: decoded.name }, undefined, allowEmailBinding);
   logAuthDiagnostic(request, { authStage: "authmod-identity-resolution", status: 200, code: "AUTHMOD_IDENTITY_RESOLVED", cookieName: sessionCookieConfig().name });
   return principalFromSession(repository, identity, decoded.uid);
 }
