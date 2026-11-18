@@ -3,6 +3,8 @@ import { calendarDay, categories, type Dish, type Menu, type Section } from "./c
 
 export const idSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9:._-]{0,199}$/).refine(id => !id.startsWith("__"));
 export const versionSchema = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER - 1);
+export const revisionSchema = versionSchema.positive();
+export const versionQuerySchema = z.string().regex(/^\d+$/).transform(Number).pipe(revisionSchema);
 export const dateSchema = z.string().refine(date => Number.isFinite(calendarDay(date)));
 const draftDate = z.union([z.literal(""), dateSchema]);
 const name = z.string().trim().max(200);
@@ -61,6 +63,8 @@ export const commandSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("review"), ...candidate }),
   z.object({ action: z.literal("publish"), ...candidate, reviewToken: z.string().min(1).max(256), confirmed: z.literal(true) }),
   z.object({ action: z.literal("restore-menu"), menuId: idSchema, version: versionSchema.positive(), publicationId: idSchema }),
+  z.object({ action: z.literal("restore-draft"), menuId: idSchema, version: revisionSchema, sourceVersion: revisionSchema, confirmed: z.literal(true) })
+    .refine(command => command.sourceVersion < command.version),
   z.object({ action: z.literal("activate-collection"), menuId: idSchema, publicationId: idSchema, visibility: z.enum(["staff", "customer"]), confirmed: z.literal(true) }),
 ]);
 export type StudioCommand = z.infer<typeof commandSchema>;

@@ -1,9 +1,12 @@
 import { z } from "zod";
+import type { CatalogueLoadResult } from "@fika/server-shared/hospitality-catalogue-client";
+import { catalogueUnavailable, siteOfferings, studioCatalogueOptions } from "./catalogue";
 import type { Menu, StudioActor } from "./contract";
 import { StudioProblem } from "./problem";
 import { draftCustomerChoices, draftReadiness, menuDishIds } from "./review";
-import { commandSchema, dateSchema, idSchema } from "./schema";
+import { commandSchema, dateSchema, idSchema, versionQuerySchema } from "./schema";
 import type { StudioStore } from "./store";
+import { compareMenuDrafts } from "./versions";
 
 const noStore = { "Cache-Control": "private, no-store" };
 const maxBytes = 700_000;
@@ -11,7 +14,11 @@ const maxBytes = 700_000;
 const readSchema = z.union([
   z.object({ list: z.enum(["menus", "dishes"]), cursor: idSchema.optional() }).strict(),
   z.object({ list: z.literal("history"), menuId: idSchema, cursor: idSchema.optional() }).strict(),
-  z.object({ menuId: idSchema, eventDate: dateSchema }).strict(),
+  z.object({ list: z.literal("versions"), menuId: idSchema, cursor: versionQuerySchema.optional() }).strict(),
+  z.object({ list: z.literal("versions"), dishId: idSchema, cursor: versionQuerySchema.optional() }).strict(),
+  z.object({ list: z.literal("catalogue") }).strict(),
+  z.object({ menuId: idSchema, fromVersion: versionQuerySchema, toVersion: versionQuerySchema }).strict(),
+  z.object({ menuId: idSchema, eventDate: dateSchema, siteId: idSchema.optional() }).strict(),
   z.object({ menuId: idSchema, publicationId: idSchema, kitchenDishId: idSchema }).strict(),
   z.object({ menuId: idSchema }).strict(),
   z.object({ dishId: idSchema }).strict(),
@@ -21,6 +28,7 @@ export function studioHandlers(
   authorise: (request: Request) => Promise<StudioActor>,
   store: () => StudioStore,
   assertOrigin: (request: Request) => void,
+  readCatalogue?: (request: Request) => Promise<CatalogueLoadResult>,
 ) {
   const respond = async (operation: () => Promise<unknown>) => {
     try {
@@ -37,17 +45,46 @@ export function studioHandlers(
     GET: (request: Request) => respond(async () => {
       await authorise(request);
       const query = readSchema.parse(Object.fromEntries(new URL(request.url).searchParams));
+      const catalogue = () => {
+        if (!readCatalogue) throw catalogueUnavailable();
+        return readCatalogue(request);
+      };
+      if ("list" in query && query.list === "catalogue") return studioCatalogueOptions((await catalogue()).catalogue);
       const db = store();
       if ("list" in query) {
         if (query.list === "history") return db.listHistory(query.menuId, query.cursor);
+        if (query.list === "versions") return "menuId" in query
+          ? db.listVersions("menus", query.menuId, query.cursor)
+          : db.listVersions("dishes", query.dishId, query.cursor);
         return db.list(query.list, query.cursor);
+      }
+      if ("fromVersion" in query) {
+        const [before, after] = await Promise.all([
+          db.readMenuRevision(query.menuId, query.fromVersion),
+          db.readMenuRevision(query.menuId, query.toVersion),
+        ]);
+        return { changes: compareMenuDrafts(before, after) };
       }
       if ("dishId" in query) return { item: await db.read("dishes", query.dishId) };
       if ("kitchenDishId" in query) throw blocked("Current signed kitchen specifications are unavailable.");
       const menu = await db.read<Menu>("menus", query.menuId);
       if ("eventDate" in query) {
-        const dishes = await db.dishes(menuDishIds(menu, query.eventDate));
-        return { items: draftCustomerChoices(menu, dishes, query.eventDate) };
+        if (!query.siteId) {
+          const dishes = await db.dishes(menuDishIds(menu, query.eventDate));
+          return { items: draftCustomerChoices(menu, dishes, query.eventDate) };
+        }
+        const checked = await catalogue();
+        const offerings = siteOfferings(menu, checked.catalogue, query.siteId, query.eventDate);
+        const bySection = new Map(offerings.map(offering => [offering.sectionId, offering]));
+        const visible = { ...menu, sections: menu.sections.filter(section => bySection.has(section.id)) };
+        const dishes = await db.dishes(menuDishIds(visible, query.eventDate));
+        const items = draftCustomerChoices(visible, dishes, query.eventDate).map(section => ({
+          ...section, catalogueOffering: bySection.get(section.id),
+        }));
+        return {
+          items,
+          catalogue: { siteId: query.siteId, contentHash: checked.contentHash, scope: "parent-offerings" },
+        };
       }
       return { item: menu };
     }),
@@ -79,6 +116,9 @@ export function studioHandlers(
       }
       if (!actor.canManage) throw denied("Studio authoring is read-only for this environment or account.");
       if (command.action === "restore-menu") throw blocked("Published revision restoration is unavailable.");
+      if (command.action === "restore-draft") {
+        return store().restoreMenuDraft(actor.id, command.menuId, command.version, command.sourceVersion);
+      }
       if (command.action === "save-menu") return { item: await store().save("menus", actor.id, command.item) };
       return { item: await store().save("dishes", actor.id, command.item) };
     }),
