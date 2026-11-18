@@ -78,7 +78,7 @@ test("kitchen totals distinguish box count, pieces per box and component totals"
 
 const staging = {
   NODE_ENV: "test" as const,
-  FIKA_RUNTIME_MODE: "staging", FIREBASE_PROJECT_ID: "fika-menu-studio-dev",
+  FIKA_RUNTIME_MODE: "staging", FIREBASE_PROJECT_ID: "fika-os-dev",
   FIKA_HUB_BASE_URL: "https://staging-os.fikacatering.com",
   FIKA_STUDIO_ORIGIN: "https://menu-studio-staging.fikacatering.com",
   FIKA_STUDIO_FIRESTORE_DATABASE: "hospitality-menu-studio",
@@ -90,8 +90,8 @@ test("runtime rejects cross-project configuration and local fixture settings in 
   assert.equal(studioRuntime(staging).writes, true);
   assert.equal(studioRuntime(staging).databaseId, "hospitality-menu-studio");
   for (const override of [
-    { FIREBASE_PROJECT_ID: "fika-os" }, { FIREBASE_PROJECT_ID: "fika-os-dev" },
-    { GOOGLE_APPLICATION_CREDENTIALS: "unexpected.json" }, { GOOGLE_CLOUD_PROJECT: "fika-os-dev" }, { FIKA_HUB_BASE_URL: "https://os.fikacatering.com" },
+    { FIREBASE_PROJECT_ID: "fika-os" }, { FIREBASE_PROJECT_ID: "another-staging-project" },
+    { GOOGLE_APPLICATION_CREDENTIALS: "unexpected.json" }, { GOOGLE_CLOUD_PROJECT: "another-staging-project" }, { FIKA_HUB_BASE_URL: "https://os.fikacatering.com" },
     { FIKA_STUDIO_LOCAL_PREVIEW: "1" }, { FIRESTORE_EMULATOR_HOST: "127.0.0.1:8085" },
     { FIKA_RUNTIME_MODE: "production" }, { GCLOUD_PROJECT: "fika-os" },
     { FIKA_STUDIO_FIRESTORE_DATABASE: undefined }, { FIKA_STUDIO_FIRESTORE_DATABASE: "(default)" },
@@ -142,7 +142,7 @@ test("staging rejects alternate request hosts and sends sign-in to the pinned Hu
 
 test("the staging Admin SDK client is bound to the named database", () => {
   const store = studioStore(studioRuntime(staging));
-  assert.equal(getApp("hospitality-menu-studio-fika-menu-studio-dev").options.projectId, "fika-menu-studio-dev");
+  assert.equal(getApp("hospitality-menu-studio-fika-os-dev").options.projectId, "fika-os-dev");
   assert.equal(store["db"].databaseId, "hospitality-menu-studio");
 });
 

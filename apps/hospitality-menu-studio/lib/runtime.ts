@@ -2,7 +2,7 @@ import { sessionCookieConfig } from "@fika/server-shared/runtime-config";
 import { StudioProblem } from "./problem";
 
 const stage = {
-  projectId: "fika-menu-studio-dev",
+  projectId: "fika-os-dev",
   hub: "https://staging-os.fikacatering.com",
   origin: "https://menu-studio-staging.fikacatering.com",
   databaseId: "hospitality-menu-studio",

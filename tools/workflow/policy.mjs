@@ -1,13 +1,14 @@
 import { createHash } from 'node:crypto';
 
 export const STUDIO_STAGING = Object.freeze({
-  project: 'fika-menu-studio-dev',
+  project: 'fika-os-dev',
   backend: 'fika-menu-studio-staging',
   origin: 'https://menu-studio-staging.fikacatering.com',
   hub: 'https://staging-os.fikacatering.com',
   sourceBranch: 'main',
   database: 'hospitality-menu-studio',
-  serviceAccount: 'fika-menu-studio-staging@fika-menu-studio-dev.iam.gserviceaccount.com',
+  artifactRepository: 'firebaseapphosting-images',
+  serviceAccount: 'fika-menu-studio-staging@fika-os-dev.iam.gserviceaccount.com',
 });
 
 export const APPS = {
@@ -34,7 +35,7 @@ export function supportedTargets(apps = Object.keys(APPS)) {
 }
 export function target(app, environment) {
   if (!Object.hasOwn(APPS, app) || !supportedEnvironments(app).includes(environment)) throw Error('Unknown application/environment');
-  const project = app === 'menu-studio' ? STUDIO_STAGING.project : environment === 'prod' ? 'fika-os' : 'fika-os-dev';
+  const project = environment === 'prod' ? 'fika-os' : 'fika-os-dev';
   return { app, environment, project, backend: APPS[app][environment], region: 'europe-west4', branch: `release/${environment}/${app}` };
 }
 export function allowsEmptyFirstRelease(t) {

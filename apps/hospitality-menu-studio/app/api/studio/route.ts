@@ -15,7 +15,7 @@ const handlers = studioHandlers(async request => {
 }, studioStore, requireSameOrigin, request => {
   const config = studioRuntime();
   const cookie = (request as NextRequest).cookies.get(config.name)?.value;
-  if (!cookie || config.mode !== "local" || config.fixture) throw catalogueUnavailable();
+  if (!cookie || config.fixture) throw catalogueUnavailable();
   return readStudioCatalogue(config.hub, studioSessionCookie(config, cookie));
 }, command => {
   if (studioRuntime().mode === "staging") assertStudioDraftCommand(command.action);

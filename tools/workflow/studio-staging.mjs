@@ -23,7 +23,7 @@ export function verifyStudioStagingOverlay(source) {
 
 const base = backendPath(studioStaging);
 const database = `projects/${studioStaging.project}/databases/${studioStaging.database}`;
-const artifactRepository = 'firebaseapphosting-images';
+const artifactRepository = STUDIO_STAGING.artifactRepository;
 const packagesPath = `projects/${studioStaging.project}/locations/${studioStaging.region}/repositories/${artifactRepository}/packages/`;
 
 function describe(args) {
@@ -128,9 +128,9 @@ export async function studioStagingPreflight({ read = cloud, describeResource = 
     pending: [
       'Studio-specific staging AUTHMOD registration, capabilities and exact return origin',
       'Effective IAM and isolated named Firestore runtime binding',
-      'Managed build identity and artifact isolation',
+      'Owner approval of the shared managed artifact repository and verified effective build permissions',
       'Storage, Workspace and outbound side-effect isolation',
-      'Owner approval of the #181 exception and the exact merged first-release plan',
+      'Owner approval of the exact merged first-release plan',
     ],
   };
 }

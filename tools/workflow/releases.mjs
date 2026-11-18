@@ -5,7 +5,7 @@ import { APPS, REPO, MAIN_CHECK, target, exactSha, assertClean, validateRecord, 
 import { git, command, ancestor, ref, ghApi, scopeHash, asyncLock, save, stateDir, jsonFile, serving, cloud, cloudPatch, backendPath } from './runtime.mjs';
 import { assertHostedContext } from './hosted.mjs';
 import { discover } from './discovery.mjs';
-import { releaseBackend, verifiedReleaseServing, releasePrestate, verifyStudioTraffic, studioProjectNumber, readStudioReleaseDomain } from './release-prestate.mjs';
+import { releaseBackend, verifiedReleaseServing, releasePrestate, verifyStudioTraffic, readStudioReleaseDomain } from './release-prestate.mjs';
 import { recoverySnapshot, isDomainOperationTarget, isReleaseRelevantOperation, reconcileIntent, resubmitNeverSubmitted, submissionAttempts, describeSubmissionEvidence } from './recovery.mjs';
 import { readCreateAuditEvents } from './audit.mjs';
 import { assertCpuAdoptionTarget, observeCpuAdoption, adoptCompletedCpu } from './cpu-prod-adoption.mjs';
@@ -675,7 +675,6 @@ export async function deploy(app, environment, options, {
     } else if (options.resume) throw Error('No matching pending release to resume');
 
     const backend = await releaseBackend(t, read);
-    if (app === 'menu-studio') studioProjectNumber(t);
     if (options.resume && plan.hotfix) {
       const branch = hotfixBranch(app, plan.releaseId);
       git('fetch', 'origin', `refs/heads/${branch}:refs/remotes/origin/${branch}`);
@@ -739,8 +738,12 @@ export async function deploy(app, environment, options, {
         verifyStudioStagingOverlay(git('show', `${plan.sourceSha}:${APPS[app].path}/apphosting.staging.yaml`));
         if (firstRelease) {
           const domain = await readStudioReleaseDomain(t, read);
+          plan.studioBuildScope = {
+            managedArtifactRepository: `projects/${t.project}/locations/${t.region}/repositories/${STUDIO_STAGING.artifactRepository}`,
+            accessBoundary: 'shared-staging-repository',
+          };
           plan.studioFirstReleaseApprovalHash = digest({ target: t, sourceSha: plan.sourceSha, scopeHash: plan.scopeHash,
-            projectNumber: studioProjectNumber(t), backendEtag: backend.etag || null, domain, before, ledger: pointer?.commit || null });
+            buildScope: plan.studioBuildScope, backendEtag: backend.etag || null, domain, before, ledger: pointer?.commit || null });
           if (options.execute && (!options.reason?.trim() || options['approve-hash'] !== plan.studioFirstReleaseApprovalHash)) {
             throw Error(`First Studio release requires an owner-approved dry run hash and approval reference in --reason. Review ${plan.studioFirstReleaseApprovalHash}.`);
           }
@@ -750,7 +753,7 @@ export async function deploy(app, environment, options, {
         !matchesServing(prior, before) && !(prior?.kind === 'abandoned' && matchesServing(prior.previousGood, before));
       if (!options.execute) return { dryRun:true, plan, before, url:backend.uri, ...(staleLedger ? { willRecordObservedBaseline:true } : {}),
         next:plan.studioFirstReleaseApprovalHash
-          ? 'After owner approval of configuration, effective isolation and this exact plan, the authorised operator can add --execute --approve-hash and --reason.'
+          ? 'After owner approval of configuration, effective isolation, shared build scope and this exact plan, the authorised operator can add --execute --approve-hash and --reason.'
           : 'An authenticated deployment operator can add --execute for this exact source and target.' };
 
       if (journal && !['completed', 'abandoned'].includes(journal.state)) {
