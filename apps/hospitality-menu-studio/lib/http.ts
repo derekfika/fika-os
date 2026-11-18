@@ -15,6 +15,7 @@ const maxBytes = 700_000;
 const readSchema = z.union([
   z.object({ list: z.enum(["menus", "dishes"]), cursor: idSchema.optional() }).strict(),
   z.object({ list: z.literal("history"), menuId: idSchema, cursor: idSchema.optional() }).strict(),
+  z.object({ list: z.literal("published-kitchen-dishes"), menuId: idSchema, publicationId: idSchema, cursor: idSchema.optional() }).strict(),
   z.object({ list: z.literal("versions"), menuId: idSchema, cursor: versionQuerySchema.optional() }).strict(),
   z.object({ list: z.literal("versions"), dishId: idSchema, cursor: versionQuerySchema.optional() }).strict(),
   z.object({ list: z.literal("catalogue") }).strict(),
@@ -72,6 +73,10 @@ export function studioHandlers(
       const db = store();
       if ("list" in query) {
         if (query.list === "history") return db.listHistory(query.menuId, query.cursor);
+        if (query.list === "published-kitchen-dishes") {
+          if (!safetyAvailable()) throw blocked("Published kitchen specifications are unavailable.");
+          return db.listPublishedKitchenDishes(query.menuId, query.publicationId, query.cursor);
+        }
         if (query.list === "versions") return "menuId" in query
           ? db.listVersions("menus", query.menuId, query.cursor)
           : db.listVersions("dishes", query.dishId, query.cursor);

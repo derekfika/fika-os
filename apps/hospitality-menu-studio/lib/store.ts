@@ -66,11 +66,7 @@ export class StudioStore {
   async previewPublishedKitchen(menuId: string, publicationId: string, dishId: string, boxes?: number) {
     const head = this.draftHead("menus", menuId);
     return this.db.runTransaction(async transaction => {
-      const history = await transaction.get(head.collection("publications").doc(publicationId));
-      if (!history.exists) throw new StudioProblem(404, "PUBLICATION_NOT_FOUND", "This publication could not be found.");
-      const publication = history.data() as Publication;
-      if (publication.id !== publicationId) throw publicationIntegrity();
-      const payload = await this.readPublicationPackage(transaction, head, publication);
+      const { publication, payload } = await this.readPublication(transaction, head, publicationId);
       const frozen = payload.dishes.find(item => item.dish.id === dishId);
       if (!frozen) throw new StudioProblem(404, "PUBLISHED_DISH_NOT_FOUND", "This publication does not include the selected dish.");
       const current = (await this.readDishSafetyBatch(transaction, [frozen.dish])).get(dishId);
@@ -87,6 +83,26 @@ export class StudioStore {
       const { kitchenDescription: _description, ...quantities } = kitchenQuantities(frozen.dish, boxes ?? 1);
       return { ...preview, quantities };
     }, { readOnly: true });
+  }
+
+  async listPublishedKitchenDishes(menuId: string, publicationId: string, cursor?: string): Promise<Page<Pick<Dish, "id" | "name" | "version">>> {
+    const head = this.draftHead("menus", menuId);
+    return this.db.runTransaction(async transaction => {
+      const { payload } = await this.readPublication(transaction, head, publicationId);
+      const last = cursor ? payload.dishes.findIndex(({ dish }) => dish.id === cursor) : -1;
+      if (cursor && last === -1) throw new StudioProblem(422, "INVALID_CURSOR", "This publication's dish page is unavailable.");
+      const start = last + 1;
+      const items = payload.dishes.slice(start, start + pageSize).map(({ dish: { id, name, version } }) => ({ id, name, version }));
+      return { items, nextCursor: start + pageSize < payload.dishes.length ? items.at(-1)!.id : null };
+    }, { readOnly: true });
+  }
+
+  private async readPublication(transaction: Transaction, head: DocumentReference, publicationId: string) {
+    const history = await transaction.get(head.collection("publications").doc(publicationId));
+    if (!history.exists) throw new StudioProblem(404, "PUBLICATION_NOT_FOUND", "This publication could not be found.");
+    const publication = history.data() as Publication;
+    if (publication.id !== publicationId) throw publicationIntegrity();
+    return { publication, payload: await this.readPublicationPackage(transaction, head, publication) };
   }
 
   async publicationImpactTarget(request: PublicationRequest) {
