@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { assortmentTotal, moveDish, retainedDraftMatchesRequest } from "./studio-model";
+import {
+  assortmentTotal,
+  localDraftKey,
+  moveDish,
+  retainedDraftMatchesRequest,
+} from "../components/studio-model";
 
 test("section ordering preserves all IDs and leaves the source unchanged", () => {
   const original = ["a", "b", "c"];
@@ -18,7 +23,23 @@ test("assortment counts sum components without conflating box count", () => {
 
 test("acknowledgement clears only the exact retained snapshot", () => {
   const request = { id: "dish-a", version: 3, name: "First" };
-  assert.equal(retainedDraftMatchesRequest(JSON.stringify(request), request), true);
-  assert.equal(retainedDraftMatchesRequest(JSON.stringify({ ...request, name: "Newer" }), request), false);
+  assert.equal(
+    retainedDraftMatchesRequest(JSON.stringify(request), request),
+    true,
+  );
+  assert.equal(
+    retainedDraftMatchesRequest(
+      JSON.stringify({ ...request, name: "Newer" }),
+      request,
+    ),
+    false,
+  );
   assert.equal(retainedDraftMatchesRequest(null, request), false);
+});
+
+test("editors have separate recovery keys for the same actor and entity", () => {
+  assert.notEqual(
+    localDraftKey("sam", "dish", "a", "editor-1"),
+    localDraftKey("sam", "dish", "a", "editor-2"),
+  );
 });
