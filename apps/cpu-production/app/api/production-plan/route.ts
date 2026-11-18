@@ -174,6 +174,23 @@ function normalisePlanAllergens(plan: ProductionPlan, previous?: { items: Planne
   const carried = normalised.menuItems.map(({ sourceItemName: _client, ...item }) => baseline.get(item.id) === undefined ? item : { ...item, sourceItemName: baseline.get(item.id) });
   return { ...normalised, menuItems: stampAllergenReviews(previous.items, carried, previous.actor, now()) };
 }
+/** Restore only server-owned canonical source stamps from the persisted row with the same stable row/source identity.
+ * Request schemas intentionally strip these fields, so reviewed matrix edits must not make unchanged source evidence appear new. */
+function normaliseReviewedMenuItems(plan: ProductionPlan, incoming: PlannedMenuItem[], actor: string) {
+  const priorById = new Map(plan.menuItems.map(item => [item.id, item] as const));
+  const withSourceStamps = incoming.map(item => {
+    const prior = priorById.get(item.id);
+    if (!prior || prior.sourceLineId !== item.sourceLineId) return item;
+    return {
+      ...item,
+      ...(prior.sourceEntryId ? { sourceEntryId: prior.sourceEntryId } : {}),
+      ...(prior.sourceCanonicalDishId ? { sourceCanonicalDishId: prior.sourceCanonicalDishId } : {}),
+      ...(prior.sourceAllergenEvidenceHash ? { sourceAllergenEvidenceHash: prior.sourceAllergenEvidenceHash } : {}),
+      ...(prior.sourceItemName !== undefined ? { sourceItemName: prior.sourceItemName } : {}),
+    };
+  });
+  return normalisePlanAllergens({ ...plan, menuItems: withSourceStamps }, { items: plan.menuItems, actor }).menuItems;
+}
 function assertAllergenMatrixComplete(menuItems: PlannedMenuItem[], context: string) {
   if (!isProductionPlanMatrixComplete(menuItems)) throw Object.assign(new Error(`Record every allergen state, including No key allergens, before ${context}.`), { status: 422, code: "CPU_ALLERGEN_REVIEW_INCOMPLETE" });
   // A blank row, a legacy automatic No Key value or a conflicting row is not a verified declaration and can never pass sign-off.
@@ -201,6 +218,29 @@ function pendingReleaseFor(plan: ProductionPlan, order: ProductionOrder, timesta
   if (!source) throw Object.assign(new Error("The current source lineage is unavailable; the matrix cannot be signed."), { status: 503 });
   const previous = [...(plan.allergenReleaseHistory || [])].at(-1);
   return buildCpuAllergenRelease({ serviceDate: source.serviceDate, sourceOrigin: source.sourceOrigin, sourceDayId: source.sourceDayId, sourcePublicationId: source.sourcePublicationId, sourcePublicationDayId: source.sourcePublicationDayId, sourceBookingId: source.sourceBookingId, sourceQuoteRevisionId: source.sourceQuoteRevisionId, sourceRevision: source.sourceRevision, sourceVersion: source.sourceVersion, sourceContentHash: source.sourceContentHash, allergenEvidenceHash: source.allergenEvidenceHash, version: Math.max(1, ...((plan.allergenReleaseHistory || []).map(item => item.version + 1))), signedAt: timestamp, signatures: plan.signatures || [], items: plan.menuItems, masterArtifact: pendingReleaseArtifact(plan, order, timestamp), derivedArtifacts: [], packetArtifacts: [], previous, status: "pending" });
+}
+function equivalentReleaseNeedsRefresh(plan: ProductionPlan, order: ProductionOrder, items: PlannedMenuItem[]) {
+  const release = plan.currentAllergenRelease;
+  const scope = matrixSignatureScope(order, menuContentHash(items));
+  return Boolean(release?.status === "current" && release.materializationStatus === "ready" && scope
+    && currentAllergenReleaseMatchesOrder(release, order, items)
+    && (release.sourcePublicationId !== scope.sourcePublicationId || release.sourcePublicationDayId !== scope.sourcePublicationDayId || release.sourceVersion !== scope.sourceVersion || release.sourceContentHash !== scope.sourceContentHash));
+}
+/** Same-evidence Menu amendments may retain approvals, but the current packet must still bind the new published revision. */
+function carryForwardEquivalentRelease(plan: ProductionPlan, order: ProductionOrder, items: PlannedMenuItem[], actor: string, timestamp: string) {
+  if (!equivalentReleaseNeedsRefresh(plan, order, items)) return false;
+  const current = plan.currentAllergenRelease!;
+  const superseded = { ...current, status: "superseded" as const };
+  plan.allergenReleaseHistory = [...(plan.allergenReleaseHistory || []), superseded];
+  plan.signatures = current.signatures;
+  plan.signedSignatures = current.signatures;
+  plan.currentAllergenRelease = pendingReleaseFor(plan, order, timestamp);
+  delete plan.matrixArtifact;
+  delete plan.signedMatrixArtifact;
+  delete plan.masterMatrixArtifact;
+  delete plan.siteMatrixArtifacts;
+  plan.audit.push({ action: "allergen-release-carried-forward", at: timestamp, by: actor, reason: `The signed allergen evidence is unchanged; materialize a new release for Menu publication ${plan.currentAllergenRelease.sourcePublicationDayId}.` });
+  return true;
 }
 // Artifact creation is intentionally no longer part of the sign command:
 // release materialization runs from the committed outbox obligation after
@@ -335,7 +375,7 @@ async function applyMasterSignatureBatch(request: NextRequest, actor: Awaited<Re
       return Object.assign(new Error(`${message} Source order ${order.canonicalId}; ${destinationIdentity}.`), { status: failure.status || 409, code: failure.code || "CPU_MASTER_SIGN_ORDER_FAILED", orderId: order.canonicalId, destinationId: order.destination?.id || order.destinationOplocId });
     };
     if (plan.status !== "planned" && plan.status !== "planning") throw withOrderContext(Object.assign(new Error("The allergen matrix is not available for signing."), { status: 422, code: "CPU_MASTER_SIGN_ORDER_NOT_READY" }));
-    const reviewedPlan = await mergeOriginalItems(request, { ...plan, menuItems: normalisePlanAllergens({ ...plan, menuItems: reviewOperation.menuItems }, { items: plan.menuItems, actor: auditActor }).menuItems }, order.canonicalId, order);
+    const reviewedPlan = await mergeOriginalItems(request, { ...plan, menuItems: normaliseReviewedMenuItems(plan, reviewOperation.menuItems, auditActor) }, order.canonicalId, order);
     const currentMenuContentHash = menuContentHash(plan.menuItems);
     const reviewedMenuContentHash = menuContentHash(reviewedPlan.menuItems);
     const currentScope = matrixSignatureScope(order, reviewedMenuContentHash);
@@ -435,7 +475,7 @@ async function applyMasterSignatureBatch(request: NextRequest, actor: Awaited<Re
   const successfulOrderIds = new Set(results.filter(result => result.ok).map(result => result.orderId));
   const fullySigned = prepared.length > 0 && prepared.every(item => successfulOrderIds.has(item.order.canonicalId) && item.plan.signatures?.some(signature => signature.role === "production_chef") && item.plan.signatures?.some(signature => signature.role === "head_chef_site_manager"));
   const postCommitEventId = `cpu-post-commit:${command.commandId}`;
-  after(async () => {
+  await runAfterResponse(async () => {
     try {
       const result = await deliverCpuPropagation(postCommitEventId);
       console.info("FIKA CPU master-sign post-commit dispatch", { commandId: command.commandId, serviceDate: command.serviceDate, status: result.status, attempts: result.attempts || 0, fullySigned });
@@ -496,7 +536,7 @@ async function applyMatrixOperation(request: NextRequest, actor: Awaited<ReturnT
     if (!event.duplicate && releaseDeliveries[0]) await deliverCpuPropagation(releaseDeliveries[0].eventId);
     return { orderId: operation.orderId, plan, serviceDate: changedOrder.serviceDate, sequence: event.sequence, changed: true };
   }
-  const nextMenuItems = (await mergeOriginalItems(request, { ...plan, menuItems: normalisePlanAllergens({ ...plan, menuItems: operation.menuItems }, { items: plan.menuItems, actor: auditActor }).menuItems }, operation.orderId, order)).menuItems;
+  const nextMenuItems = (await mergeOriginalItems(request, { ...plan, menuItems: normaliseReviewedMenuItems(plan, operation.menuItems, auditActor) }, operation.orderId, order)).menuItems;
   const contentChanged = JSON.stringify(plan.menuItems) !== JSON.stringify(nextMenuItems);
   const matchesSignedCheckpoint = signedAllergenCheckpointMatchesOrder(plan, order, nextMenuItems);
   const authorityMatches = allergenAuthorityMatchesOrder(plan, order, nextMenuItems);
@@ -707,12 +747,13 @@ async function handlePost(request: NextRequest) {
     if (command.action === "clarify") { plan.status = "needs_clarification"; plan.clarificationNote = command.note; plan.audit.push({ action: "clarification-requested", at: timestamp, by: auditActor, reason: command.note }); updateLocalFixture(command.orderId, order => ({ ...order, status: "needs_clarification", version: order.version + 1 })); }
     if (command.action === "clarify") await syncCanonicalLifecycle(request, command.orderId, "needs_clarification", command.note);
     if (command.action === "save-plan") {
-      const nextMenuItems = (await mergeOriginalItems(request, { ...plan, menuItems: normalisePlanAllergens({ ...plan, menuItems: command.menuItems }, { items: plan.menuItems, actor: auditActor }).menuItems }, command.orderId)).menuItems;
+      const nextMenuItems = (await mergeOriginalItems(request, { ...plan, menuItems: normaliseReviewedMenuItems(plan, command.menuItems, auditActor) }, command.orderId)).menuItems;
       const contentChanged = JSON.stringify(plan.menuItems) !== JSON.stringify(nextMenuItems);
       const matchesSignedCheckpoint = signedAllergenCheckpointMatchesOrder(plan, currentOrder, nextMenuItems);
       const authorityMatches = allergenAuthorityMatchesOrder(plan, currentOrder, nextMenuItems);
+      const needsReleaseCarryForward = equivalentReleaseNeedsRefresh(plan, currentOrder, nextMenuItems);
       const effectiveNextStatus = effectiveProductionPlanStatus({ ...plan, menuItems: nextMenuItems });
-      const noOpSave = Boolean(storedPlan && !contentChanged && plan.planningNotes === command.planningNotes && authorityMatches && plan.status === effectiveNextStatus);
+      const noOpSave = Boolean(storedPlan && !contentChanged && plan.planningNotes === command.planningNotes && authorityMatches && plan.status === effectiveNextStatus && !needsReleaseCarryForward);
       if (noOpSave) {
         const matrixStatus = containedMatrixStatus(plan.matrixArtifact && currentAllergenReleaseMatchesOrder(plan.currentAllergenRelease, currentOrder, plan.menuItems) ? "ready" : plan.signatures?.some(signature => signature.role === "production_chef") && plan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? !(await matrixDriveConfiguration(currentOrder)).enabled ? "not_configured" : "generating" : undefined, driveBlocked);
         return safePlanJson(driveBlocked, { plan, revision: planRevisionToken(storedPlan), signingLineage: matrixSignatureScope(currentOrder, menuContentHash(plan.menuItems)) || null, matrixArtifact: plan.matrixArtifact ?? null, signatures: plan.signatures ?? null, matrixStatus });
@@ -721,6 +762,7 @@ async function handlePost(request: NextRequest) {
       plan.planningNotes = command.planningNotes;
       plan.status = matchesSignedCheckpoint || authorityMatches ? "planned" : "planning";
       plan.status = effectiveProductionPlanStatus(plan);
+      carryForwardEquivalentRelease(plan, currentOrder, nextMenuItems, auditActor, timestamp);
       if (matchesSignedCheckpoint && plan.currentAllergenRelease?.status === "current") {
         plan.signatures = plan.signedSignatures;
         plan.matrixArtifact = plan.signedMatrixArtifact;
@@ -733,11 +775,12 @@ async function handlePost(request: NextRequest) {
       updateLocalFixture(command.orderId, order => ({ ...order, status: "planning", version: order.version + 1 }));
     }
     if (command.action === "mark-planned") {
-      const nextMenuItems = (await mergeOriginalItems(request, { ...plan, menuItems: normalisePlanAllergens({ ...plan, menuItems: command.menuItems }, { items: plan.menuItems, actor: auditActor }).menuItems }, command.orderId)).menuItems;
+      const nextMenuItems = (await mergeOriginalItems(request, { ...plan, menuItems: normaliseReviewedMenuItems(plan, command.menuItems, auditActor) }, command.orderId)).menuItems;
       const contentChanged = JSON.stringify(plan.menuItems) !== JSON.stringify(nextMenuItems);
       const matchesSignedCheckpoint = signedAllergenCheckpointMatchesOrder(plan, currentOrder, nextMenuItems);
       const authorityMatches = allergenAuthorityMatchesOrder(plan, currentOrder, nextMenuItems);
-      if (!contentChanged && plan.status === "planned" && plan.planningNotes === command.planningNotes && storedPlan?.lifecycleSync?.status === "pending") {
+      const needsReleaseCarryForward = equivalentReleaseNeedsRefresh(plan, currentOrder, nextMenuItems);
+      if (!contentChanged && !needsReleaseCarryForward && plan.status === "planned" && plan.planningNotes === command.planningNotes && storedPlan?.lifecycleSync?.status === "pending") {
         // CPU already holds this exact planned review; only the Hub transition is outstanding. Retry it without touching CPU evidence.
         const retried = await completeLifecycleSync(request, plan);
         const retriedOrder = (await loadOrder(request, command.orderId, { fresh: true })) ?? currentOrder;
@@ -745,6 +788,7 @@ async function handlePost(request: NextRequest) {
       }
        plan.menuItems = nextMenuItems;
       plan.planningNotes = command.planningNotes;
+      carryForwardEquivalentRelease(plan, currentOrder, nextMenuItems, auditActor, timestamp);
       const subItems = plan.menuItems.flatMap(item => item.subItems);
       if (!plan.menuItems.length || plan.menuItems.some(item => !item.name.trim() || !item.subItems.length) || subItems.some(item => !item.name.trim() || item.evidenceStatus !== "completed")) throw Object.assign(new Error("Complete every menu item, sub-item name and allergen checker before marking the plan Planned."), { status: 422 });
       assertAllergenMatrixComplete(plan.menuItems, "marking the plan Planned");

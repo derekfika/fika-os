@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import net from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -229,7 +229,7 @@ function installHub(orderId: string, serviceDate: string) {
       hub.transitions.push(body.status); hub.status = body.status; hub.version += 1;
       return new Response(JSON.stringify({ order: current() }), { status: 200 });
     }
-    if (url.includes("/api/production?canonicalId=")) return hub.missing ? new Response(JSON.stringify({ error: { code: "NOT_FOUND", message: "not found" } }), { status: 404 }) : new Response(JSON.stringify({ order: current() }), { status: 200 });
+    if (url.includes("/api/production?canonicalId=")) return hub.missing || new URL(url).searchParams.get("canonicalId") !== orderId ? new Response(JSON.stringify({ error: { code: "NOT_FOUND", message: "not found" } }), { status: 404 }) : new Response(JSON.stringify({ order: current() }), { status: 200 });
     if (url.includes("/api/production?serviceDate=") || url.includes("/api/production?weekCommencing=")) return new Response(JSON.stringify({ orders: [current()] }), { status: 200 });
     throw new Error(`Unexpected test fetch: ${url}`);
   }) as typeof fetch;
@@ -461,7 +461,7 @@ function installHospitalityHub(orderId: string, serviceDate: string) {
       hub.transitions.push(body.status); hub.status = body.status; hub.version += 1;
       return new Response(JSON.stringify({ order: current() }), { status: 200 });
     }
-    if (url.includes("/api/production?canonicalId=")) { hub.orderReads += 1; return new Response(JSON.stringify({ order: current() }), { status: 200 }); }
+    if (url.includes("/api/production?canonicalId=")) { if (new URL(url).searchParams.get("canonicalId") !== orderId) return new Response(JSON.stringify({ error: { code: "NOT_FOUND", message: "not found" } }), { status: 404 }); hub.orderReads += 1; return new Response(JSON.stringify({ order: current() }), { status: 200 }); }
     if (url.includes("/api/production?serviceDate=") || url.includes("/api/production?weekCommencing=")) return new Response(JSON.stringify({ orders: [current()] }), { status: 200 });
     throw new Error(`Unexpected test fetch: ${url}`);
   }) as typeof fetch;
@@ -536,7 +536,7 @@ function installMeteredHospitalityHub(orderId: string, serviceDate: string, opti
       hub.transitions.push(body.status); hub.status = body.status; hub.version += 1;
       return new Response(JSON.stringify({ order: current() }), { status: 200 });
     }
-    if (url.includes("/api/production?canonicalId=")) { hub.orderReads += 1; return new Response(JSON.stringify({ order: current() }), { status: 200 }); }
+    if (url.includes("/api/production?canonicalId=")) { if (new URL(url).searchParams.get("canonicalId") !== orderId) return new Response(JSON.stringify({ error: { code: "NOT_FOUND", message: "not found" } }), { status: 404 }); hub.orderReads += 1; return new Response(JSON.stringify({ order: current() }), { status: 200 }); }
     if (url.includes("/api/production?serviceDate=") || url.includes("/api/production?weekCommencing=")) return new Response(JSON.stringify({ orders: [current()] }), { status: 200 });
     throw new Error(`Unexpected test fetch: ${url}`);
   }) as typeof fetch;
@@ -544,6 +544,118 @@ function installMeteredHospitalityHub(orderId: string, serviceDate: string, opti
 }
 const timed = async <T,>(work: () => Promise<T>) => { const started = performance.now(); const value = await work(); return { value, ms: Math.round(performance.now() - started) }; };
 const signBody = (orderId: string, role: string, lineage: unknown) => ({ action: "sign-matrix", orderId, role, printedName: role === "production_chef" ? "Derek Buckley" : "Sam Busby", attestation: "I have checked the allergen matrix.", signatureDataUrl: PNG, expectedLineage: lineage });
+const postAs = (POST: (request: NextRequest) => Promise<Response>, body: unknown, actorId: string) => POST(new NextRequest("http://localhost/api/production-plan", { method: "POST", headers: { cookie: `session=${actorId}`, "content-type": "application/json" }, body: JSON.stringify(body) }));
+
+test("isolated master-sign emulator: distinct admitted reviewers commit the two required roles against a synthetic Menu source", { timeout: 180_000 }, async () => {
+  const orderId = "production-order:uat-synthetic-menu-signing";
+  const serviceDate = "2026-11-17";
+  const evidenceHash = "e".repeat(64);
+  let sourceOrder = {
+    ...orderFor(orderId, serviceDate), entityType: "Production Order", schemaVersion: "0.1.0", version: 7,
+    origin: "menu_planning" as const, status: "planning", sourceEntityId: "menu-day:uat-synthetic-2026-11-17", sourcePublicationId: "publication:uat-synthetic", sourcePublicationDayId: "publication-day:uat-synthetic:v7", sourceVersion: 7, sourceContentHash: "a".repeat(64),
+    destinationOplocId: "oploc:uat-synthetic", destinationLabel: "UAT isolated synthetic site", lines: [{ canonicalId: `line:${orderId}`, sourceBookingLineId: "entry:uat-synthetic", sourceMenuItemId: "dish:uat-synthetic", itemName: "UAT synthetic dish (test evidence only)", customerQuantity: 6, customerUnit: "portions", status: "pending", allergenEvidenceStatus: "confirmed", approvedAllergenSnapshot: { allergenEvidenceHash: evidenceHash, allergenEvidenceComplete: true, allergenEvidenceStatus: "confirmed" } }],
+  };
+  globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("/api/cpu-production/access")) {
+      const cookie = new Headers(init?.headers).get("cookie") || "";
+      const actorId = cookie.slice("session=".length);
+      return new Response(JSON.stringify({ principal: { id: `synthetic-auth:${actorId}`, displayName: `Synthetic reviewer ${actorId}` }, allOplocs: true, oplocs: [] }), { status: 200 });
+    }
+    if (url.includes("/api/production?canonicalId=")) return new Response(JSON.stringify({ order: sourceOrder }), { status: 200 });
+    if (url.includes("/api/production?serviceDate=") || url.includes("/api/production?weekCommencing=")) return new Response(JSON.stringify({ orders: [sourceOrder] }), { status: 200 });
+    if (url.includes("/api/internal/cpu-post-commit")) return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    if (url.includes("/api/internal/cpu-release-event") || url.includes("/api/delivered-in/reconcile")) return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    if (url.endsWith("/api/allergen-matrix/drive")) return new Response(JSON.stringify({ saved: { fileId: "test-only-cpu-matrix", driveUrl: "https://drive.example.test/test-only-cpu-matrix" } }), { status: 200 });
+    throw new Error(`Unexpected synthetic-signing test fetch: ${url}`);
+  }) as typeof fetch;
+  const route = await importRouteWithTransactionGate();
+  route.open();
+  const items = completeItems("synthetic evidence vector; not food or operational evidence", orderId).map(item => ({ ...item, name: "UAT synthetic dish (test evidence only)", subItems: item.subItems.map(subItem => ({ ...subItem, name: "UAT synthetic dish (test evidence only)" })) }));
+  const { allergenMatrixContentHash } = await import("../lib/cpu-allergen-release");
+  const { currentAllergenReleaseMatchesOrder, matrixSignatureScope } = await import("../app/lib/production-plan");
+  const expectedLineage = matrixSignatureScope(sourceOrder as never, allergenMatrixContentHash(items as never));
+  assert.ok(expectedLineage?.allergenEvidenceHash, "the test fixture carries complete explicit synthetic evidence");
+  await route.db.collection("fikaCpuProductionPlansV1").doc(orderId).set({ id: `production-plan:${orderId}`, orderId, status: "planning", menuItems: items.map(item => ({ ...item, sourceEntryId: "entry:uat-synthetic", sourceCanonicalDishId: "dish:uat-synthetic", sourceAllergenEvidenceHash: evidenceHash, sourceItemName: item.name })), planningNotes: "isolated synthetic acceptance fixture", updatedAt: "2026-11-17T08:00:00.000Z", updatedBy: "synthetic-fixture", audit: [] });
+  const command = (role: "production_chef" | "head_chef_site_manager") => ({ action: "sign-master-matrix", serviceDate, role, printedName: `Test-only ${role}`, attestation: "Automated test fixture; no operational approval", signatureDataUrl: PNG, orderIds: [orderId], expectedLineages: [expectedLineage], reviewOperations: [{ action: "mark-planned", orderId, menuItems: items, planningNotes: "isolated synthetic acceptance fixture" }], commandId: `synthetic-${role}-attempt` });
+
+  const first = await postAs(route.POST, command("production_chef"), "reviewer-one");
+  assert.equal(first.status, 200, await first.clone().text());
+  const second = await postAs(route.POST, command("head_chef_site_manager"), "reviewer-two");
+  assert.equal(second.status, 200, await second.clone().text());
+  const stored = await storedPlanOf(route.db, orderId);
+  assert.equal(stored?.signatures?.length, 2);
+  assert.deepEqual(new Set(stored?.signatures?.map((signature: { actorId: string }) => signature.actorId)), new Set(["synthetic-auth:reviewer-one", "synthetic-auth:reviewer-two"]));
+  assert.deepEqual(new Set(stored?.signatures?.map((signature: { role: string }) => signature.role)), new Set(["production_chef", "head_chef_site_manager"]));
+  assert.equal(stored?.currentAllergenRelease?.status, "pending", "the route commits an authoritative signed release before any materialization");
+  assert.match(String(stored?.currentAllergenRelease?.releaseId), /publication-day:uat-synthetic:v7/);
+
+  const priorEnv = { renderer: process.env.CHROME_PATH, dwd: process.env.GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON, owner: process.env.GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION };
+  const renderer = ["C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe", "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe", "/usr/bin/google-chrome", "/usr/bin/google-chrome-stable", "/usr/bin/chromium", "/usr/bin/chromium-browser"].find(existsSync);
+  if (renderer) process.env.CHROME_PATH = renderer;
+  process.env.GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON = "test-only-isolated-renderer-config";
+  process.env.GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION = "test-only@example.test";
+  const { materializeCommittedCpuRelease } = await import("../lib/cpu-release-materialization");
+  const materialize = async () => {
+    const plan = (await storedPlanOf(route.db, orderId))!;
+    assert.ok(plan.currentAllergenRelease?.releaseId);
+    return materializeCommittedCpuRelease(new NextRequest("http://localhost/api/internal/cpu-release-materialize"), orderId, plan.currentAllergenRelease.releaseId);
+  };
+  try {
+    const firstReady = await materialize();
+    assert.equal(firstReady.plan.currentAllergenRelease?.materializationStatus, "ready");
+    assert.equal(currentAllergenReleaseMatchesOrder(firstReady.plan.currentAllergenRelease, sourceOrder as never, firstReady.plan.menuItems), true);
+    assert.equal(firstReady.plan.currentAllergenRelease?.signatures.length, 2);
+    const originalReleaseId = firstReady.plan.currentAllergenRelease?.releaseId;
+    const originalSignatures = structuredClone(firstReady.plan.currentAllergenRelease?.signatures);
+    const firstPacketArtifact = firstReady.plan.currentAllergenRelease?.packetArtifacts?.find(artifact => artifact.bundleId === `cpu-allergen:${serviceDate}:oploc:uat-synthetic:${originalReleaseId}`);
+    assert.ok(firstPacketArtifact, "CPU's current signed release owns the matching daily packet identity");
+
+    sourceOrder = { ...sourceOrder, version: 9, sourcePublicationDayId: "publication-day:uat-synthetic:v9", sourceVersion: 9, sourceContentHash: "b".repeat(64), lines: sourceOrder.lines.map(line => ({ ...line, customerQuantity: 14 })) };
+    let loaded = await route.GET(new NextRequest(`http://localhost/api/production-plan?orderId=${encodeURIComponent(orderId)}`));
+    let loadedBody = await loaded.json();
+    const quantitySave = await post(route.POST, { action: "save-plan", orderId, menuItems: loadedBody.plan.menuItems, planningNotes: loadedBody.plan.planningNotes, expectedRevision: loadedBody.revision });
+    assert.equal(quantitySave.status, 200, await quantitySave.clone().text());
+    let rebased = await storedPlanOf(route.db, orderId);
+    assert.equal(rebased?.currentAllergenRelease?.materializationStatus, "pending", "quantity amendment queues a new source-bound packet");
+    assert.equal(rebased?.allergenReleaseHistory?.at(-1)?.status, "superseded", "the old release remains preserved as historical evidence");
+    const quantityReady = await materialize();
+    assert.notEqual(quantityReady.plan.currentAllergenRelease?.releaseId, originalReleaseId);
+    assert.equal(currentAllergenReleaseMatchesOrder(quantityReady.plan.currentAllergenRelease, sourceOrder as never, quantityReady.plan.menuItems), true);
+    assert.deepEqual(quantityReady.plan.currentAllergenRelease?.signatures, originalSignatures, "signature records are carried unchanged");
+    const quantityPacketArtifact = quantityReady.plan.currentAllergenRelease?.packetArtifacts?.find(artifact => artifact.bundleId === `cpu-allergen:${serviceDate}:oploc:uat-synthetic:${quantityReady.plan.currentAllergenRelease?.releaseId}`);
+    assert.ok(quantityPacketArtifact, "quantity amendment materializes a packet under the new release identity");
+    assert.equal(quantityReady.plan.currentAllergenRelease?.sourceVersion, 9);
+    assert.equal(quantityReady.plan.currentAllergenRelease?.sourceContentHash, sourceOrder.sourceContentHash);
+
+    sourceOrder = { ...sourceOrder, version: 10, sourcePublicationDayId: "publication-day:uat-synthetic:v10", sourceVersion: 10 };
+    loaded = await route.GET(new NextRequest(`http://localhost/api/production-plan?orderId=${encodeURIComponent(orderId)}`));
+    loadedBody = await loaded.json();
+    const identicalSave = await post(route.POST, { action: "save-plan", orderId, menuItems: loadedBody.plan.menuItems, planningNotes: loadedBody.plan.planningNotes, expectedRevision: loadedBody.revision });
+    assert.equal(identicalSave.status, 200, await identicalSave.clone().text());
+    rebased = await storedPlanOf(route.db, orderId);
+    assert.equal(rebased?.currentAllergenRelease?.materializationStatus, "pending", "identical-content republication also refreshes source-bound artifacts");
+    const identicalReady = await materialize();
+    assert.equal(currentAllergenReleaseMatchesOrder(identicalReady.plan.currentAllergenRelease, sourceOrder as never, identicalReady.plan.menuItems), true);
+    assert.deepEqual(identicalReady.plan.currentAllergenRelease?.signatures, originalSignatures);
+    const identicalPacketArtifact = identicalReady.plan.currentAllergenRelease?.packetArtifacts?.find(artifact => artifact.bundleId === `cpu-allergen:${serviceDate}:oploc:uat-synthetic:${identicalReady.plan.currentAllergenRelease?.releaseId}`);
+    assert.ok(identicalPacketArtifact, "identical republication materializes the current release packet");
+    assert.equal(identicalReady.plan.currentAllergenRelease?.sourceVersion, 10);
+
+    sourceOrder = { ...sourceOrder, version: 11, sourcePublicationDayId: "publication-day:uat-synthetic:v11", sourceVersion: 11, sourceContentHash: "c".repeat(64), lines: sourceOrder.lines.map(line => ({ ...line, sourceMenuItemId: "dish:replacement", approvedAllergenSnapshot: { ...line.approvedAllergenSnapshot, allergenEvidenceHash: "0".repeat(64) }, itemName: "UAT replacement dish (test evidence only)" })) };
+    loaded = await route.GET(new NextRequest(`http://localhost/api/production-plan?orderId=${encodeURIComponent(orderId)}`));
+    loadedBody = await loaded.json();
+    const changedEvidenceSave = await post(route.POST, { action: "save-plan", orderId, menuItems: loadedBody.plan.menuItems, planningNotes: loadedBody.plan.planningNotes, expectedRevision: loadedBody.revision });
+    assert.equal(changedEvidenceSave.status, 200, await changedEvidenceSave.clone().text());
+    const changed = await storedPlanOf(route.db, orderId);
+    assert.equal(changed?.currentAllergenRelease, undefined, "dish/evidence changes revoke current approval and require new review");
+    assert.equal(changed?.allergenReleaseHistory?.at(-1)?.status, "revoked");
+  } finally {
+    if (priorEnv.renderer === undefined) delete process.env.CHROME_PATH; else process.env.CHROME_PATH = priorEnv.renderer;
+    if (priorEnv.dwd === undefined) delete process.env.GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON; else process.env.GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON = priorEnv.dwd;
+    if (priorEnv.owner === undefined) delete process.env.GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION; else process.env.GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION = priorEnv.owner;
+  }
+});
 
 test("sole reviewer: Save once, sign, sign - no refresh, no 409, and a failing PDF job never blocks or undoes the signatures", { timeout: 180_000 }, async () => {
   const orderId = "production-order:bg-save-sign-sign";
@@ -575,7 +687,7 @@ test("sole reviewer: Save once, sign, sign - no refresh, no 409, and a failing P
   assert.ok(stored.currentAllergenRelease, "a release bound to the signed matrix exists");
   assert.notEqual(stored.currentAllergenRelease.materializationStatus, "ready");
   const outbox = await route.db.collection("fikaCpuPropagationOutboxV1").get();
-  const materialisation = outbox.docs.map((doc) => doc.data()).filter((event) => String(event.payload?.route || "").includes("cpu-release-materialize"));
+  const materialisation = outbox.docs.map((doc) => doc.data()).filter((event) => String(event.payload?.route || "").includes("cpu-release-materialize") && event.payload?.body?.orderId === orderId);
   assert.equal(materialisation.length, 1, "one durable materialisation event, no duplicates");
   assert.ok(["failed", "pending"].includes(materialisation[0].delivery.status), "retryable, not lost");
   console.log(`METRIC save-allergen-review ms=${saved.ms} hubCalls=${saveHubCalls} | first-signature ms=${first.ms} | second-signature ms=${second.ms} (hub latency simulated at 120 ms/call; PDF/Drive step stubbed)`);

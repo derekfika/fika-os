@@ -4,6 +4,8 @@ import test from "node:test";
 import { captureSigningLineage, signingLineageUnavailableMessage, type MatrixLineage } from "../app/allergens/signing-lineage";
 import { allergenAuthorityMatchesOrder, currentAllergenReleaseMatchesOrder, hasExactMatrixSignatureForActor, matrixSignatureScope, mergeMissingProductionOrderLines, sameMatrixSignatureScope, signedAllergenReviewMatchesOrder, type MatrixSignatureScope, type PlannedMenuItem, type ProductionPlan } from "../app/lib/production-plan";
 import { buildCpuAllergenRelease, allergenMatrixContentHash } from "../lib/cpu-allergen-release";
+import { aggregateProductionTotals, buildDeliveredInDishRows, deliveredInTotals } from "../lib/production-day";
+import type { ProductionOrder } from "../lib/production-types";
 import { CANONICAL_ALLERGEN_KEYS } from "../../shared/allergen-contract";
 
 const lineage = (orderId: string, matrixContentHash: string): MatrixLineage => ({
@@ -26,10 +28,10 @@ test("master signature retries require the same actor, role, and full source and
   assert.equal(hasExactMatrixSignatureForActor([signature], "production_chef", "authid:chef-1", { ...scope, sourceVersion: 6 }), false, "same menu hash on a new source version is not the same signature lineage");
 });
 
-test("same-evidence Menu publication revisions preserve current approvals without changing signature records", () => {
+test("synthetic quick-amendment acceptance: quantity-only and identical-content republication preserve two-role approval and current quantities", () => {
   const items: PlannedMenuItem[] = [{ id: "item:1", sourceLineId: "hub-line:1", sourceEntryId: "entry:soup", sourceCanonicalDishId: "dish:soup", sourceAllergenEvidenceHash: "f".repeat(64), name: "Leek soup", note: "", subItems: [{ id: "sub:1", name: "Soup", quantity: 10, allergens: Object.fromEntries(CANONICAL_ALLERGEN_KEYS.map(key => [key, "clear"])), note: "", evidenceStatus: "completed" }] }];
   const matrixHash = allergenMatrixContentHash(items);
-  const line = { canonicalId: "hub-line:1", sourceBookingLineId: "entry:soup", sourceMenuItemId: "dish:soup", allergenEvidenceStatus: "confirmed", approvedAllergenSnapshot: { allergenEvidenceHash: "f".repeat(64), allergenEvidenceComplete: true, allergenEvidenceStatus: "confirmed" } };
+  const line = { canonicalId: "hub-line:1", sourceBookingLineId: "entry:soup", sourceMenuItemId: "dish:soup", itemName: "Leek soup", customerUnit: "portions", status: "pending", allergenEvidenceStatus: "confirmed", approvedAllergenSnapshot: { allergenEvidenceHash: "f".repeat(64), allergenEvidenceComplete: true, allergenEvidenceStatus: "confirmed", allergens: Object.fromEntries(CANONICAL_ALLERGEN_KEYS.map(key => [key, "clear"])) } };
   const oldOrder = { canonicalId: "order:bank", origin: "menu_planning", serviceDate: "2026-11-17", requiredBy: "2026-11-17T09:00:00Z", sourceEntityId: "menu-day:2026-11-17", sourcePublicationId: "publication:week", sourcePublicationDayId: "publication:week:v7:day:1", sourceVersion: 7, sourceContentHash: "a".repeat(64), lines: [{ ...line, customerQuantity: 10 }] };
   const oldScope = matrixSignatureScope(oldOrder, matrixHash)!;
   const signatures = (["production_chef", "head_chef_site_manager"] as const).map((role, index) => ({ role, printedName: `Reviewer ${index + 1}`, signedAt: "2026-11-17T08:22:00.000Z", actor: `Reviewer ${index + 1}`, actorId: `actor:${index + 1}`, attestation: "Reviewed the current allergen matrix", scope: oldScope }));
@@ -41,7 +43,21 @@ test("same-evidence Menu publication revisions preserve current approvals withou
   assert.equal(currentAllergenReleaseMatchesOrder(release, amendedOrder, items), true);
   assert.equal(signedAllergenReviewMatchesOrder({ signatures, signedSignatures: signatures, signedMenuContentHash: matrixHash, currentAllergenRelease: release }, amendedOrder, items), true);
   assert.equal(allergenAuthorityMatchesOrder({ signatures, signedSignatures: signatures, signedMenuContentHash: matrixHash, currentAllergenRelease: release }, amendedOrder, items), true);
+  assert.deepEqual(new Set(release.signatures.map(signature => signature.actorId)), new Set(["actor:1", "actor:2"]), "the required roles are separate test actors");
   assert.equal(release.signatures[0].scope?.sourceContentHash, "a".repeat(64), "the historical signature scope remains immutable");
+
+  const republication = { ...amendedOrder, sourcePublicationDayId: "publication:week:v10:day:1", sourceVersion: 10 };
+  assert.equal(currentAllergenReleaseMatchesOrder(release, republication, items), true, "same canonical dish and complete evidence preserve the current approval after identical-content republication");
+  assert.deepEqual(release.signatures, signatures.map(signature => ({ ...signature, valid: true })), "no historical signature record is rewritten");
+
+  const changedDish = { ...republication, lines: [{ ...line, sourceBookingLineId: "entry:replacement", sourceMenuItemId: "dish:replacement", approvedAllergenSnapshot: { ...line.approvedAllergenSnapshot, allergenEvidenceHash: "0".repeat(64) } }] };
+  assert.equal(currentAllergenReleaseMatchesOrder(release, changedDish, items), false, "a replacement dish with changed evidence cannot inherit the approval");
+
+  const currentOrder = amendedOrder as unknown as ProductionOrder;
+  const cpuTotals = aggregateProductionTotals([currentOrder]).flatMap(category => category.items);
+  assert.equal(cpuTotals.find(item => item.name === "Leek soup")?.quantity, 14, "CPU production demand uses the amended quantity");
+  assert.deepEqual(deliveredInTotals([currentOrder]), { portions: 14, dishes: 1, destinations: 1 }, "Delivered-In demand follows the current publication independently of signature identity");
+  assert.equal(buildDeliveredInDishRows([currentOrder])[0]?.quantity, 14, "Delivered-In projects the current portion count");
 });
 
 test("semantic carry-forward fails for changed dish evidence, incomplete evidence and other source domains", () => {
@@ -291,7 +307,7 @@ test("master signing queues durable post-commit work after the authoritative com
   const master = route.slice(route.indexOf("async function applyMasterSignatureBatch"), route.indexOf("async function applyMatrixOperation"));
   assert.match(master, /route: "\/api\/internal\/cpu-post-commit"/);
   assert.match(master, /deliveries: \[postCommitDelivery/);
-  assert.match(master, /after\(async \(\) =>/);
+  assert.match(master, /runAfterResponse\(async \(\) =>/);
   assert.doesNotMatch(master, /await rebuildCpuDayProjection|await rebuildCpuWeekProjection|await rebuildCpuReviewPackage|await deliverCpuPropagation\(materialization/);
   assert.match(master, /postCommitStatus: "queued"/);
   assert.match(master, /materializationOnCriticalPath: false/);
