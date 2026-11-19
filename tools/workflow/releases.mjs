@@ -11,7 +11,7 @@ import { readCreateAuditEvents } from './audit.mjs';
 import { assertCpuAdoptionTarget, observeCpuAdoption, adoptCompletedCpu } from './cpu-prod-adoption.mjs';
 import { configurationDigest, prepareHotfixRelease } from './hotfix-release.mjs';
 import { assertHotfixFilesReconciled, assertMainReconciled, hotfixBranch } from './hotfix.mjs';
-import { verifyStudioStagingOverlay } from './studio-staging.mjs';
+import { studioStagingBuildScope, verifyStudioStagingOverlay } from './studio-staging.mjs';
 
 export function releaseRecord(branch) {
   const sha = ref(`refs/remotes/origin/${branch}`);
@@ -738,10 +738,7 @@ export async function deploy(app, environment, options, {
         verifyStudioStagingOverlay(git('show', `${plan.sourceSha}:${APPS[app].path}/apphosting.staging.yaml`));
         if (firstRelease) {
           const domain = await readStudioReleaseDomain(t, read);
-          plan.studioBuildScope = {
-            managedArtifactRepository: `projects/${t.project}/locations/${t.region}/repositories/${STUDIO_STAGING.artifactRepository}`,
-            accessBoundary: 'shared-staging-repository',
-          };
+          plan.studioBuildScope = studioStagingBuildScope;
           plan.studioFirstReleaseApprovalHash = digest({ target: t, sourceSha: plan.sourceSha, scopeHash: plan.scopeHash,
             buildScope: plan.studioBuildScope, backendEtag: backend.etag || null, domain, before, ledger: pointer?.commit || null });
           if (options.execute && (!options.reason?.trim() || options['approve-hash'] !== plan.studioFirstReleaseApprovalHash)) {

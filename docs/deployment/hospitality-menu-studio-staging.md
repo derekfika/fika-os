@@ -33,9 +33,9 @@ npx --no-install tsx scripts/provision-beverage-staging-registry.ts --studio
 
 After the owner approves the exact plan, add `--execute` to register the hidden app and publish its current references. Using existing audited AUTHMOD account actions, invite only the approved, already Firebase-bound person. Give Sam the standard assignment to `hospitality-menu-studio` and separate direct organisation `View` and `Manage` grants with empty scope IDs on `hospitality-menu-studio.preview`. The registry's standard action list stays `["View"]`. Record the approved expiry and current access package. The existing Hub [public-safe catalogue package](../../apps/integration-hub/app/api/hospitality-catalogue/public-package/route.ts) still independently requires Hub `canonical.view` for browser sessions. Use access Sam already has or obtain approval for that grant only if the pilot needs catalogue mapping.
 
-## 2. Isolate the managed build and Studio database
+## 2. Verify the managed App Hosting and Studio database boundaries
 
-Follow the [permission plan](hospitality-menu-studio-isolation.md) for the exact account and resources. The owner must explicitly accept the shared managed image repository and any verified managed source-bucket exposure. The deployment uses a named Studio data grant and no extra direct access to Hub, Hospitality, CPU, allergen or production data. Use the existing account and database. Verify the data and storage allow/deny matrix before rollout and separately approve publishing the deny-all client rules if the current rules cannot be verified.
+Follow the [permission plan](hospitality-menu-studio-isolation.md) for the standard staging App Hosting role and the conditional Studio draft-author role. Obtain explicit approval for the staging project scope, including shared image repositories, Storage objects and build metadata. Verify effective named-database draft access and denial on default Firestore, production resources, secrets and unrelated service-account credentials. The named database's reviewed deny-all client release was published and verified on 19 November 2026.
 
 With owner approval, set the existing backend environment to `staging` and attach its dedicated account. Update only `environment` and `serviceAccount`, using the current backend ETag. Leave overrides empty, preserve the Git connection, and keep automatic rollouts disabled. Verify the returned backend, branch, traffic, builds and rollouts. [App Hosting backend update](https://firebase.google.com/docs/reference/apphosting/rest/v1beta/projects.locations.backends/patch)
 
@@ -48,7 +48,7 @@ npm run fika -- studio-preflight --staging
 npm run fika -- deploy menu-studio --staging --sha $studioMergeSha
 ```
 
-Provide the owner the exact merge SHA, `studioFirstReleaseApprovalHash`, shared build scope, verified isolation and Hub admission evidence. After approval, run:
+Provide the owner the exact merge SHA, `studioFirstReleaseApprovalHash`, shared staging project exposure, verified data and cross-environment boundaries, and Hub admission evidence. After approval, run:
 
 ```powershell
 npm run fika -- deploy menu-studio --staging --sha $studioMergeSha --execute --approve-hash $approvedStudioHash --reason $ownerApprovalReference

@@ -24,7 +24,17 @@ export function verifyStudioStagingOverlay(source) {
 const base = backendPath(studioStaging);
 const database = `projects/${studioStaging.project}/databases/${studioStaging.database}`;
 const artifactRepository = STUDIO_STAGING.artifactRepository;
-const packagesPath = `projects/${studioStaging.project}/locations/${studioStaging.region}/repositories/${artifactRepository}/packages/`;
+
+export const studioStagingBuildScope = Object.freeze({
+  managedRole: 'roles/firebaseapphosting.computeRunner',
+  managedRoleScope: `projects/${studioStaging.project}`,
+  managedArtifactRepository: `projects/${studioStaging.project}/locations/${studioStaging.region}/repositories/${artifactRepository}`,
+  accessBoundary: 'shared-staging-project',
+  storageObjectAccess: 'staging-project',
+  buildMetadataUpdates: 'staging-project',
+});
+
+const packagesPath = `${studioStagingBuildScope.managedArtifactRepository}/packages/`;
 
 function describe(args) {
   return JSON.parse(command('gcloud', [
@@ -125,11 +135,12 @@ export async function studioStagingPreflight({ read = cloud, describeResource = 
     status: 'BLOCKED',
     target: { ...studioStaging, rootDirectory: APPS[studioStaging.app].path },
     checks: { appHosting, serviceAccount, firestore, rolloutPolicy, buildHistory, customDomain, managedArtifactRepository: artifactScope },
+    buildScope: studioStagingBuildScope,
     pending: [
       'Studio-specific staging AUTHMOD registration, capabilities and exact return origin',
-      'Effective IAM and isolated named Firestore runtime binding',
-      'Owner approval of the shared managed artifact repository and verified effective build permissions',
-      'Storage, Workspace and outbound side-effect isolation',
+      'Effective IAM for named Studio Firestore access and denial of default Firestore, production resources, secrets and unrelated service accounts',
+      'Owner approval and effective verification of Compute Runner access to shared staging images, Storage objects and build metadata',
+      'Workspace and outbound side-effect isolation',
       'Owner approval of the exact merged first-release plan',
     ],
   };
