@@ -117,7 +117,15 @@ test('preflight observes only scoped metadata and leaves release blocked even wh
     buildHistory: 'VERIFIED', customDomain: 'VERIFIED', managedArtifactRepository: 'UNVERIFIED',
   });
   assert.equal(result.status, 'BLOCKED');
-  assert.match(result.pending.join(' '), /AUTHMOD.*IAM.*Storage.*first-release plan/);
+  assert.deepEqual(result.buildScope, {
+    managedRole: 'roles/firebaseapphosting.computeRunner',
+    managedRoleScope: 'projects/fika-os-dev',
+    managedArtifactRepository: 'projects/fika-os-dev/locations/europe-west4/repositories/firebaseapphosting-images',
+    accessBoundary: 'shared-staging-project',
+    storageObjectAccess: 'staging-project',
+    buildMetadataUpdates: 'staging-project',
+  });
+  assert.match(result.pending.join(' '), /AUTHMOD.*IAM.*default Firestore, production resources.*Storage.*first-release plan/);
 });
 
 test('mismatched identity, active traffic, overrides and unfinished domain certificate block the preflight', async () => {

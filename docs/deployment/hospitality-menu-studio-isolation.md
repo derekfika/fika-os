@@ -1,73 +1,43 @@
-# Menu Studio staging IAM and shared build scope
+# Menu Studio staging IAM and shared App Hosting scope
 
-18 November 2026 · [#181 staging boundary](https://github.com/derekfika/fika-os/issues/181) · [Rollout runbook](hospitality-menu-studio-staging.md)
+19 November 2026 · [#586 Menu Studio](https://github.com/derekfika/fika-os/issues/586) · [#181 staging boundary](https://github.com/derekfika/fika-os/issues/181) · [Studio release runbook](hospitality-menu-studio-staging.md)
 
-Use #181's existing `fika-os-dev` boundary. Studio uses one dedicated ambient App Hosting principal for managed Cloud Build and Cloud Run. Data access is limited to the named Studio Firestore database. Integration with Hub, Hospitality, CPU and allergen paths uses authorised staging HTTP and canonical interfaces. These services keep their data under their own identities.
+Use the existing `fika-os-dev` App Hosting backend, dedicated Studio identity and named Firestore database. The Hub and Hospitality staging identities use the same predefined Compute Runner role at project scope. App Hosting uses its configured identity for both Cloud Build and Cloud Run. The Studio app separately uses the staging Hub for admission and authorized catalogue reads. [Google App Hosting identity](https://firebase.google.com/docs/app-hosting/about-app-hosting)
 
-## Evidence and decision
+## Exact grants for owner review
 
-The dedicated account had no direct bindings in either project IAM policy observed on 18 November. This does not establish effective denial through resource policy, inheritance or impersonation. Policy Troubleshooter returned `SERVICE_DISABLED` for `fika-os-dev`. Owner approval is needed to enable it in staging or use an equivalent read-only policy evaluation path.
+| Role | Binding resource | Scope |
+| --- | --- | --- |
+| `roles/firebaseapphosting.computeRunner` | Project `fika-os-dev` | Standard managed App Hosting role for `fika-menu-studio-staging@fika-os-dev.iam.gserviceaccount.com`. |
+| `projects/fika-os-dev/roles/StudioDraftAuthor` | Project `fika-os-dev` with condition `resource.name == "projects/fika-os-dev/databases/hospitality-menu-studio"` | `datastore.databases.get` for transaction begin and rollback, and `datastore.entities.get`, `list`, `create` and `update`. |
 
-Hub and Hospitality use separate staging accounts with `roles/firebaseapphosting.computeRunner` and `roles/developerconnect.readTokenAccessor`. Hub also has Firestore and Firebase Auth roles for its own authority. CPU and Menu Planning use the common compute account with additional Firebase SDK and Storage roles. The observed Compute Runner role has 101 permissions, includes all three permissions in the token-accessor role, and includes no Firestore permissions. It can update build records and read/write Storage objects. Project-wide Storage would reach backups and stage catalogue/read-package buckets.
+The Compute Runner grant observed on 19 November has 101 permissions. The scope covers:
 
-Use Google's documented equivalent-permissions path. Retain the non-data managed build permissions and scope the registry and any required Storage grant to their native resources. The following equivalence is prepared from the documented role and these actual resources. Verify its capability before release. Do not widen it automatically if the first managed build reports a gap. [App Hosting account and roles](https://firebase.google.com/docs/reference/apphosting/rest/v1beta/projects.locations.backends) · [Compute Runner role](https://docs.cloud.google.com/iam/docs/roles-permissions/firebaseapphosting)
+- **Staging images.** Both the shared `firebaseapphosting-images` repository and `cloud-run-source-deploy` are in the project. The role includes artifact pull, upload, export, mutable tag updates, and attachment creation and deletion. Another staging package or tag can be affected.
+- **Staging Storage.** Object read/list/create/update/delete reach the Firestore export, private Kafoodle catalogue, Hub read-package, App Hosting source and Cloud Run source buckets unless an effective policy restricts the operation. The staging export paths were traced to `fika-os-dev` Firestore export records. They and the private catalogue and access packages are a genuine staging data confidentiality and integrity risk.
+- **Staging build and source metadata.** App Hosting build metadata updates and read-token access for the shared Developer Connect link are project scoped. The linked Git repository is `derekfika/fika-os`.
 
-| Binding | Exact scope and role contents |
-| --- | --- |
-| `StudioManagedHosting` | Project `fika-os-dev`. Permissions from `roles/firebaseapphosting.computeRunner` except `artifactregistry.*` and `storage.*`. The retained Developer Connect permissions cover the project link, which is shared by these staging apps and points to `derekfika/fika-os`. Review effective build metadata and update reach at project scope. No additive token-accessor role. |
-| `StudioManagedImages` | Repository `projects/fika-os-dev/locations/europe-west4/repositories/firebaseapphosting-images` only. The Compute Runner permissions whose names start with `artifactregistry.` and are testable and custom-role supported at that repository. Production access, other repositories and project-level create-on-push stay outside the binding. |
-| `StudioManagedSources` | If required for the approved managed build, grant only on `gs://firebaseapphosting-sources-594727519934-europe-west4`. The Compute Runner `storage.` permissions testable and custom-role supported at that bucket. Verify the managed source path and review the source bucket's shared reach before binding. |
-| `StudioDraftAuthor` | Project `fika-os-dev`, role bound only when `resource.name == "projects/fika-os-dev/databases/hospitality-menu-studio"`. Permissions `datastore.databases.get`, `datastore.entities.get`, `datastore.entities.list`, `datastore.entities.create` and `datastore.entities.update`. Transactions require the database permission. Exclude deletes and database administration. |
+The predefined role contains no Firestore, Secret Manager access, or IAM impersonation permissions. The separate project `fika-os` receives no grant in this plan. Confirm effective production denial independently. Role definitions, source-project metadata, and direct binding reads are limited evidence. [Compute Runner permissions](https://docs.cloud.google.com/iam/docs/roles-permissions/firebaseapphosting) · [Firestore IAM conditions](https://docs.cloud.google.com/firestore/native/docs/manage-databases#configure-per-database-access-permissions)
 
-The managed repository contains CPU, Hospitality, Hub, Menu Planning and other staging images. A package named `fika-os` has one version dated 27 August 2026 and no matching current staging backend. Confirm its provenance before any Studio grant. A repository grant enables pull and push within the shared repository and cannot isolate one App Hosting image or tag. Require owner acceptance of the full effective artifact/build exposure. Keep the release blocked if production material is accessible or effective policy reaches unrelated data stores. [Repository IAM scopes](https://docs.cloud.google.com/artifact-registry/docs/access-control)
+## Approved provisioning and verification
 
-## Prepare exact role manifests and verify access
-
-The following inventory prints role candidates for review. It creates no roles or bindings. Save the approved output and its digest with the owner decision.
+Before applying the bindings, record the owner decision accepting the actual shared staging scope. Verify the live role and target. Create `StudioDraftAuthor` only when absent. If it already exists, review its exact permission set and stop on a difference.
 
 ```powershell
 $studioProject = 'fika-os-dev'
-$studioRegion = 'europe-west4'
-$studioImages = 'firebaseapphosting-images'
-$studioSourceBucket = 'firebaseapphosting-sources-594727519934-europe-west4'
-$studioImagesResource = "//artifactregistry.googleapis.com/projects/$studioProject/locations/$studioRegion/repositories/$studioImages"
-$studioSourcesResource = "//storage.googleapis.com/projects/_/buckets/$studioSourceBucket"
-$studioBaseline = (gcloud iam roles describe roles/firebaseapphosting.computeRunner --format=json | ConvertFrom-Json).includedPermissions
-$studioImageTestable = gcloud iam list-testable-permissions $studioImagesResource --format=json | ConvertFrom-Json
-$studioSourceTestable = gcloud iam list-testable-permissions $studioSourcesResource --format=json | ConvertFrom-Json
-$studioHostingPerms = @($studioBaseline | Where-Object { $_ -notmatch '^(artifactregistry|storage)\.' })
-$studioImagePerms = @($studioImageTestable | Where-Object { $_.name -like 'artifactregistry.*' -and $_.name -in $studioBaseline -and $_.customRolesSupportLevel -ne 'NOT_SUPPORTED' } | ForEach-Object name)
-$studioSourcePerms = @($studioSourceTestable | Where-Object { $_.name -like 'storage.*' -and $_.name -in $studioBaseline -and $_.customRolesSupportLevel -ne 'NOT_SUPPORTED' } | ForEach-Object name)
-$studioDraftPerms = 'datastore.databases.get,datastore.entities.get,datastore.entities.list,datastore.entities.create,datastore.entities.update'
-[ordered]@{Hosting=$studioHostingPerms; Images=$studioImagePerms; Sources=$studioSourcePerms; Draft=$studioDraftPerms} | ConvertTo-Json
-```
-
-After owner approval, use the exact reviewed permission lists. The optional source role and binding require separate evidence that the managed build needs them.
-
-```powershell
 $studioMember = 'serviceAccount:fika-menu-studio-staging@fika-os-dev.iam.gserviceaccount.com'
+$studioDraftRole = 'projects/fika-os-dev/roles/StudioDraftAuthor'
+$studioDraftPermissions = 'datastore.databases.get,datastore.entities.get,datastore.entities.list,datastore.entities.create,datastore.entities.update'
 $studioDbCondition = 'title=StudioNamedDatabaseOnly,expression=resource.name == "projects/fika-os-dev/databases/hospitality-menu-studio"'
-gcloud iam roles create StudioManagedHosting --project=$studioProject --title='Studio managed hosting' --permissions=($studioHostingPerms -join ',') --stage=GA
-gcloud iam roles create StudioManagedImages --project=$studioProject --title='Studio managed images' --permissions=($studioImagePerms -join ',') --stage=GA
-gcloud iam roles create StudioDraftAuthor --project=$studioProject --title='Studio draft author' --permissions=$studioDraftPerms --stage=GA
-gcloud projects add-iam-policy-binding $studioProject --member=$studioMember --role="projects/$studioProject/roles/StudioManagedHosting" --condition=None
-gcloud artifacts repositories add-iam-policy-binding $studioImages --project=$studioProject --location=$studioRegion --member=$studioMember --role="projects/$studioProject/roles/StudioManagedImages"
-gcloud projects add-iam-policy-binding $studioProject --member=$studioMember --role="projects/$studioProject/roles/StudioDraftAuthor" --condition=$studioDbCondition
+gcloud iam roles create StudioDraftAuthor "--project=$studioProject" --title='Studio draft author' "--permissions=$studioDraftPermissions" --stage=GA
+gcloud projects add-iam-policy-binding $studioProject "--member=$studioMember" '--role=roles/firebaseapphosting.computeRunner' --condition=None
+gcloud projects add-iam-policy-binding $studioProject "--member=$studioMember" "--role=$studioDraftRole" "--condition=$studioDbCondition"
 ```
 
-If that separately approved source grant is required:
+Read back the project policy and role. Have an authorized operator verify the effective policy, including inheritance and resource policies. Test using an already authorized short-lived credential for the exact Studio principal. A new temporary verifier grant needs separate approval and must expire and be removed. Record the identity, permission, exact resource, result, timestamp and approval reference. Preserve the existing rules and authentication evidence.
 
-```powershell
-gcloud iam roles create StudioManagedSources --project=$studioProject --title='Studio managed sources' --permissions=($studioSourcePerms -join ',') --stage=GA
-gcloud storage buckets add-iam-policy-binding "gs://$studioSourceBucket" --member=$studioMember --role="projects/$studioProject/roles/StudioManagedSources"
-```
+- Verify bounded Firestore get/list and a read-only begin/rollback transaction against the named Studio database. Verify the exact conditioned policy allows draft creates and updates and denies deletes and administration.
+- Require effective denial on default staging Firestore and every production Firestore database. Check production Artifact Registry and Storage, Secret Manager in both projects, other service-account impersonation and IAM mutation. Use policy and read-only probes without production writes or fetching protected payloads.
+- Compare effective shared staging images, Storage and build-metadata reach to the approved exposure. Keep the release held if production or unrelated credentials are accessible, if access exceeds the approved staging scope, or if required evidence is unknown. Record any unresolved result without treating it as a denial.
 
-The client rules deny all direct access. If they need updating, obtain a separate rules approval and limit it to `firebase deploy --project fika-os-dev --config apps/hospitality-menu-studio/firebase.staging.json --only firestore:rules`. The server explicitly connects to the named database. [Firestore methods and permissions](https://docs.cloud.google.com/firestore/native/docs/security/iam) · [Per-database conditions](https://firebase.google.com/docs/firestore/manage-databases#configure_per-database_access_permissions)
-
-Check the exact principal and relevant service agents after proposed grants, including inherited bindings, resource policies and impersonation. Verify each authorised draft permission on Studio and deny document deletion. Verify Firestore access is denied for `fika-os-dev/(default)` and all production databases, plus production or unrelated buckets, secrets, images, IAM mutation and impersonation. Use exact resource paths for each check. An absent direct binding or a refused operator query is insufficient. This example is read only and needs an authorised troubleshooting consumer project:
-
-```powershell
-gcloud beta policy-troubleshoot iam '//firestore.googleapis.com/projects/fika-os/databases/(default)' --principal-email='fika-menu-studio-staging@fika-os-dev.iam.gserviceaccount.com' --permission=datastore.entities.get --project=fika-os-dev
-```
-
-Confirm no keys, Workspace delegation, production connectors, schedulers, notification credentials or real operational data paths. If the approval or evidence fails, revoke the exact approved new bindings under rollback authority and preserve the resources and logs. [Effective IAM verification](https://docs.cloud.google.com/policy-intelligence/docs/troubleshoot-access)
+On failure, stop before attaching the account. Revoke only the exact new, approved bindings under the rollback authorization. The [release runbook](hospitality-menu-studio-staging.md) covers the ETag-guarded backend update and separate rollout hash. [Effective IAM verification](https://docs.cloud.google.com/policy-intelligence/docs/troubleshoot-access) · [Firestore method permissions](https://docs.cloud.google.com/firestore/native/docs/security/iam)
