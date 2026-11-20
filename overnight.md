@@ -26,7 +26,7 @@ Track each selected issue in #265 with its priority, assigned worker, status, br
 
 ## Coordinator and delegation
 
-- The named Luna coordinator owns the run, the current coordination ledger (issue #265), and the scoped execution issue (issue #357). Do not create duplicate coordinators or claim work that has not actually started.
+- The named Luna coordinator owns the run, the current coordination ledger (issue #265), and the scoped execution issue (issue #650). Do not create duplicate coordinators or claim work that has not actually started.
 - Use Codex workers only. At most two Sol assignments may be consumed in one overnight run, including read-only audits. Assign Sol High or Extra High reasoning, never Fast; Sol does not perform UAT. Prefer a bounded read-only Sol audit followed by a Luna or standard Codex implementation worker when that safely separates diagnosis from implementation.
 - Check current source, issues, PRs, worktrees and deployment evidence before dispatch. Preserve other tasks’ worktrees, branches, stashes, locks and recovery data.
 - An issue or assignment is not an agent launch. Report only real workers, tests, deployments, permissions, and capacity evidence.
