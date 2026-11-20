@@ -20,5 +20,5 @@ test("Portion Planner withdraws the week and replaces cache-first state with an 
   assert.match(data, /const body = await fetchWeek\(weekId\)/);
   assert.match(data, /weekCache\.set\(weekId, value\)/);
   assert.match(data, /setPublicationState\(value\.publicationState\)/);
-  assert.match(data, /await persistCachedWeek\(value, generation\)/);
+  assert.match(data, /persistInBackground\(value, generation\)/);
 });

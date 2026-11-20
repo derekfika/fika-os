@@ -4,7 +4,7 @@ import { z } from "zod";
 import { internalTokenAllowed } from "../../../../../shared/internal-auth";
 import { mirrorPreviewEnabled } from "../../../../../shared/cpux-calendar/google";
 import { deliveredInCatchUp } from "../../../../lib/cpux-mirror/service";
-import { resolveMenuActor } from "../../../../lib/auth";
+import { actorCanWriteOneOff, resolveMenuActor } from "../../../../lib/auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     try {
       assertSameOrigin(request);
       const actor = await resolveMenuActor(request);
-      if (actor.role !== "integration-admin" || !actor.allOplocs || actor.synthetic) return NextResponse.json({ error: "A real all-site AUTHMOD administrator is required." }, { status: 403 });
+      if (actor.role !== "integration-admin" || !actorCanWriteOneOff(actor, "publish") || actor.synthetic) return NextResponse.json({ error: "A real all-site AUTHMOD publisher is required." }, { status: 403 });
       console.info("cpux.calendar.delivered_in.catch_up_diagnostic", { actorId: actor.uid, from: input.from, through: input.through });
     } catch {
       return NextResponse.json({ error: "An authenticated all-site Menu Planning administrator is required." }, { status: 403 });

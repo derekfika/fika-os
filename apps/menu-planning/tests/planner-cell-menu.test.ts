@@ -156,8 +156,8 @@ test("actions reuse the existing planner operations with the cell's own day, slo
 test("the repeated Edit buttons are gone from the picker rows and the edit modal opens from a cell without the picker", () => {
   assert.doesNotMatch(planner, /dish-picker-edit/);
   assert.doesNotMatch(planner, /onEdit=\{openEditDish\}/);
-  assert.match(planner, /\{!picker && editor && <DishEditorModal/);
-  assert.match(planner, /\{picker && editor && <DishEditorModal/);
+  assert.match(planner, /\{access\.canManageOrganisation && !picker && editor && <DishEditorModal/);
+  assert.match(planner, /\{access\.canManageOrganisation && picker && editor && <DishEditorModal/);
 });
 
 test("menu styling is the floating menu only and uses existing tokens", () => {

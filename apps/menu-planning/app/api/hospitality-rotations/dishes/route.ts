@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createAndLinkHospitalityDish } from "@/lib/hospitality-dish-command";
+import { requireCatalogueMutationActor, resolveMenuActor } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,6 +9,7 @@ const headers = { "Cache-Control": "private, no-store" };
 
 export async function POST(request: NextRequest) {
   try {
+    requireCatalogueMutationActor(await resolveMenuActor(request));
     if (Number(request.headers.get("content-length")) > 20_000) throw Object.assign(new Error("Request too large"), { status: 413 });
     const { status, ...body } = await createAndLinkHospitalityDish(request.headers.get("cookie"), await request.json());
     return NextResponse.json(body, { status, headers });

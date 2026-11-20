@@ -4,7 +4,11 @@ import { test } from "node:test";
 import { requireCatalogueMutationActor, type MenuActor } from "../lib/auth";
 import { catalogueSourceHash } from "../lib/catalogue-source";
 
-const actor = (role: MenuActor["role"], synthetic = false): MenuActor => ({ uid: "staff-42", email: "manager@example.test", role, oplocIds: [], allOplocs: true, ...(synthetic ? { synthetic: true } : {}) });
+const actor = (role: MenuActor["role"], synthetic = false): MenuActor => ({
+  uid: "staff-42", email: "manager@example.test", role, oplocIds: ["oploc:fixture"], allOplocs: true,
+  permissions: { manageOplocIds: ["oploc:fixture"], publishOplocIds: [], canManageOrganisation: role !== "viewer", canPublishOrganisation: false },
+  ...(synthetic ? { synthetic: true } : {}),
+});
 
 test("catalogue mutation authority is fail-closed for viewers and synthetic admission", () => {
   assert.throws(() => requireCatalogueMutationActor(actor("viewer")), error => (error as { status?: number }).status === 403);
@@ -24,7 +28,7 @@ test("catalogue mutation routes pass the resolved actor identity to repository o
   assert.match(catalogue, /mergeSimilarCanonicalItems\(actor\.uid/);
   assert.match(candidates, /promoteSourceCandidate\(item, actor\.uid\)/);
   assert.match(candidates, /setCandidateReview\(item\.canonicalId, "ignored", body\.reason, actor\.uid\)/);
-  assert.match(importer, /recordDishSourceAliases\(aliasesById, actor!\.uid\)/);
+  assert.match(importer, /recordDishSourceAliases\(aliasesById, actor\.uid\)/);
 });
 
 test("Dish Library create and edit forms use the authenticated canonical catalogue API", () => {

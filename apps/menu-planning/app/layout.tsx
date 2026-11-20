@@ -8,11 +8,12 @@ import "./import-menu-week.css";
 import "./visual-system.css";
 import "./dish-title-wrap.css";
 import "./portion-planner-resize.css";
+import { MenuAccessProvider } from "./menu-access";
 export const metadata = { title: "FIKA OS · Menu Planning" };
 export default function Layout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en-GB">
-      <body>{children}</body>
+      <body><MenuAccessProvider>{children}</MenuAccessProvider></body>
     </html>
   );
 }

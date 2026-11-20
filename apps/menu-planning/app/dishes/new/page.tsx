@@ -5,9 +5,14 @@ import type { MenuItem } from "@/lib/domain";
 import { CANONICAL_DISH_CATEGORIES } from "@/lib/dish-categories";
 import { invalidateCatalogueCache } from "@/lib/menu-catalogue-cache";
 import MenuPlanningShell from "../../menu-planning-shell";
+import MenuAccessRequired from "../../menu-access-required";
 type Ingredient = { name: string; quantity: string; unit: string };
 
 export default function NewDishPage() {
+  return <MenuAccessRequired section="Dish Library"><DishEditorPage /></MenuAccessRequired>;
+}
+
+function DishEditorPage() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState<string>(CANONICAL_DISH_CATEGORIES[0]);

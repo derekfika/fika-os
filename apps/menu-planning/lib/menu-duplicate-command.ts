@@ -117,18 +117,20 @@ async function loadDestinations(request: DuplicateRequest, actorId: string, live
   return targets;
 }
 
-export async function duplicateMenuPlanning(request: DuplicateRequest, actorId: string, liveOplocs: readonly GovernedOploc[], at = new Date().toISOString()) {
+export async function duplicateMenuPlanning(request: DuplicateRequest, actorId: string, liveOplocs: readonly GovernedOploc[], at = new Date().toISOString(), authorize?: (snapshot: RollingSnapshot) => void) {
   // Command invariant: a verified, non-empty actor before anything is read or written.
   if (!isVerifiedAuditActor(actorId)) throw httpError("A verified authenticated identity is required to duplicate planning. Nothing was written.", 401);
   validateRequest(request);
   const sourceSnapshot = await getWeekSnapshot<RollingSnapshot>(request.sourceWeekId);
   if (!sourceSnapshot) throw httpError("The source week was not found.", 404);
   const source = normaliseRollingSnapshotDestinations(sourceSnapshot, liveOplocs);
+  authorize?.(source);
   const dishIds = [...new Set(source.entries.map(entry => entry.itemId?.trim()).filter((id): id is string => Boolean(id)))];
   const dishes = await listCanonicalMenuItemsByIds(dishIds);
   const dishCategoryById = new Map(dishes.filter(item => item.reviewStatus !== "archived").map(item => [item.canonicalId, item.category] as const));
   const liveOplocMap = new Map(liveOplocs.map(oploc => [oploc.canonicalId, oploc.label] as const));
   const targets = await loadDestinations(request, actorId, liveOplocs, request.operationId);
+  for (const target of targets) authorize?.(target.snapshot);
   const plan = planMenuDuplicate({
     source,
     targets,
@@ -167,6 +169,7 @@ export async function duplicateMenuPlanning(request: DuplicateRequest, actorId: 
   // element without a verified actor. Firestore would reject it part-way, leaving earlier weeks applied.
   for (const targetPlan of plan.targets) {
     if (!targetPlan.changed || targetPlan.alreadyApplied) continue;
+    authorize?.(targetPlan.next);
     const invalid = findInvalidAuditActor(targetPlan.next);
     if (invalid) throw httpError(`The planning week for ${targetPlan.weekCommencing} has an audit entry without a recorded actor (${invalid}), so it cannot be changed safely. Nothing was written; ask an administrator to review it.`, 409);
   }

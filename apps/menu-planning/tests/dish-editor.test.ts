@@ -147,7 +147,7 @@ test("the planner opens the modal from Enter, keeps the picker cell for the save
   assert.match(planner, /if \(event\.nativeEvent\.isComposing\) return/);
   assert.match(planner, /resolveEnter\(/);
   assert.match(planner, /\{picker && !editor && !classification && <DishPicker/);
-  assert.match(planner, /\{picker && editor && <DishEditorModal/);
+  assert.match(planner, /\{access\.canManageOrganisation && picker && editor && <DishEditorModal/);
   assert.match(planner, /onCancel=\{\(\) => setEditor\(undefined\)\}/);
   assert.match(planner, /if \(saved\.outcome !== "updated"\) await choose\(\{ id: saved\.id, name: saved\.name, category: saved\.category \}\)/);
   assert.doesNotMatch(planner, /const createDish = async/, "the planner no longer creates dishes from a bare name");

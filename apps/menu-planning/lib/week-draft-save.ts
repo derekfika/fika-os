@@ -53,7 +53,7 @@ type WorkingDraftLineage = { dayId: string; publicationDayId: string; publicatio
 type Receipt = RollingWeek["audit"][number] & { requestId?: string; fingerprint?: string; baseVersion?: number; savedVersion?: number; workingDraftLineage?: WorkingDraftLineage[] };
 const fingerprint = (request: WeekSaveRequest) => createHash("sha256").update(JSON.stringify(request)).digest("hex");
 
-export function applyWeekSave(snapshot: RollingSnapshot, request: WeekSaveRequest, actor: string, allowedOplocIds: ReadonlySet<string>, at = new Date().toISOString(), oplocAliases: ReadonlyMap<string, string> = new Map(), workingDraftLineage: WorkingDraftLineage[] = [], allowOneOffPax = true) {
+export function applyWeekSave(snapshot: RollingSnapshot, request: WeekSaveRequest, actor: string, allowedOplocIds: ReadonlySet<string>, at = new Date().toISOString(), oplocAliases: ReadonlyMap<string, string> = new Map(), workingDraftLineage: WorkingDraftLineage[] = [], allowOneOffPax = true, allowSharedMenuEdits = true) {
   const hash = fingerprint(request);
   const receipt = (snapshot.week.audit as Receipt[]).find(event => event.requestId === request.requestId);
   if (receipt) {
@@ -100,7 +100,12 @@ export function applyWeekSave(snapshot: RollingSnapshot, request: WeekSaveReques
     else delete day.destinationPax;
   }
   const checkAllocations = (entry: RollingSnapshot["entries"][number]) => {
-    if (entry.allocations.some(value => value.destinationId && !allowedOplocIds.has(oplocAliases.get(value.destinationId) || value.destinationId))) failEntry("This save contains a destination outside your permitted scope.", "allocations.destinationId", entry, 403);
+    if (!entry.allocations.length && !allowSharedMenuEdits) failEntry("Editing a menu entry without site allocations requires organisation-wide Manage authority.", "allocations", entry, 403);
+    if (entry.allocations.some(value => {
+      const ids = [value.destinationId, value.destination?.kind === "governed" ? value.destination.id : undefined].filter((id): id is string => !!id);
+      const oneOff = value.oneOffDestinationId || value.destination?.kind === "one-off" || !ids.length;
+      return (oneOff && !allowOneOffPax) || ids.some(id => !allowedOplocIds.has(oplocAliases.get(id) || id));
+    })) failEntry("This save contains a destination outside your permitted scope.", "allocations.destinationId", entry, 403);
     if (entry.portions !== entry.allocations.reduce((sum, value) => sum + value.quantity, 0) && entry.allocations.length) failEntry("Portions must match destination allocations.", "portions/allocations", entry);
   };
   for (const update of request.changes.updates) {
@@ -153,7 +158,7 @@ export function applyWeekSave(snapshot: RollingSnapshot, request: WeekSaveReques
 }
 
 /** A bounded week transaction; the existing adapter persists diffs and leaves publications/outboxes untouched. */
-export async function saveWeekDraft(raw: unknown, actor: string, allowedOplocIds: ReadonlySet<string>, oplocAliases: ReadonlyMap<string, string> = new Map(), allowOneOffPax = true) {
+export async function saveWeekDraft(raw: unknown, actor: string, allowedOplocIds: ReadonlySet<string>, oplocAliases: ReadonlyMap<string, string> = new Map(), allowOneOffPax = true, allowSharedMenuEdits = true) {
   const parsed = requestSchema.safeParse(raw);
   if (!parsed.success) {
     const validationErrors = requestValidationErrors(raw, parsed.error.issues);
@@ -183,7 +188,9 @@ export async function saveWeekDraft(raw: unknown, actor: string, allowedOplocIds
     const publication = publicationState.publications?.find(value => value.sourceWeekId === request.weekId);
     const currentPublishedDays = (publication?.days || []).filter(day => day.status === "published");
     const lineage = request.workingDraft ? currentPublishedDays.filter(day => touchedDays.has(day.sourceDayId)).map(day => ({ dayId: day.sourceDayId, publicationDayId: day.publicationDayId, publicationVersion: publication?.publicationVersion || day.version })) : [];
-    const result = applyWeekSave(current, request, actor, allowedOplocIds, new Date().toISOString(), oplocAliases, lineage, allowOneOffPax);
+    if (request.changes.templateAdditions?.length && !allowOneOffPax) fail("Changing the shared menu template requires Manage authority across all sites.", 403);
+    if ((request.changes.customSlots || request.changes.removedSlots) && !allowSharedMenuEdits) fail("Changing shared menu rows requires organisation-wide Manage authority.", 403);
+    const result = applyWeekSave(current, request, actor, allowedOplocIds, new Date().toISOString(), oplocAliases, lineage, allowOneOffPax, allowSharedMenuEdits);
     if (!result.replayed) {
       rolling.weeks[rolling.weeks.findIndex(week => week.id === request.weekId)] = result.snapshot.week;
       const entries = new Map(result.snapshot.entries.map(entry => [entry.id, entry]));

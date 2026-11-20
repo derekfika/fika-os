@@ -37,6 +37,7 @@ async function handleGet(request: NextRequest) {
     console.info("Integration Hub Menu Planning access timing", { sessionMs, appAccessMs, scopeMs, permissionMs: performance.now() - scopeStarted - scopeMs, totalMs: performance.now() - totalStarted });
     return NextResponse.json({
       principal, oplocs, scope: { all: scope.all, ids: oplocs.map(oploc => oploc.id) },
+      oplocRedirects: Object.fromEntries(Object.entries(packageValue.redirects).filter(([, id]) => scope.all || scope.ids.has(id))),
       canManage: permissions.manageOplocIds.length > 0, canPublish: permissions.publishOplocIds.length > 0,
       permissions,
     }, { headers });

@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, readFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { NextRequest } from "next/server";
 
@@ -13,7 +14,12 @@ writeFileSync(join(directory, "local-data/menu-planning/canonical-menu-items.jso
 process.env.MENU_PLANNING_TEST_MODE = "1";
 process.env.MENU_PLANNING_DB_PATH = join(directory, "operational.sqlite");
 process.env.FIKA_RUNTIME_MODE = "local";
-process.on("exit", () => { process.chdir(originalDirectory); rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
+test.after(async () => {
+  process.chdir(originalDirectory);
+  assert.equal(dirname(resolve(directory)), resolve(tmpdir()));
+  assert.ok(basename(directory).startsWith("menu-async-"));
+  await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+});
 const { POST: publish } = await import("../app/api/rolling-menu/route");
 const { GET: status, POST: publicationCommand } = await import("../app/api/rolling-menu/publications/route");
 const { POST: worker } = await import("../app/api/internal/menu-publication-outbox/route");
@@ -37,7 +43,11 @@ test("publish returns pending before delivery, survives closed request, and conc
   let downstreamCalls = 0;
   globalThis.fetch = (async input => {
     const url = String(input);
-    if (url.includes("/api/menu-planning/access")) return Response.json({ principal: { identityId: "test-publisher" }, canPublish: true, scope: { all: true } });
+    if (url.includes("/api/menu-planning/access")) return Response.json({
+      principal: { identityId: "test-publisher" }, scope: { all: true, ids: ["oploc:async"] },
+      permissions: { canManageOrganisation: true, canPublishOrganisation: true, manageOplocIds: ["oploc:async"], publishOplocIds: ["oploc:async"] },
+    });
+    if (url.endsWith("/api/oplocs")) return Response.json({ oplocs: [{ canonicalId: "oploc:async", label: "Async site" }] });
     if (url.includes("/api/service-arrangements")) return Response.json({ arrangements: [{ oplocId: "oploc:async", lifecycleState: "active", serviceLabel: "Delivered-In" }], oplocs: [{ canonicalId: "oploc:async", label: "Async site" }] });
     downstreamCalls += 1;
     throw new Error("Downstream must never run inline");

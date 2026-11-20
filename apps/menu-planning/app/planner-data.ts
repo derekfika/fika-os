@@ -7,11 +7,13 @@ import { catalogueManifestFromResponse, loadCachedCatalogue, type CachedCatalogu
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-client";
 import type { PublicationHandoff } from "@/lib/publication-handoff";
 import type { DishReference, DishReferences } from "@/lib/week-planner-layout";
+import { useMenuAccess } from "./menu-access";
 export type Dish = { id: string; name: string; category?: string; description?: string; usage?: string[]; allergenEvidence?: Array<{ allergen: string; value: "contains" | "free_from" | "may_contain" | "unknown" }>; mayContainReviewed?: boolean; aliases?: string[]; tagIds?: string[]; subcategory?: string };
 export type WeekSummary = Pick<RollingWeek, "id" | "weekCommencing" | "entryIds" | "version">;
 export type PublicationDayState = { currentPublicationId?: string; currentPublicationDayId?: string; currentVersion?: number; currentContentHash?: string; hasCurrentPublication: boolean; hasUnpublishedChanges: boolean; legacy: boolean; status: "published" | "draft" | "legacy" };
 const weekCache = new Map<string, CachedMenuWeek>();
-let cacheIdentity = typeof window !== "undefined" ? window.sessionStorage.getItem("fika-menu-identity") || "" : "";
+const readScopeStorageKey = "fika-menu-read-scope";
+let cacheIdentity = typeof window !== "undefined" ? window.sessionStorage.getItem(readScopeStorageKey) || "" : "";
 let catalogueCache: Promise<Dish[]> | undefined;
 const weekCacheWriter = createVersionedCacheWriter<CachedMenuWeek>(putCachedWeek);
 export type RollingMutationDelta = { week: RollingWeek; days: RollingDay[]; entries: RollingEntry[] };
@@ -64,7 +66,7 @@ export function applyRollingMutationDelta(snapshot: RollingSnapshot, mutation: R
     if (index < 0) entries.push(entry);
     else entries[index] = changedEntries.get(entry.id)!;
   }
-  return { ...snapshot, week: { ...snapshot.week, ...mutation.week }, days, entries };
+  return { ...snapshot, week: { ...snapshot.week, ...mutation.week, entryIds: entries.map(entry => entry.id) }, days, entries };
 }
 function persistCachedWeek(value: CachedMenuWeek, generation = weekCacheWriter.currentGeneration()) { if (!cacheIdentity || value.identity !== cacheIdentity) return Promise.resolve(); return weekCacheWriter.enqueue(value.weekId, value.version, value, generation); }
 /** Load failure that keeps the HTTP status so the UI can tell an expired session (401/403) from a server fault. */
@@ -94,14 +96,23 @@ const fetchCatalogueManifest = async () => { const response = await fetch("/api/
 const resetCatalogueMemory = () => { catalogueCache = undefined; };
 const loadCatalogue = (onUpdate?: (dishes: Dish[]) => void) => { if (catalogueCache) { void catalogueCache.then(entries => recordDataAccess({ app: "menu-planning", operation: "catalogue.memory", source: "MEMORY", documents: entries.length, cacheHit: true })); } return catalogueCache ||= loadCachedCatalogue(fetchCatalogue, entries => onUpdate?.(entries.map(toDish)), fetchCatalogueManifest).then(entries => entries.map(toDish)); };
 export function useRollingData(options: { loadCatalogue?: boolean } = {}) {
+  const access = useMenuAccess();
   const [handoff, setHandoff] = useState<{ weekId: string; value: PublicationHandoff }>();
   const shouldLoadCatalogue = options.loadCatalogue !== false;
   const [snapshot, setSnapshot] = useState<RollingSnapshot>(); const snapshotRef = useRef(snapshot); snapshotRef.current = snapshot; const [weeks, setWeeks] = useState<WeekSummary[]>([]); const weeksRef = useRef(weeks); const [dishes, setDishes] = useState<Dish[]>([]); const [dishReferences, setDishReferences] = useState<DishReferences>(); const [publicationState, setPublicationState] = useState<Record<string, PublicationDayState>>({}); const [message, setMessage] = useState(""); const [error, setError] = useState(""); const [loadFailure, setLoadFailure] = useState<LoadFailure>();
   const operationRef = useRef(0); const appliedVersionsRef = useRef(new Map<string, number>());
   const params = useSearchParams(); const [requestedWeek, setRequestedWeek] = useState(() => params.get("week"));
   const applyCached = useCallback((cached: CachedMenuWeek, source: "memory" | "indexeddb") => { const applied = appliedVersionsRef.current.get(cached.weekId); if (applied !== undefined && cached.version < applied) return; appliedVersionsRef.current.set(cached.weekId, cached.version); weekCache.set(cached.weekId, cached); const cachedWeeks = cached.weeks?.length ? cached.weeks : [{ id: cached.weekId, weekCommencing: cached.weekCommencing, entryIds: cached.snapshot.week.entryIds, version: cached.version }]; weeksRef.current = cachedWeeks; setWeeks(cachedWeeks); snapshotRef.current = cached.snapshot; setSnapshot(cached.snapshot); setDishReferences(undefined); setPublicationState(cached.publicationState); setError(""); if (source === "memory") recordDataAccess({ app: "menu-planning", operation: "week.memory", source: "MEMORY", documents: 1, cacheHit: true }); console.info("Menu Planning week cache timing", { source, cacheHit: true, renderMs: 0 }); }, []);
-  const fetchWeek = useCallback(async (weekId?: string, snapshotOnly = false) => { const query = weekId ? `?weekId=${encodeURIComponent(weekId)}${snapshotOnly ? "&snapshotOnly=true" : ""}` : ""; const started = performance.now(); const result = await withMenuRequestTimeout(async signal => { const response = await fetch(`/api/rolling-menu${query}`, { cache: "no-store", signal }); const body = await readJson(response); return { ...body, identity: response.headers.get("x-fika-menu-identity") || "" }; }); console.info("Menu Planning week cache timing", { source: "server", fullWeekFetchMs: performance.now() - started }); return result; }, []);
-  const revalidateWeek = useCallback(async (weekId: string, cached: CachedMenuWeek, operation: number, generation: number) => { try { const started = performance.now(); const summaryBody = await readJson(await fetch(`/api/rolling-menu?summariesOnly=true&weekId=${encodeURIComponent(weekId)}`, { cache: "no-store" })); const summary = summaryBody.week as { id: string; version: number } | null | undefined; console.info("Menu Planning week cache timing", { source: "server", weekHeadVersionCheckMs: performance.now() - started, cacheVersion: cached.version, serverVersion: summary?.version }); if (operation !== operationRef.current || (summary && Number(summary.version) <= cached.version)) return; const body = await fetchWeek(weekId); if (operation !== operationRef.current || body.snapshot?.week?.id !== weekId) return; if (body.snapshot?.week?.id) { const value: CachedMenuWeek = { weekId: body.snapshot.week.id, weekCommencing: body.snapshot.week.weekCommencing, version: Number(body.snapshot.week.version || 0), snapshot: body.snapshot, publicationState: body.publicationState || {}, weeks: body.weeks || [], cachedAt: Date.now(), identity: cacheIdentity || "local" }; const applied = appliedVersionsRef.current.get(value.weekId); if (applied !== undefined && value.version < applied) return; appliedVersionsRef.current.set(value.weekId, value.version); weekCache.set(value.weekId, value); if (cacheIdentity) { await persistCachedWeek(value, generation); await putCachedWeekSelection({ weekId: value.weekId, weekCommencing: value.weekCommencing, identity: cacheIdentity, selectedAt: Date.now() }); } if (operation !== operationRef.current) return; weeksRef.current = value.weeks || []; setWeeks(weeksRef.current); snapshotRef.current = value.snapshot; setSnapshot(value.snapshot); setDishReferences(parseDishReferences(body.dishReferences, weekId, value.version)); setPublicationState(value.publicationState); } } catch { /* Background revalidation must not blank a visible cached week. */ } }, [fetchWeek]);
+  const fetchWeek = useCallback(async (weekId?: string, snapshotOnly = false) => { const query = weekId ? `?weekId=${encodeURIComponent(weekId)}${snapshotOnly ? "&snapshotOnly=true" : ""}` : ""; const started = performance.now(); const result = await withMenuRequestTimeout(async signal => { const response = await fetch(`/api/rolling-menu${query}`, { cache: "no-store", signal }); const body = await readJson(response); return { ...body, identity: response.headers.get("x-fika-menu-cache-scope") || "" }; }); console.info("Menu Planning week cache timing", { source: "server", fullWeekFetchMs: performance.now() - started }); return result; }, []);
+  const revalidateWeek = useCallback(async (weekId: string, cached: CachedMenuWeek) => {
+    const started = performance.now();
+    const response = await fetch(`/api/rolling-menu?summariesOnly=true&weekId=${encodeURIComponent(weekId)}`, { cache: "no-store" });
+    const summaryBody = await readJson(response);
+    const summary = summaryBody.week as { id: string; version: number } | null | undefined;
+    const scope = response.headers.get("x-fika-menu-cache-scope");
+    console.info("Menu Planning week cache timing", { source: "server", weekHeadVersionCheckMs: performance.now() - started, cacheVersion: cached.version, serverVersion: summary?.version });
+    return Boolean(scope && scope === cached.identity && summary?.id === weekId && Number(summary.version) === cached.version);
+  }, []);
   const load = useCallback(async (weekId?: string) => { const operation = ++operationRef.current; const generation = weekCacheWriter.currentGeneration(); setLoadFailure(undefined); try {
     const availableWeeks = weeksRef.current;
     let target = weekId || (requestedWeek ? availableWeeks.find(item => item.id === requestedWeek || item.weekCommencing === requestedWeek)?.id : undefined);
@@ -109,12 +120,18 @@ export function useRollingData(options: { loadCatalogue?: boolean } = {}) {
     let cached = target ? weekCache.get(target) : undefined;
     if (!cached && target && cacheIdentity) cached = await getCachedWeek(target, cacheIdentity);
     if (operation !== operationRef.current) return;
-    if (cached) { applyCached(cached, weekCache.has(target!) ? "memory" : "indexeddb"); if (cacheIdentity) void putCachedWeekSelection({ weekId: cached.weekId, weekCommencing: cached.weekCommencing, identity: cacheIdentity, selectedAt: Date.now() }); void revalidateWeek(target!, cached, operation, generation); return; }
+    if (cached && await revalidateWeek(target!, cached)) {
+      if (operation !== operationRef.current) return;
+      applyCached(cached, weekCache.has(target!) ? "memory" : "indexeddb");
+      if (cacheIdentity) void putCachedWeekSelection({ weekId: cached.weekId, weekCommencing: cached.weekCommencing, identity: cacheIdentity, selectedAt: Date.now() });
+      return;
+    }
+    if (operation !== operationRef.current) return;
     const body = await fetchWeek(target); if (operation !== operationRef.current) return; const identity = typeof body.identity === "string" ? body.identity : "";
-    if (identity && cacheIdentity && identity !== cacheIdentity) { weekCacheWriter.invalidate(); weekCache.clear(); await clearMenuPlanningCache(); }
-    if (identity) cacheIdentity = identity;
+    if (identity && cacheIdentity && identity !== cacheIdentity) { weekCacheWriter.invalidate(); weekCache.clear(); await clearMenuPlanningCache().catch(() => undefined); }
+    if (identity) { cacheIdentity = identity; try { window.sessionStorage.setItem(readScopeStorageKey, identity); } catch { /* Cache hints are optional. */ } }
     const next: CachedMenuWeek = { weekId: body.snapshot.week.id, weekCommencing: body.snapshot.week.weekCommencing, version: Number(body.snapshot.week.version || 0), snapshot: body.snapshot, publicationState: body.publicationState || {}, weeks: body.weeks || [], cachedAt: Date.now(), identity: cacheIdentity || "local" }; appliedVersionsRef.current.set(next.weekId, next.version); weekCache.set(next.weekId, next); persistInBackground(next, generation); if (operation !== operationRef.current) return; setError(""); snapshotRef.current = next.snapshot; setSnapshot(next.snapshot); setDishReferences(parseDishReferences(body.dishReferences, next.weekId, next.version)); weeksRef.current = body.weeks || availableWeeks; setWeeks(weeksRef.current); setPublicationState(next.publicationState);
-    const governedWeeks = [...(body.weeks || availableWeeks)].sort((a: { weekCommencing: string }, b: { weekCommencing: string }) => a.weekCommencing.localeCompare(b.weekCommencing)); const index = governedWeeks.findIndex((item: { id: string }) => item.id === next.snapshot?.week?.id); for (const neighbor of [governedWeeks[index - 1], governedWeeks[index + 1]]) if (neighbor && !weekCache.has(neighbor.id)) void fetchWeek(neighbor.id, true).then(prefetched => { if (prefetched.snapshot?.week?.id) { const value: CachedMenuWeek = { weekId: prefetched.snapshot.week.id, weekCommencing: prefetched.snapshot.week.weekCommencing, version: Number(prefetched.snapshot.week.version || 0), snapshot: prefetched.snapshot, publicationState: prefetched.publicationState || {}, weeks: prefetched.weeks || [], cachedAt: Date.now(), identity: cacheIdentity || "local" }; const applied = appliedVersionsRef.current.get(value.weekId); if (applied === undefined || value.version >= applied) { appliedVersionsRef.current.set(value.weekId, value.version); weekCache.set(value.weekId, value); if (cacheIdentity) void persistCachedWeek(value, generation); } } }).catch(() => undefined);
+    const governedWeeks = [...(body.weeks || availableWeeks)].sort((a: { weekCommencing: string }, b: { weekCommencing: string }) => a.weekCommencing.localeCompare(b.weekCommencing)); const index = governedWeeks.findIndex((item: { id: string }) => item.id === next.snapshot?.week?.id); for (const neighbor of [governedWeeks[index - 1], governedWeeks[index + 1]]) if (neighbor && !weekCache.has(neighbor.id)) void fetchWeek(neighbor.id, true).then(prefetched => { if (prefetched.identity && prefetched.identity === cacheIdentity && generation === weekCacheWriter.currentGeneration() && prefetched.snapshot?.week?.id) { const value: CachedMenuWeek = { weekId: prefetched.snapshot.week.id, weekCommencing: prefetched.snapshot.week.weekCommencing, version: Number(prefetched.snapshot.week.version || 0), snapshot: prefetched.snapshot, publicationState: prefetched.publicationState || {}, weeks: prefetched.weeks || [], cachedAt: Date.now(), identity: cacheIdentity || "local" }; const applied = appliedVersionsRef.current.get(value.weekId); if (applied === undefined || value.version >= applied) { appliedVersionsRef.current.set(value.weekId, value.version); weekCache.set(value.weekId, value); if (cacheIdentity) void persistCachedWeek(value, generation); } } }).catch(() => undefined);
   } catch (cause) { if (operation !== operationRef.current) return; setLoadFailure(loadFailureFrom(cause)); setError(cause instanceof Error ? cause.message : "Menu could not be loaded."); } }, [applyCached, fetchWeek, revalidateWeek, requestedWeek]);
   const refreshWeek = useCallback(async (weekId: string) => {
     const operation = ++operationRef.current;
@@ -123,8 +140,8 @@ export function useRollingData(options: { loadCatalogue?: boolean } = {}) {
       const body = await fetchWeek(weekId);
       if (operation !== operationRef.current || body.snapshot?.week?.id !== weekId) return false;
       const identity = typeof body.identity === "string" ? body.identity : "";
-      if (identity && cacheIdentity && identity !== cacheIdentity) { weekCacheWriter.invalidate(); weekCache.clear(); await clearMenuPlanningCache(); }
-      if (identity) cacheIdentity = identity;
+      if (identity && cacheIdentity && identity !== cacheIdentity) { weekCacheWriter.invalidate(); weekCache.clear(); await clearMenuPlanningCache().catch(() => undefined); }
+      if (identity) { cacheIdentity = identity; try { window.sessionStorage.setItem(readScopeStorageKey, identity); } catch { /* Cache hints are optional. */ } }
       const value: CachedMenuWeek = { weekId, weekCommencing: body.snapshot.week.weekCommencing, version: Number(body.snapshot.week.version || 0), snapshot: body.snapshot, publicationState: body.publicationState || {}, weeks: body.weeks || [], cachedAt: Date.now(), identity: cacheIdentity || "local" };
       appliedVersionsRef.current.set(weekId, value.version);
       weekCache.set(weekId, value);
@@ -141,9 +158,9 @@ export function useRollingData(options: { loadCatalogue?: boolean } = {}) {
       return false;
     }
   }, [fetchWeek]);
-  useEffect(() => { void load(requestedWeek || undefined); }, [load, requestedWeek]);
+  useEffect(() => { if (access.status !== "pending") void load(requestedWeek || undefined); }, [access.status, load, requestedWeek]);
   useEffect(() => { const onPopState = () => setRequestedWeek(new URLSearchParams(window.location.search).get("week")); window.addEventListener("popstate", onPopState); return () => window.removeEventListener("popstate", onPopState); }, []);
-  useEffect(() => { const onLogout = () => { cacheIdentity = ""; catalogueCache = undefined; weekCache.clear(); weekCacheWriter.invalidate(); operationRef.current += 1; window.sessionStorage.removeItem("fika-menu-identity"); void clearMenuPlanningCache(); }; window.addEventListener("fika-logout", onLogout); return () => window.removeEventListener("fika-logout", onLogout); }, []);
+  useEffect(() => { const onLogout = () => { cacheIdentity = ""; catalogueCache = undefined; weekCache.clear(); weekCacheWriter.invalidate(); operationRef.current += 1; window.sessionStorage.removeItem(readScopeStorageKey); window.sessionStorage.removeItem("fika-menu-identity"); void clearMenuPlanningCache(); }; window.addEventListener("fika-logout", onLogout); return () => window.removeEventListener("fika-logout", onLogout); }, []);
   useEffect(() => { if (shouldLoadCatalogue) void loadCatalogue(setDishes).then(setDishes).catch((cause: Error) => setError(cause.message)); }, [shouldLoadCatalogue]);
   const selectWeek = useCallback((weekId: string) => { const target = weeksRef.current.find(item => item.id === weekId); if (!target) return; operationRef.current += 1; const url = new URL(window.location.href); url.searchParams.set("week", target.weekCommencing); url.searchParams.delete("day"); window.history.pushState({}, "", url); setRequestedWeek(target.weekCommencing); if (cacheIdentity) void putCachedWeekSelection({ weekId: target.id, weekCommencing: target.weekCommencing, identity: cacheIdentity, selectedAt: Date.now() }); }, []);
   useEffect(() => { const onSelect = (event: Event) => { const weekId = (event as CustomEvent<string>).detail; selectWeek(weekId); }; window.addEventListener("menu-week-select", onSelect); return () => window.removeEventListener("menu-week-select", onSelect); }, [selectWeek]);
@@ -170,6 +187,7 @@ export function useRollingData(options: { loadCatalogue?: boolean } = {}) {
       const body = await response.json().catch(() => ({}));
       if (operation !== operationRef.current && !weekMutation) return false;
       if (!response.ok) {
+        if (response.status === 403) window.dispatchEvent(new Event("fika-menu-access-refresh"));
         const errorMessage = body.error?.message || "Could not save.";
         if (response.status === 409 && weekMutation && requestedWeekId) {
           const refreshed = await refreshWeek(requestedWeekId);
@@ -177,6 +195,15 @@ export function useRollingData(options: { loadCatalogue?: boolean } = {}) {
         } else setError(errorMessage);
         setMessage("");
         return false;
+      }
+      const responseScope = response.headers.get("x-fika-menu-cache-scope");
+      if (responseScope && cacheIdentity && responseScope !== cacheIdentity) {
+        window.dispatchEvent(new Event("fika-menu-access-refresh"));
+        snapshotRef.current = undefined;
+        setSnapshot(undefined);
+        await load(requestedWeekId);
+        setMessage("");
+        return true;
       }
       const latestSnapshot = snapshotRef.current;
       const weekId = body.mutation?.week?.id || body.snapshot?.week?.id;

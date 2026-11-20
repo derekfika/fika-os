@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import MenuPlanningShell from "../menu-planning-shell";
+import MenuAccessRequired from "../menu-access-required";
 import type { RollingSnapshot } from "@/lib/rolling-menu-types";
 import type { DishResolution } from "@/lib/legacy-week-importer";
 import {
@@ -418,6 +419,10 @@ function ReplaceWeekDialog({
 }
 
 export default function ImportMenuWeekPage() {
+  return <MenuAccessRequired section="Import Menu Week" allSites><ImportMenuWeekWorkspace /></MenuAccessRequired>;
+}
+
+function ImportMenuWeekWorkspace() {
   const [files, setFiles] = useState<File[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
   const [snapshots, setSnapshots] = useState<RollingSnapshot[]>([]);

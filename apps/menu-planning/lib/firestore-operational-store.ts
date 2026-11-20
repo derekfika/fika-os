@@ -102,8 +102,10 @@ export class MenuPlanningFirestoreRepository {
         if (!document.exists) throw Object.assign(new Error(`A touched menu entry was not found. Refresh before saving.`), { status: 404 });
         const existing = document.data() as RollingEntry;
         if (existing.dayId !== command.entryDayIds![entryIds[index]]) throw Object.assign(new Error(`A touched menu entry is attached to a different day. Refresh before saving.`), { status: 409 });
+        command.authorizeEntry?.(existing);
         const next = structuredClone(existing);
         applyRollingEntryPatch(next, command.patch.entries?.[entryIds[index]] || {}, { actor: command.audit.by, at: command.audit.at });
+        command.authorizeEntry?.(next);
         next.audit = [...(existing.audit || []), command.audit];
         transaction.set(entryRefs[index], next);
         changedEntries.push(next);

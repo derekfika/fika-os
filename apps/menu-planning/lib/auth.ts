@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { createHash } from "node:crypto";
 import { menuPlanningHubBaseUrl } from "./hub-url";
 import type { MenuPublication } from "./menu-publication";
 import { oplocIdsMatch } from "./fika-contracts";
@@ -10,7 +11,15 @@ export type MenuActor = {
   /** OPLOC scope resolved by the Hub/AuthMod boundary. */
   oplocIds: readonly string[];
   allOplocs: boolean;
+  permissions?: MenuWritePermissions;
+  oplocRedirects?: Record<string, string>;
   synthetic?: boolean;
+};
+export type MenuWritePermissions = {
+  manageOplocIds: readonly string[];
+  publishOplocIds: readonly string[];
+  canManageOrganisation: boolean;
+  canPublishOrganisation: boolean;
 };
 const failure = (message: string, status: number) => Object.assign(new Error(message), { status });
 
@@ -27,15 +36,23 @@ export function canonicalActorId(principal: { id?: unknown; identityId?: unknown
   return undefined;
 }
 
-export async function resolveMenuActor(request: NextRequest): Promise<MenuActor> {
+export async function resolveMenuActor(request: Pick<NextRequest, "headers">): Promise<MenuActor> {
   try {
     const response = await fetch(`${menuPlanningHubBaseUrl()}/api/menu-planning/access`, { headers: { cookie: request.headers.get("cookie") || "" }, cache: "no-store", redirect: "error" });
-    const body = await response.json() as { principal?: { id?: unknown; identityId?: unknown; email?: string }; canManage?: boolean; canPublish?: boolean; scope?: { all?: boolean; ids?: string[] }; oplocs?: Array<{ id?: string }>; error?: { message?: string } };
+    const body = await response.json() as { principal?: { id?: unknown; identityId?: unknown; email?: string }; permissions?: Partial<MenuWritePermissions>; scope?: { all?: boolean; ids?: string[] }; oplocRedirects?: Record<string, string>; oplocs?: Array<{ id?: string }>; error?: { message?: string } };
     if (!response.ok || !body.principal) throw failure(body.error?.message || "An authenticated Menu Planning session is required.", response.status || 401);
     const ids = body.scope?.ids || (body.oplocs || []).map(oploc => oploc.id).filter((id): id is string => Boolean(id));
     const uid = canonicalActorId(body.principal);
     if (!uid) throw failure("The authenticated session did not carry a verifiable identity; Menu Planning mutation was not performed.", 401);
-    return { uid, email: body.principal.email, role: body.canPublish ? "integration-admin" : body.canManage ? "reviewer" : "viewer", oplocIds: [...new Set(ids)], allOplocs: body.scope?.all === true };
+    const oplocIds = [...new Set(ids)];
+    const permitted = new Set(oplocIds);
+    const manageOplocIds = Array.isArray(body.permissions?.manageOplocIds) ? body.permissions.manageOplocIds.filter(id => permitted.has(id)) : [];
+    const managed = new Set(manageOplocIds);
+    const publishOplocIds = Array.isArray(body.permissions?.publishOplocIds) ? body.permissions.publishOplocIds.filter(id => managed.has(id)) : [];
+    const canManageOrganisation = managed.size > 0 && body.permissions?.canManageOrganisation === true;
+    const permissions = { manageOplocIds, publishOplocIds, canManageOrganisation, canPublishOrganisation: canManageOrganisation && publishOplocIds.length > 0 && body.permissions?.canPublishOrganisation === true };
+    const role = publishOplocIds.length ? "integration-admin" : manageOplocIds.length ? "reviewer" : "viewer";
+    return { uid, email: body.principal.email, role, oplocIds, allOplocs: body.scope?.all === true, permissions, oplocRedirects: body.oplocRedirects };
   } catch (error) {
     if (process.env.FIKA_RUNTIME_MODE === "local" && process.env.NODE_ENV !== "production" && !request.headers.get("cookie")) return { uid: "local-menu-planner", email: "admin@local.fika", role: "integration-admin", oplocIds: [], allOplocs: true, synthetic: true };
     if (error && typeof error === "object" && "status" in error) throw error;
@@ -44,12 +61,39 @@ export async function resolveMenuActor(request: NextRequest): Promise<MenuActor>
 }
 
 export function requireMutationActor(actor: MenuActor) { if (actor.role === "viewer") throw failure("This identity is read-only for Menu Planning.", 403); return actor; }
+export function actorCanManageOrganisation(actor: MenuActor) { return actor.synthetic === true || actor.permissions?.canManageOrganisation === true; }
+export function requireOrganisationMutationActor(actor: MenuActor) {
+  requireMutationActor(actor);
+  if (!actorCanManageOrganisation(actor)) throw failure("This change requires organisation-wide Menu Planning Manage authority.", 403);
+  return actor;
+}
 /** Catalogue writes require a real Hub-authenticated identity; local synthetic admission is read/test-only here. */
-export function requireCatalogueMutationActor(actor: MenuActor) { if (actor.synthetic) throw failure("An authenticated Menu Planning identity is required for catalogue changes.", 401); return requireMutationActor(actor); }
-export function requirePublicationActor(actor: MenuActor) { if (actor.role !== "integration-admin") throw failure("Only an Integration Administrator may publish or withdraw a menu.", 403); return actor; }
+export function requireCatalogueMutationActor(actor: MenuActor) { if (actor.synthetic) throw failure("An authenticated Menu Planning identity is required for catalogue changes.", 401); return requireOrganisationMutationActor(actor); }
+export function requirePublicationActor(actor: MenuActor) { if (actor.role !== "integration-admin") throw failure("Publishing or withdrawing a menu requires Manage and Menu Publish authority.", 403); return actor; }
+
+export function actorCanWriteOploc(actor: MenuActor, oplocId: string, action: "manage" | "publish") {
+  if (actor.synthetic) return true;
+  const ids = action === "manage" ? actor.permissions?.manageOplocIds : actor.permissions?.publishOplocIds;
+  return Boolean(ids?.includes(canonicalMenuOplocId(actor, oplocId)));
+}
+
+export function actorCanWriteOneOff(actor: MenuActor, action: "manage" | "publish") {
+  return actor.allOplocs && (action === "manage" ? actorCanManageOrganisation(actor) : actor.synthetic === true || actor.permissions?.canPublishOrganisation === true);
+}
 
 export function actorCanAccessOploc(actor: MenuActor, oplocId?: string) {
-  return actor.allOplocs || Boolean(oplocId && actor.oplocIds.some(allowed => oplocIdsMatch(allowed, oplocId)));
+  if (actor.allOplocs) return true;
+  if (!oplocId) return false;
+  if (actor.oplocRedirects) return actor.oplocIds.includes(canonicalMenuOplocId(actor, oplocId));
+  return actor.oplocIds.some(allowed => oplocIdsMatch(allowed, oplocId));
+}
+
+function canonicalMenuOplocId(actor: MenuActor, id: string) {
+  return actor.oplocRedirects && Object.hasOwn(actor.oplocRedirects, id) ? actor.oplocRedirects[id] : id;
+}
+
+export function menuReadScopeKey(actor: MenuActor) {
+  return createHash("sha256").update(JSON.stringify([actor.uid, actor.allOplocs, [...actor.oplocIds].sort()])).digest("base64url");
 }
 
 export function assertActorCanAccessOploc(actor: MenuActor, oplocId?: string) {
@@ -62,6 +106,13 @@ export function scopeMenuSitePax(destinationPax: import("./site-pax").SitePax | 
   return Object.keys(visible).length ? visible : undefined;
 }
 
+export function actorCanReadAllocation(actor: MenuActor, allocation: { destinationId?: string; oneOffDestinationId?: string; destination?: { kind: "one-off" | "governed"; id: string } }) {
+  if (actor.allOplocs) return true;
+  if (allocation.oneOffDestinationId || allocation.destination?.kind === "one-off") return false;
+  return actorCanAccessOploc(actor, allocation.destination?.id || allocation.destinationId) &&
+    (!allocation.destinationId || actorCanAccessOploc(actor, allocation.destinationId));
+}
+
 export function scopeMenuPublication(publication: MenuPublication, actor: MenuActor): MenuPublication {
   if (actor.allOplocs) return publication;
   return {
@@ -69,13 +120,18 @@ export function scopeMenuPublication(publication: MenuPublication, actor: MenuAc
     // The compressed packet contains the complete organisation-wide week;
     // never return it to an OPLOC-scoped identity.
     weekPacket: undefined,
+    compiledSnapshotId: undefined,
+    audit: [],
     days: publication.days.map(day => ({
       ...day,
+      driveArchive: undefined,
+      allergenSignoff: undefined,
       destinationPax: scopeMenuSitePax(day.destinationPax, actor),
       ...(day.retainedSiteLineage ? { retainedSiteLineage: Object.fromEntries(Object.entries(day.retainedSiteLineage).filter(([id]) => actorCanAccessOploc(actor, id))) } : {}),
-      entries: day.entries
-        .map(entry => ({ ...entry, allocations: entry.allocations.filter(allocation => actorCanAccessOploc(actor, allocation.destinationId)) }))
-        .filter(entry => entry.allocations.length > 0 || entry.allocations.length === day.entries.find(candidate => candidate.sourceEntryId === entry.sourceEntryId)?.allocations.length),
+      entries: day.entries.flatMap(entry => {
+        const allocations = entry.allocations.filter(allocation => actorCanReadAllocation(actor, allocation));
+        return allocations.length || (!entry.allocations.length && actor.oplocIds.length) ? [{ ...entry, allocations, portions: allocations.reduce((total, allocation) => total + allocation.quantity, 0) }] : [];
+      }),
     })).filter(day => day.entries.length > 0 || day.destinationPax),
   };
 }
