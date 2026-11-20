@@ -2,4 +2,5 @@
 
 Bind CPU review and dual-signer evidence to the saved Studio dish identity, revision and content. Current, revoked and unavailable evidence remain distinct. This contract supports the isolated local integration only.
 
-Validation: Studio and CPU unit suites, typechecks and isolated Firestore tests passed. No hosted rollout.
+Validation: Studio and CPU unit suites, typechecks and isolated Firestore tests passed.
+Deployment: none.
