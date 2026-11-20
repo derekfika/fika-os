@@ -64,6 +64,7 @@ function ServicesEditor({ payload, canManage, send, reload, view: pageView, init
   const contextCategory = initialContext?.category;
   const itemId = initialContext?.itemId ?? "";
   const [query, setQuery] = useState("");
+  const [newCategory, setNewCategory] = useState("");
   const [draft, setDraft] = useState<ServiceRule | null>(null);
   const [reason, setReason] = useState("");
   const [confirmed, setConfirmed] = useState(false);
@@ -118,6 +119,22 @@ function ServicesEditor({ payload, canManage, send, reload, view: pageView, init
       const categories = setCategoryIncluded(base.categories, category, included);
       return { categories, ...(base.hidden ? { hidden: true } : {}) };
     });
+  }
+  function addCategory() {
+    const category = newCategory.trim();
+    if (!selectedRule || !category || busy || !canManage) return;
+    if (category.length > 160) { setError("Category names must be 160 characters or fewer."); return; }
+    if (vocabulary.some(existing => existing.toLocaleLowerCase("en-GB") === category.toLocaleLowerCase("en-GB"))
+      || shownRule?.categories.some(existing => existing.toLocaleLowerCase("en-GB") === category.toLocaleLowerCase("en-GB"))) {
+      setError("A category with that name already exists. Select it from the list instead.");
+      return;
+    }
+    setStatus(""); setError(""); setConfirmed(false);
+    setDraft(current => {
+      const base = current ?? baseRule;
+      return { categories: [...base.categories, category], ...(base.hidden ? { hidden: true } : {}) };
+    });
+    setNewCategory("");
   }
   function setEnabled(enabled: boolean) {
     if (!selectedRule) return;
@@ -227,6 +244,11 @@ function ServicesEditor({ payload, canManage, send, reload, view: pageView, init
           <div className="hcs-section-head"><div><h4 id="hcs-categories-title">Categories in {currentService}</h4><p>Categories match their exact names. Adding one makes active Items in that category eligible for this service, subject to each site&apos;s rules.</p></div>
             <span className="hc-tag hc-tag--inherits">{categories.length} included</span></div>
           {categories.length === 0 && shownRule.hidden && <p className="hc-hint">No categories are included. The hidden service can keep an empty list until it is shown again.</p>}
+          {canManage && <form className="hcs-add-category" onSubmit={event => { event.preventDefault(); addCategory(); }}>
+            <label className="hc-field" htmlFor="hcs-new-category"><span>Add a category to {currentService}</span><input id="hcs-new-category" value={newCategory} maxLength={160} disabled={busy} onChange={event => setNewCategory(event.target.value)} placeholder="Enter a category name" /></label>
+            <button type="submit" className="hc-btn" disabled={busy || !newCategory.trim() || !selectedRule}>Add category</button>
+            <small>The category stays a draft until you review and save the scoped service change below.</small>
+          </form>}
           <ul className="hcs-categories">{orderedVocabulary.map(category => {
             const included = categories.includes(category);
             const count = activeItemsInCategory(payload.rows, category);
