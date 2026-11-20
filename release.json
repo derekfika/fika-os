@@ -216,9 +216,10 @@
     "explicitExecute": true,
     "authorisedAt": "2026-11-20T19:23:50.037Z"
   },
-  "kind": "intent",
-  "state": "PENDING",
-  "releaseId": "049f7edd-5415-4c93-b1ea-f94374fa017e",
+  "rollout": "build-2026-11-20-004",
+  "state": "SUCCEEDED",
+  "percent": 100,
+  "kind": "deploy",
   "previousGood": {
     "sourceSha": "3a2914214dee50bc879c0139774098b8c5f9c8fa",
     "rollout": "build-2026-11-20-003",
@@ -226,5 +227,11 @@
     "percent": 100
   },
   "previousGoodRecord": "a33f7aec90081c9187311676d61a91e43735b5e9",
-  "createdAt": "2026-11-20T19:23:52.899Z"
+  "releaseId": "049f7edd-5415-4c93-b1ea-f94374fa017e",
+  "completedAt": "2026-11-20T19:29:30.136Z",
+  "smoke": {
+    "ok": true,
+    "status": 200,
+    "url": "https://fika-os-prod-hub--fika-os.europe-west4.hosted.app/"
+  }
 }
