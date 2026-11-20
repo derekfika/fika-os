@@ -35,7 +35,6 @@
         "monitoring.timeSeries.create",
         "orgpolicy.policy.get",
         "resourcemanager.projects.get",
-        "resourcemanager.projects.list",
         "telemetry.traces.write"
       ]
     },
