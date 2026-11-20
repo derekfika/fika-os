@@ -41,12 +41,21 @@
     "buildMetadataUpdates": "staging-project"
   },
   "studioFirstReleaseApprovalHash": "8e6c63c56e855fcada6204b64498457c5e4af01e6d4aa1fd316c3f176e37c221",
-  "kind": "intent",
-  "state": "PENDING",
-  "releaseId": "ffa1bf1d-0a41-423d-aa21-2b2fb5c26f69",
+  "rollout": "build-2026-11-20-001",
+  "state": "SUCCEEDED",
+  "percent": 100,
+  "kind": "deploy",
   "previousGood": null,
   "previousGoodRecord": null,
-  "firstRelease": true,
   "firstReleaseBaselineRecord": "9508e78a9d2798b166e14e6538ffa3a5f82d1305",
-  "createdAt": "2026-11-20T09:27:21.288Z"
+  "releaseId": "ffa1bf1d-0a41-423d-aa21-2b2fb5c26f69",
+  "completedAt": "2026-11-20T09:30:30.602Z",
+  "smoke": {
+    "ok": true,
+    "status": 401,
+    "url": "https://menu-studio-staging.fikacatering.com/api/studio?list=menus",
+    "appId": "hospitality-menu-studio",
+    "buildSha": "dbaa699f59337709ab084872fc05feac14aa2d0b",
+    "authGate": "FIKA_SESSION_MISSING"
+  }
 }
