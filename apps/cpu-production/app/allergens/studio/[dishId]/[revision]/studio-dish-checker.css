@@ -7,6 +7,11 @@
   background: var(--fika-surface-page);
 }
 .studio-dish-checker section > .fika-button { margin-top: 12px; }
+.studio-dish-checker > *,
+.studio-dish-checker section,
+.studio-dish-edit { min-width: 0; }
+.studio-dish-checker .fika-table-wrap,
+.studio-dish-checker .allergen-table-wrap { max-width: 100%; overflow-x: auto; }
 .studio-dish-checker :is(h1, h2, h3, p) { margin-block: 0 8px; }
 .studio-dish-description { white-space: pre-wrap; overflow-wrap: anywhere; }
 .studio-dish-edit { display: grid; gap: 12px; margin-top: 16px; }
