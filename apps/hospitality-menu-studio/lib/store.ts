@@ -13,7 +13,8 @@ import { canonicalJson, decodeLocalPublicationPackage, publicationHash, publicat
   type DishSafety, type PublicationImpactTarget, type PublicationRequest, type SeasonWindow } from "./publication";
 import { studioRuntime } from "./runtime";
 import { dishSchema, menuSchema } from "./schema";
-import { assortmentIsComplete, kitchenQuantities, menuDishIds } from "./review";
+import { publicationContent } from "./scoped-publication";
+import { assortmentIsComplete, kitchenQuantities } from "./review";
 
 const root = "fikaHospitalityMenuStudioV1";
 const pageSize = 50;
@@ -114,7 +115,7 @@ export class StudioStore {
       const menu = archivedMenu(stored, request.menuId, request.version);
       const previous = latest.data() as Publication | undefined;
       const previousPackage = previous ? await this.readPublicationPackage(transaction, head, previous) : undefined;
-      return publicationImpactScope(request, menu, previousPackage);
+      return publicationImpactScope(request, publicationContent(menu, request.scope, previousPackage));
     }, { readOnly: true });
   }
 
@@ -135,7 +136,7 @@ export class StudioStore {
       const { payload, body, contentHash } = candidate.package;
       const publication: Publication = { id: payload.publicationId, menuId: payload.menu.id, menuName: payload.menu.name,
         revision: payload.publicationRevision, effectiveDate: payload.effectiveDate, publishedAt: this.now().toISOString(),
-        publishedBy: inputs.actor.id, scope: {}, sourceDraftVersion: payload.sourceDraftVersion, contentHash };
+        publishedBy: inputs.actor.id, scope: payload.scope || {}, sourceDraftVersion: payload.sourceDraftVersion, contentHash };
       const menuHead = this.draftHead("menus", request.menuId);
       transaction.create(menuHead.collection("publications").doc(publication.id), publication);
       transaction.create(menuHead.collection("publicationPackages").doc(publication.id), { body, contentHash, contract: payload.contract });
@@ -147,7 +148,7 @@ export class StudioStore {
       transaction.create(menuHead.collection("publicationOutbox").doc(publication.id), {
         action: "studio-content-published", source: "hospitality-menu-studio", actorId: inputs.actor.id, at: publication.publishedAt,
         publicationId: publication.id, menuId: publication.menuId, revision: publication.revision, effectiveDate: publication.effectiveDate,
-        sourceDraftVersion: payload.sourceDraftVersion, previousPublicationId: payload.previousPublicationId, contentHash,
+        sourceDraftVersion: payload.sourceDraftVersion, previousPublicationId: payload.previousPublicationId, scope: publication.scope, contentHash,
         status: "pending", delivery: "hub-activation", commandId: receipt.id, reviewToken: request.reviewToken,
         impact: {
           status: impact.status,
@@ -174,7 +175,7 @@ export class StudioStore {
     if (!existing) return undefined;
     const publication = existing.publication as Publication;
     if (existing.actorId !== actorId || publication?.menuId !== request.menuId || publication.sourceDraftVersion !== request.version
-      || publication.effectiveDate !== request.effectiveDate || publication.publishedBy !== actorId) throw publicationIntegrity();
+      || publication.effectiveDate !== request.effectiveDate || publication.publishedBy !== actorId || !isDeepStrictEqual(publication.scope, request.scope)) throw publicationIntegrity();
     await this.readPublicationPackage(transaction, this.draftHead("menus", request.menuId), publication);
     return publication;
   }
@@ -185,23 +186,33 @@ export class StudioStore {
       head.collection("publicationState").doc("head"), this.seasonSchedule());
     const stored = current.data() as StoredDraft | undefined;
     if (!stored || stored.item.version !== request.version) throw conflict();
-    const menu = archivedMenu(archived.data() as StoredDraft | undefined, request.menuId, request.version);
-    if (!isDeepStrictEqual(menu, menuSchema.parse(decodeDraft<Menu>(stored).item))) throw publicationIntegrity();
+    const draft = archivedMenu(archived.data() as StoredDraft | undefined, request.menuId, request.version);
+    if (!isDeepStrictEqual(draft, menuSchema.parse(decodeDraft<Menu>(stored).item))) throw publicationIntegrity();
     const previous = latest.data() as Publication | undefined;
     const previousPackage = previous ? await this.readPublicationPackage(transaction, head, previous) : undefined;
-    const target = publicationImpactScope(request, menu, previousPackage);
+    const content = publicationContent(draft, request.scope, previousPackage);
+    const target = publicationImpactScope(request, content);
     const impact: Review["impact"] = isDeepStrictEqual(target, inputs.impactTarget) ? inputs.impact : { status: "unavailable" };
     const seasons = schedule.data()?.seasons as SeasonWindow[] | undefined ?? [];
     if (!Array.isArray(seasons) || seasons.some(season => !season.menuId || !season.startDate || !season.endDate || season.startDate > season.endDate)) {
       throw publicationIntegrity();
     }
-    const dishes = await this.readPublicationDishes(transaction, menuDishIds(menu));
+    const dishes = [...content.preserved.map(({ dish }) => dish), ...await this.readPublicationDishes(transaction, content.refreshDishIds)];
     const safety = new Map<string, DishSafety>();
     for (let start = 0; start < dishes.length; start += 50) {
       for (const [id, status] of await this.readDishSafetyBatch(transaction, dishes.slice(start, start + 50))) safety.set(id, status);
     }
-    return { ...reviewPublication({ request, menu, dishes, today: londonDate(this.now()), actorId: inputs.actor.id, canPublish: inputs.actor.canPublish,
-      catalogue: inputs.catalogue, impact, safety, previous, previousPackage, seasons }), seasons };
+    const scopeIssues = [...content.issues];
+    for (const { dish, safety: frozen } of content.preserved) {
+      const current = safety.get(dish.id);
+      if (current?.status !== "verified" || current.fence?.releaseId !== frozen.releaseId || current.fence.matrixHash !== frozen.matrixHash) {
+        if (current?.status === "verified") safety.set(dish.id, { status: "unverified" });
+        scopeIssues.push(`${dish.name} no longer has the signed release used by the previous publication. Verify the dish and review a new publication.`);
+      }
+    }
+    return { ...reviewPublication({ request, menu: content.menu, dishes, today: londonDate(this.now()), actorId: inputs.actor.id,
+      canPublish: inputs.actor.canPublish, catalogue: inputs.catalogue, impact, safety, previous, previousPackage, seasons,
+      scopeResult: { issues: scopeIssues, changes: content.changes } }), seasons };
   }
 
   private async readPublicationDishes(transaction: Transaction, ids: string[]) {

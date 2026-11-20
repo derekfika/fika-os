@@ -9,7 +9,7 @@ import {
 } from "../../../shared/hospitality-menu-studio-safety";
 import type { Dish, Menu, Review } from "../../lib/contract";
 import { studioHandlers } from "../../lib/http";
-import { canonicalJson, decodeLocalPublicationPackage, publicationHash } from "../../lib/publication";
+import { canonicalJson, decodeLocalPublicationPackage, publicationHash, type PublicationImpactTarget } from "../../lib/publication";
 import { StudioStore } from "../../lib/store";
 
 test("content publication freezes current menu, dish and signed evidence with an idempotent receipt", async () => {
@@ -19,6 +19,7 @@ test("content publication freezes current menu, dish and signed evidence with an
   const now = new Date("2026-11-18T12:00:00.000Z");
   const store = new StudioStore(db, () => now);
   const itemId = "hospitality-menu-item:synthetic";
+  const extraItemId = "hospitality-menu-item:synthetic-other";
   const dish: Dish = { id: randomUUID(), version: 0, name: "Synthetic pastries", category: "other", temperature: null, updatedAt: "",
     customerDescription: "Assorted pastries", kitchenDescription: "Pack 12 of each in a box.", assortment: { expectedTotal: 24, unit: "pieces",
       components: [{ id: "plain", name: "Plain", quantity: 12 }, { id: "fruit", name: "Fruit", quantity: 12 }] } };
@@ -27,13 +28,15 @@ test("content publication freezes current menu, dish and signed evidence with an
       mode: "static", staticDishIds: [dish.id], weeks: [[], [], [], [], [], []] }] };
   let actor = { id: "synthetic-author", name: "Test author", canManage: true, canPublish: true };
   let catalogueHash = "a".repeat(64);
+  const requests: PublicationImpactTarget[] = [];
   let advisory: Review["impact"] = { status: "available", coverage: "partial", reasons: ["BOOKING_WINDOW_TRUNCATED"], bookings: [] };
   const handlers = studioHandlers(async () => actor, () => store, () => {}, async () => ({
     source: "network", contentHash: catalogueHash, generatedAt: now.toISOString(), downloaded: true, notes: [],
     catalogue: { contract: CATALOGUE_PACKAGE_CONTRACT, schemaVersion: 2, exceptions: [], oplocs: [],
-      items: [{ id: itemId, name: "Synthetic item", category: "Hospitality", defaultPrices: [{ amount: 1, vatRate: 0, from: "2026-01-01" }], dietaryInformation: [], allergenInformation: [] }] },
+      items: [itemId, extraItemId].map(id => ({ id, name: "Synthetic item", category: "Hospitality",
+        defaultPrices: [{ amount: 1, vatRate: 0, from: "2026-01-01" }], dietaryInformation: [], allergenInformation: [] })) },
   }), undefined, () => true, async (_request, target) => {
-    assert.deepEqual(target.catalogueItemIds, [itemId]);
+    requests.push(target);
     return advisory;
   });
   const url = "http://localhost:13686/api/studio";
@@ -132,11 +135,13 @@ test("content publication freezes current menu, dish and signed evidence with an
     assert.equal(overlap.canPublish, false);
 
     const savedMenu = await store.read<Menu>("menus", menu.id);
-    const amendedMenu = await store.save("menus", actor.id, { ...savedMenu, name: "Synthetic winter menu amendment" });
+    const reused = { ...savedMenu.sections[0], id: "other-section", name: "Other section", catalogueItemId: extraItemId };
+    const amendedMenu = await store.save("menus", actor.id, { ...savedMenu, name: "Synthetic winter menu amendment", sections: [...savedMenu.sections, reused] });
     assert.equal((await post({ ...action, action: "review" })).status, 409);
     const amendment = { ...action, version: amendedMenu.version, effectiveDate: "2027-01-01" };
     advisory = { status: "available", coverage: "partial", reasons: ["BOOKING_WINDOW_TRUNCATED"], bookings: [] };
     const reviewedAmendment = await readReview(amendment);
+    assert.deepEqual(requests.at(-1)?.catalogueItemIds, [itemId, extraItemId]);
     assert.match(reviewedAmendment.changes.join(" "), /Menu name changed/);
     const amendmentResponse = await publish(reviewedAmendment.reviewToken!, amendment);
     assert.equal(amendmentResponse.status, 200);
@@ -145,10 +150,33 @@ test("content publication freezes current menu, dish and signed evidence with an
     const partialImpact = (await head.collection("publicationOutbox").doc(second.id).get()).data()?.impact;
     assert.equal(partialImpact.coverage, "partial");
     assert.equal("bookingCount" in partialImpact, false);
-    assert.equal(JSON.parse((await head.collection("publicationPackages").doc(second.id).get()).data()!.body).previousPublicationId, first.id);
+    const secondPayload = JSON.parse((await head.collection("publicationPackages").doc(second.id).get()).data()!.body);
+    assert.equal(secondPayload.previousPublicationId, first.id);
+    const alternateWholePackage = canonicalJson({ ...secondPayload, scope: {} });
+    assert.equal(decodeLocalPublicationPackage(alternateWholePackage, { ...second, contentHash: publicationHash(alternateWholePackage) }), undefined);
+    const unchanged = await readReview({ ...amendment, scope: { sectionId: "synthetic" } });
+    assert.equal(unchanged.canPublish, false);
+    assert.match(unchanged.issues.join(" "), /No published changes in this scope/);
 
-    await store.save("dishes", actor.id, { ...firstDish, kitchenDescription: "Revised packing instructions." });
+    const revisedDish = await store.save("dishes", actor.id, { ...firstDish, kitchenDescription: "Revised packing instructions." });
     assert.equal((await readReview(amendment)).safety.status, "unverified");
+    const scopedDraft = await store.save("menus", actor.id, { ...amendedMenu, name: "Unrelated working rename",
+      sections: [{ ...amendedMenu.sections[0], name: "Updated Baking" }, { ...reused, name: "Unrelated category rename" }] });
+    const scoped = { ...amendment, version: scopedDraft.version, effectiveDate: "2027-01-02", scope: { sectionId: "synthetic" } };
+    const scopedReview = await readReview(scoped);
+    assert.deepEqual(requests.at(-1)?.catalogueItemIds, [itemId]);
+    assert.equal(scopedReview.canPublish, true);
+    assert.match(scopedReview.changes.join(" "), /keeps published revision 1/);
+    const scopedReply = await publish(scopedReview.reviewToken!, scoped);
+    assert.equal(scopedReply.status, 200);
+    const third = (await scopedReply.json()).publication;
+    assert.deepEqual(third.scope, { sectionId: "synthetic" });
+    const thirdPayload = JSON.parse((await head.collection("publicationPackages").doc(third.id).get()).data()!.body);
+    assert.equal(thirdPayload.previousPublicationId, second.id);
+    assert.deepEqual(thirdPayload.scope, third.scope);
+    assert.equal(thirdPayload.menu.name, amendedMenu.name);
+    assert.deepEqual(thirdPayload.menu.sections.map((section: { name: string }) => section.name), ["Updated Baking", reused.name]);
+    assert.equal(thirdPayload.dishes[0].dish.version, 1);
     const kitchenResponse = await preview(first.id);
     assert.equal(kitchenResponse.status, 200);
     assert.equal(kitchenResponse.headers.get("cache-control"), "private, no-store");
@@ -168,6 +196,9 @@ test("content publication freezes current menu, dish and signed evidence with an
     assert.equal((await kitchenIndex(first.id, randomUUID())).status, 422);
     assert.equal((await kitchenIndex("missing-publication")).status, 404);
     await status.update({ status: "revoked" });
+    const revokedRetained = await readReview(scoped);
+    assert.equal(revokedRetained.canPublish, false);
+    assert.match(revokedRetained.issues.join(" "), /no longer has the signed release used by the previous publication/);
     const revoked = await preview(first.id);
     assert.equal(revoked.status, 409);
     assert.equal((await kitchenIndex(first.id)).status, 200, "the index identifies historical membership independently of current signature readiness");
@@ -178,9 +209,30 @@ test("content publication freezes current menu, dish and signed evidence with an
     await Promise.all(newSignatures.map(signature => reader.collection("events").doc(signature.eventId).create({ ...signature, source: "cpu-production", action: "sign" })));
     await status.set(replacement);
     assert.equal((await preview(first.id)).status, 409, "a fresh release cannot silently replace frozen publication evidence");
+    const currentSubject = await store.requestDishReview(dish.id, revisedDish.version, actor.id);
+    const currentKey = studioDishReviewKey(dish.id, revisedDish.version);
+    const currentCpu = db.collection(studioDishReviewRecords).doc(currentKey);
+    const currentFence = { ...evidence, subject: currentSubject, releaseId: `cpu-studio-dish-release:${currentKey}:v1` };
+    const currentSignatures = signatures.map(signature => ({ ...signature, sourceHash: currentSubject.sourceHash, eventId: randomUUID() }));
+    await currentCpu.collection("releases").doc("1").create({ ...currentFence, signatures: currentSignatures });
+    await Promise.all(currentSignatures.map(signature => currentCpu.collection("events").doc(signature.eventId).create({ ...signature, source: "cpu-production", action: "sign" })));
+    await db.collection(studioDishSafetyFences).doc(currentKey).create(currentFence);
+    const dishChange = { ...scoped, scope: { dishId: dish.id } };
+    const dishReview = await readReview(dishChange);
+    assert.deepEqual(requests.at(-1)?.catalogueItemIds, [itemId, extraItemId]);
+    assert.equal(requests.at(-1)?.scope, "dish-selection");
+    assert.equal(dishReview.canPublish, true);
+    assert.match(dishReview.changes.join(" "), /all 2 placements/);
+    const dishReply = await publish(dishReview.reviewToken!, dishChange);
+    assert.equal(dishReply.status, 200);
+    const fourth = (await dishReply.json()).publication;
+    const fourthPayload = JSON.parse((await head.collection("publicationPackages").doc(fourth.id).get()).data()!.body);
+    assert.deepEqual(fourthPayload.menu.sections, thirdPayload.menu.sections);
+    assert.equal(fourthPayload.dishes[0].dish.version, 2);
+    assert.deepEqual(fourthPayload.dishes[0].safety.subject, currentSubject);
     const replay = await publish(accepted.reviewToken!);
     assert.deepEqual((await replay.json()).publication, first);
-    assert.equal((await head.collection("publications").get()).size, 2);
+    assert.equal((await head.collection("publications").get()).size, 4);
     assert.deepEqual((await head.collection("publicationPackages").doc(first.id).get()).data(), data);
   } finally {
     if (createdSchedule) await schedule.delete();

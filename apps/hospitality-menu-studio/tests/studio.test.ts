@@ -33,6 +33,9 @@ test("London dates and the shared rotation cross DST and year boundaries", () =>
   assert.equal(rotationWeek(menu.anchorMonday, "2027-01-04"), 6);
   assert.equal(rotationWeek(menu.anchorMonday, "2027-01-11"), 1);
   assert.equal(rotationWeek(menu.anchorMonday, "2026-11-29"), 6);
+  assert.equal(rotationWeek("2027-03-22", "2027-03-28"), 1);
+  assert.equal(rotationWeek("2027-03-22", "2027-03-29"), 2);
+  assert.equal(rotationWeek("2027-03-22", "2027-05-03"), 1);
   assert.equal(dateSchema.safeParse("2027-02-29").success, false);
 });
 
