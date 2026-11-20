@@ -2,11 +2,12 @@
   padding: 24px clamp(16px, 3vw, 40px) 36px;
   background: var(--fika-surface-page);
   color: var(--fika-text-primary);
-  font-family: Gilroy, Arial, sans-serif;
+  font-family: var(--fika-font-body), sans-serif;
 }
 
 .page * { box-sizing: border-box; }
 .page button, .page input, .page select { font: inherit; }
+.page button, .page input, .page select, .page textarea, .page option { font-family: var(--fika-font-body), sans-serif; }
 .page button:focus-visible, .page input:focus-visible, .page select:focus-visible { outline: 3px solid var(--fika-focus-ring); outline-offset: 2px; }
 .page button:disabled { cursor: not-allowed; opacity: .62; }
 
