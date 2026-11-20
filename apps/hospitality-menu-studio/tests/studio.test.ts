@@ -6,7 +6,7 @@ import { londonDate, rotationWeek, type Dish, type Menu } from "../lib/contract"
 import { studioHandlers } from "../lib/http";
 import { StudioProblem } from "../lib/problem";
 import { assortmentIsComplete, draftCustomerChoices, draftReadiness, kitchenQuantities } from "../lib/review";
-import { assertStudioDraftCommand, studioRuntime } from "../lib/runtime";
+import { assertStudioDraftCommand, localStudioSafetyAvailable, studioRuntime } from "../lib/runtime";
 import { studioStore } from "../lib/store";
 import { commandSchema, dateSchema } from "../lib/schema";
 
@@ -84,6 +84,15 @@ const staging = {
   FIKA_STUDIO_FIRESTORE_DATABASE: "hospitality-menu-studio",
   FIKA_SESSION_COOKIE_DOMAIN: ".fikacatering.com",
 };
+
+test("Studio food-safety work requires the authenticated demo emulator runtime", () => {
+  const demo = { NODE_ENV: "development", FIREBASE_PROJECT_ID: "demo-fika-os", FIKA_RUNTIME_MODE: "local" } as const;
+  assert.equal(localStudioSafetyAvailable(demo), false);
+  assert.equal(localStudioSafetyAvailable({ ...demo, FIRESTORE_EMULATOR_HOST: "127.0.0.1:8896" }), true);
+  assert.throws(() => localStudioSafetyAvailable({ ...demo, FIRESTORE_EMULATOR_HOST: "other.test:8896" }), StudioProblem);
+  assert.equal(localStudioSafetyAvailable({ ...demo, FIRESTORE_EMULATOR_HOST: "127.0.0.1:8896", FIKA_STUDIO_LOCAL_PREVIEW: "1" }), false);
+  assert.equal(localStudioSafetyAvailable(staging), false);
+});
 
 test("runtime rejects cross-project configuration and local fixture settings in staging", () => {
   assert.equal(studioRuntime(staging).name, "fika_os_session_staging");
@@ -176,6 +185,7 @@ test("staging commands are limited to synthetic draft actions before accessing s
     command => assertStudioDraftCommand(command.action));
   const planned = { menuId: "menu-1", version: 1, effectiveDate: "2026-12-01", scope: {} };
   for (const command of [
+    { action: "submit-dish-review", dishId: "dish-1", version: 1, confirmed: true },
     { ...planned, action: "publish", reviewToken: "test", confirmed: true },
     { action: "activate-collection", menuId: "menu-1", publicationId: "publication-1", visibility: "customer", confirmed: true },
     { action: "restore-menu", menuId: "menu-1", publicationId: "publication-1", version: 1 },
@@ -186,6 +196,9 @@ test("staging commands are limited to synthetic draft actions before accessing s
     assert.equal(response.status, 403);
     assert.equal((await response.json()).code, "STUDIO_WRITE_DENIED");
   }
+  const state = await make.GET(new Request("https://menu-studio-staging.fikacatering.com/api/studio?dishId=dish-1&reviewVersion=1"));
+  assert.equal(state.status, 200);
+  assert.deepEqual(await state.json(), { status: "unavailable" });
   for (const action of ["save-dish", "save-menu", "restore-draft", "review"]) assert.doesNotThrow(() => assertStudioDraftCommand(action));
   assert.throws(() => assertStudioDraftCommand("sign-allergens"), { code: "STUDIO_WRITE_DENIED" });
 });

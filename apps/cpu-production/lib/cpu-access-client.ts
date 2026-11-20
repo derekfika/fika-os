@@ -2,15 +2,16 @@ import type { NextRequest } from "next/server";
 import { forwardedHeaders, hubJson, type CpuActor } from "./production-http-client";
 import { getHubBaseUrl } from "./hub-url";
 export type CpuDestinationScope = { allOplocs: boolean; oplocIds: string[] };
-const accessByRequest = new WeakMap<NextRequest, Promise<{ actor: CpuActor; scope: CpuDestinationScope }>>();
-async function loadCpuAccess(request: NextRequest): Promise<{ actor: CpuActor; scope: CpuDestinationScope }> {
+type CpuAccess = { actor: CpuActor; scope: CpuDestinationScope; identityKind?: string };
+const accessByRequest = new WeakMap<NextRequest, Promise<CpuAccess>>();
+async function loadCpuAccess(request: NextRequest): Promise<CpuAccess> {
   if (process.env.NODE_ENV !== "production" && !request.headers.get("cookie")) return { actor: { uid: "local-cpu", name: "Production chef (local)", role: "integration-admin", synthetic: true }, scope: { allOplocs: true, oplocIds: [] } };
   const base = getHubBaseUrl(); let response: Response;
   try { response = await fetch(`${base}/api/cpu-production/access`, { cache: "no-store", signal: AbortSignal.timeout(8_000), headers: forwardedHeaders(request) }); } catch { throw Object.assign(new Error("Integration Hub is unavailable."), { status: 503 }); }
-  const body = await response.json().catch(() => undefined) as { principal?: { id?: string; displayName?: string }; allOplocs?: unknown; oplocs?: Array<{ id?: unknown }>; error?: { message?: string; code?: string } } | undefined;
+  const body = await response.json().catch(() => undefined) as { principal?: { id?: string; displayName?: string; identityKind?: string }; allOplocs?: unknown; oplocs?: Array<{ id?: unknown }>; error?: { message?: string; code?: string } } | undefined;
   const sessionCode = response.status === 401 && (body?.error?.code === "FIKA_SESSION_MISSING" || body?.error?.code === "FIKA_SESSION_INVALID") ? body.error.code : undefined;
   if (!response.ok || !body?.principal?.id) throw Object.assign(new Error(body?.error?.message || "CPU Production access was not granted."), { status: response.status || 502, ...(sessionCode ? { code: sessionCode } : {}) });
-  return { actor: { uid: body.principal.id, name: body.principal.displayName, role: "cpu-production" }, scope: { allOplocs: body.allOplocs === true, oplocIds: Array.isArray(body.oplocs) ? [...new Set(body.oplocs.flatMap(oploc => typeof oploc?.id === "string" && oploc.id ? [oploc.id] : []))] : [] } };
+  return { actor: { uid: body.principal.id, name: body.principal.displayName, role: "cpu-production" }, identityKind: body.principal.identityKind, scope: { allOplocs: body.allOplocs === true, oplocIds: Array.isArray(body.oplocs) ? [...new Set(body.oplocs.flatMap(oploc => typeof oploc?.id === "string" && oploc.id ? [oploc.id] : []))] : [] } };
 }
 
 function accessFor(request: NextRequest) {
@@ -23,6 +24,13 @@ function accessFor(request: NextRequest) {
 }
 export async function requireCpuActor(request: NextRequest): Promise<CpuActor> { return (await accessFor(request)).actor; }
 export async function requireCpuDestinationScope(request: NextRequest): Promise<CpuDestinationScope> { return (await accessFor(request)).scope; }
+export async function requireCpuStudioReviewer(request: NextRequest) {
+  const access = await accessFor(request);
+  if (access.identityKind !== "person" || access.actor.synthetic || !access.scope.allOplocs) {
+    throw Object.assign(new Error("Studio dish reviews require a person with company-wide CPU access."), { status: 403, code: "CPU_STUDIO_REVIEW_DENIED" });
+  }
+  return access.actor;
+}
 const aliasByRequest = new WeakMap<NextRequest, Map<string, Promise<string | undefined>>>();
 type OplocIdentities = { oplocs: Array<{ canonicalId: string; requestedId?: string; label: string }> };
 /** Resolve historical governed IDs through Hub authority before filtering; never rewrite source evidence. */
