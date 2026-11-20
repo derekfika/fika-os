@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Dish, Menu, StudioActor } from "../lib/contract";
 import {
+  canApplyDraftResponse,
   localDraftKey as localKey,
+  retainedCopyKey,
   retainedDraftMatchesRequest,
   retainedMetadataKey,
   retainedTimestamp,
@@ -43,6 +45,7 @@ export function useDraft<T extends Entity>(
   const [retainedAt, setRetainedAt] = useState<string | null>(null);
   const current = useRef<T | null>(initial);
   const generation = useRef(0);
+  const context = useRef(0);
   const busy = useRef(false);
   const editor = useRef("");
   if (!editor.current && typeof window !== "undefined")
@@ -61,15 +64,27 @@ export function useDraft<T extends Entity>(
     busy.current = true;
     const snapshot = structuredClone(current.current);
     const savedGeneration = generation.current;
+    const savedContext = context.current;
+    const savedEditor = editor.current;
     setState("saving");
     setError("");
     try {
       const result = await request({ action: `save-${kind}`, item: snapshot });
       const saved = result.item as T;
-      if (current.current?.id !== snapshot.id) {
+      if (
+        !canApplyDraftResponse(
+          savedContext,
+          context.current,
+          snapshot.id,
+          current.current?.id,
+        )
+      ) {
         try {
-          const key = localKey(actor.id, kind, snapshot.id, editor.current);
-          if (retainedDraftMatchesRequest(localStorage.getItem(key), snapshot))
+          const key = localKey(actor.id, kind, snapshot.id, savedEditor);
+          if (
+            recoveredFrom.current?.key !== key &&
+            retainedDraftMatchesRequest(localStorage.getItem(key), snapshot)
+          )
             localStorage.removeItem(key);
         } catch {
           /* A later recovery remains conservative. */
@@ -82,11 +97,15 @@ export function useDraft<T extends Entity>(
         setItem(saved);
         setState("saved");
         try {
-          const key = localKey(actor.id, kind, saved.id, editor.current);
+          const key = localKey(actor.id, kind, saved.id, savedEditor);
           if (retainedDraftMatchesRequest(localStorage.getItem(key), snapshot))
             localStorage.removeItem(key);
           if (
             recoveredFrom.current &&
+            retainedDraftMatchesRequest(
+              recoveredFrom.current.value,
+              snapshot,
+            ) &&
             localStorage.getItem(recoveredFrom.current.key) ===
               recoveredFrom.current.value
           )
@@ -116,7 +135,15 @@ export function useDraft<T extends Entity>(
       }
       onSavedRef.current(saved);
     } catch (cause) {
-      if (current.current?.id !== snapshot.id) return;
+      if (
+        !canApplyDraftResponse(
+          savedContext,
+          context.current,
+          snapshot.id,
+          current.current?.id,
+        )
+      )
+        return;
       if (timer.current) clearTimeout(timer.current);
       const failure = cause as Error & { status?: number };
       setState(failure.status === 409 ? "conflict" : "error");
@@ -134,6 +161,7 @@ export function useDraft<T extends Entity>(
       if (timer.current) clearTimeout(timer.current);
       recoveredFrom.current = null;
       setRetainedAt(null);
+      context.current++;
       generation.current++;
       if (!next) {
         current.current = null;
@@ -213,8 +241,6 @@ export function useDraft<T extends Entity>(
   }, [state, item, save]);
   const recover = useCallback(
     (next: T, key: string, serverVersion: number | undefined) => {
-      if (timer.current) clearTimeout(timer.current);
-      generation.current++;
       let raw: string | null;
       try {
         raw = localStorage.getItem(key);
@@ -225,6 +251,13 @@ export function useDraft<T extends Entity>(
         return;
       }
       if (!raw) return;
+      if (timer.current) clearTimeout(timer.current);
+      context.current++;
+      generation.current++;
+      setRetainedAt(null);
+      recoveredFrom.current = { key, value: raw };
+      // New edits use an independent key, even if the selected copy changed.
+      editor.current = crypto.randomUUID();
       if (!retainedDraftMatchesRequest(raw, next)) {
         current.current = next;
         setItem(next);
@@ -234,7 +267,6 @@ export function useDraft<T extends Entity>(
         );
         return;
       }
-      recoveredFrom.current = { key, value: raw };
       try {
         setRetainedAt(
           retainedTimestamp(
@@ -247,16 +279,6 @@ export function useDraft<T extends Entity>(
       }
       current.current = next;
       setItem(next);
-      try {
-        localStorage.setItem(
-          localKey(actor.id, kind, next.id, editor.current),
-          JSON.stringify(next),
-        );
-      } catch {
-        setError(
-          "Device storage is unavailable. Keep this page open until your edits are saved.",
-        );
-      }
       if (serverVersion !== undefined && serverVersion !== next.version) {
         setState("conflict");
         setError(
@@ -272,14 +294,18 @@ export function useDraft<T extends Entity>(
   const openLatest = useCallback(async () => {
     const retained = current.current;
     if (!retained) return;
+    const retainedContext = context.current;
     try {
       // Reuse an exact retained copy across retries; never replace a different payload.
       const raw = JSON.stringify(retained);
       const editorKey = localKey(actor.id, kind, retained.id, editor.current);
-      let key =
-        preservation.current?.value === raw
-          ? preservation.current.key
-          : editorKey;
+      let key = retainedCopyKey(
+        raw,
+        recoveredFrom.current,
+        preservation.current,
+        editorKey,
+        (candidate) => localStorage.getItem(candidate),
+      );
       let existing = localStorage.getItem(key);
       if (existing !== null && existing !== raw) {
         key = localKey(actor.id, kind, retained.id, crypto.randomUUID());
@@ -290,7 +316,7 @@ export function useDraft<T extends Entity>(
         throw new Error("Storage unavailable");
       preservation.current = { key, value: raw };
       try {
-        if (retainedAt)
+        if (retainedAt && key !== recoveredFrom.current?.key)
           localStorage.setItem(
             retainedMetadataKey(key),
             JSON.stringify({ value: raw, at: retainedAt }),
@@ -302,7 +328,8 @@ export function useDraft<T extends Entity>(
         [kind === "menu" ? "menuId" : "dishId"]: retained.id,
       });
       const result = await request(undefined, `?${query}`);
-      if (current.current !== retained) return;
+      if (context.current !== retainedContext || current.current !== retained)
+        return;
       if (
         !result.item ||
         result.item.id !== retained.id ||
@@ -314,6 +341,7 @@ export function useDraft<T extends Entity>(
       editor.current = crypto.randomUUID();
       preservation.current = null;
       recoveredFrom.current = null;
+      context.current++;
       generation.current++;
       current.current = result.item as T;
       setItem(current.current);
@@ -322,6 +350,8 @@ export function useDraft<T extends Entity>(
       setRetainedAt(null);
       onSavedRef.current(current.current);
     } catch {
+      if (context.current !== retainedContext || current.current !== retained)
+        return;
       setError(
         "The latest saved draft could not be opened. Your edits are still here; try again.",
       );
