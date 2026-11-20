@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { assertStudioRequestHost, authoriseStudio, requireSameOrigin, studioSessionCookie } from "../../../lib/auth";
 import { catalogueUnavailable, readStudioCatalogue } from "../../../lib/catalogue";
 import { studioHandlers } from "../../../lib/http";
-import { assertStudioDraftCommand, studioRuntime } from "../../../lib/runtime";
+import { assertStudioDraftCommand, localStudioSafetyAvailable, studioRuntime } from "../../../lib/runtime";
 import { studioStore } from "../../../lib/store";
 
 export const runtime = "nodejs";
@@ -19,7 +19,7 @@ const handlers = studioHandlers(async request => {
   return readStudioCatalogue(config.hub, studioSessionCookie(config, cookie));
 }, command => {
   if (studioRuntime().mode === "staging") assertStudioDraftCommand(command.action);
-});
+}, localStudioSafetyAvailable);
 
 export const GET = handlers.GET;
 export const POST = handlers.POST;
