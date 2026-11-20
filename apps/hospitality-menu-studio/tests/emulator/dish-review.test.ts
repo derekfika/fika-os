@@ -109,6 +109,9 @@ test("the staged transport submits only archived dish revisions without writing 
       assert.deepEqual(subject, submission?.subject);
       return { status: "in_review" as const };
     },
+    async evidence(subject: StudioDishSafetyFence["subject"]) {
+      return this.status(subject);
+    },
   };
   const route = (canManage: boolean) => studioHandlers(async () => ({ ...actor, canManage }), () => store, () => {},
     undefined, command => assertStudioDraftCommand(command.action, true), undefined, undefined, () => transport);

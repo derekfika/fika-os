@@ -34,11 +34,13 @@ export function studioRuntime(env = process.env) {
       [env.GCLOUD_PROJECT, env.GOOGLE_CLOUD_PROJECT].some(value => value && value !== stage.projectId)) {
     throw new StudioProblem(503, "RUNTIME_UNAVAILABLE", "The Studio environment is unavailable.");
   }
-  return { ...config, ...stage, writes: true, fixture: false };
+  return { ...config, ...stage, writes: true, fixture: false,
+    publicationPilot: env.FIKA_STUDIO_PUBLICATION_ENABLED === "true" && env.FIKA_STUDIO_CPU_REVIEW_ENABLED === "true" };
 }
 
-export function assertStudioDraftCommand(action: string, stagedReview = false) {
+export function assertStudioDraftCommand(action: string, stagedReview = false, stagedPublication = false) {
   if (stagedReview && action === "submit-dish-review") return;
+  if (stagedPublication && action === "publish") return;
   if (!["save-dish", "save-menu", "restore-draft", "review"].includes(action)) {
     throw new StudioProblem(403, "STUDIO_WRITE_DENIED", "Studio staging only permits draft authoring.");
   }

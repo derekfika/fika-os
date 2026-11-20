@@ -24,6 +24,7 @@ export function reviewPublication(input: {
   request: PublicationRequest; menu: Menu; dishes: Dish[]; today: string; actorId: string; canPublish: boolean;
   catalogue?: CatalogueLoadResult; safety: Map<string, DishSafety>; previous?: Publication; previousPackage?: PublicationPackage;
   seasons: SeasonWindow[]; impact: Review["impact"]; scopeResult: Pick<ScopedPublicationContent, "issues" | "changes">;
+  projectId?: PublicationPackage["projectId"]; reviewSigningKey?: string;
 }) {
   const { request, menu, dishes, today, catalogue, previous, previousPackage, impact, actorId } = input;
   const previousMenu = previousPackage?.menu;
@@ -72,7 +73,7 @@ export function reviewPublication(input: {
   const publicationRevision = (previous?.revision ?? 0) + 1;
   const payload: PublicationPackage = {
     contract: "hospitality-menu-studio.publication.v1", publicationId: publicationIdFor(menu.id, publicationRevision), publicationRevision,
-    sourceApp: "hospitality-menu-studio", projectId: "demo-fika-os", menu, effectiveDate: request.effectiveDate, sourceDraftVersion: menu.version,
+    sourceApp: "hospitality-menu-studio", projectId: input.projectId ?? "demo-fika-os", menu, effectiveDate: request.effectiveDate, sourceDraftVersion: menu.version,
     previousPublicationId: previous?.id ?? null, catalogueHash: catalogue.contentHash,
     ...(hasPublicationScope(request.scope) ? { scope: request.scope } : {}),
     dishes: dishIds.map(id => {
@@ -85,7 +86,7 @@ export function reviewPublication(input: {
   if (Buffer.byteLength(body) > maximumStudioPublicationBytes) return {
     review: { ...review, canPublish: false, issues: ["The full publication exceeds the storage limit."] },
   };
-  const reviewToken = createHmac("sha256", reviewKey).update(canonicalJson(["studio-publication-review-v1", actorId, contentHash, impact])).digest("hex");
+  const reviewToken = createHmac("sha256", input.reviewSigningKey ?? reviewKey).update(canonicalJson(["studio-publication-review-v1", actorId, contentHash, impact])).digest("hex");
   return { review: { ...review, reviewToken }, package: { payload, body, contentHash } };
 }
 
