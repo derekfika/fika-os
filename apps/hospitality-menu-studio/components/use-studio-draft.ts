@@ -3,6 +3,8 @@ import type { Dish, Menu, StudioActor } from "../lib/contract";
 import {
   localDraftKey as localKey,
   retainedDraftMatchesRequest,
+  retainedMetadataKey,
+  retainedTimestamp,
 } from "./studio-model";
 import type { SaveState } from "./studio-ui";
 
@@ -38,12 +40,14 @@ export function useDraft<T extends Entity>(
   const [item, setItem] = useState<T | null>(initial);
   const [state, setState] = useState<SaveState>("saved");
   const [error, setError] = useState("");
+  const [retainedAt, setRetainedAt] = useState<string | null>(null);
   const current = useRef<T | null>(initial);
   const generation = useRef(0);
   const busy = useRef(false);
   const editor = useRef("");
   if (!editor.current && typeof window !== "undefined")
     editor.current = crypto.randomUUID();
+  const preservation = useRef<{ key: string; value: string } | null>(null);
   const recoveredFrom = useRef<{ key: string; value: string } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onSavedRef = useRef(onSaved);
@@ -129,6 +133,7 @@ export function useDraft<T extends Entity>(
     (next: T | null) => {
       if (timer.current) clearTimeout(timer.current);
       recoveredFrom.current = null;
+      setRetainedAt(null);
       generation.current++;
       if (!next) {
         current.current = null;
@@ -177,11 +182,17 @@ export function useDraft<T extends Entity>(
       current.current = next;
       generation.current++;
       setItem(next);
+      setRetainedAt(null);
       try {
+        const key = localKey(actor.id, kind, next.id, editor.current);
+        const value = JSON.stringify(next);
+        localStorage.setItem(key, value);
+        const at = new Date().toISOString();
         localStorage.setItem(
-          localKey(actor.id, kind, next.id, editor.current),
-          JSON.stringify(next),
+          retainedMetadataKey(key),
+          JSON.stringify({ value, at }),
         );
+        setRetainedAt(at);
       } catch {
         setError(
           "Device storage is unavailable. Keep this page open until your edits are saved.",
@@ -224,6 +235,16 @@ export function useDraft<T extends Entity>(
         return;
       }
       recoveredFrom.current = { key, value: raw };
+      try {
+        setRetainedAt(
+          retainedTimestamp(
+            raw,
+            localStorage.getItem(retainedMetadataKey(key)),
+          ),
+        );
+      } catch {
+        setRetainedAt(null);
+      }
       current.current = next;
       setItem(next);
       try {
@@ -248,5 +269,73 @@ export function useDraft<T extends Entity>(
     },
     [actor.id, kind],
   );
-  return { item, state, error, open, recover, change, retry: save };
+  const openLatest = useCallback(async () => {
+    const retained = current.current;
+    if (!retained) return;
+    try {
+      // Reuse an exact retained copy across retries; never replace a different payload.
+      const raw = JSON.stringify(retained);
+      const editorKey = localKey(actor.id, kind, retained.id, editor.current);
+      let key =
+        preservation.current?.value === raw
+          ? preservation.current.key
+          : editorKey;
+      let existing = localStorage.getItem(key);
+      if (existing !== null && existing !== raw) {
+        key = localKey(actor.id, kind, retained.id, crypto.randomUUID());
+        existing = null;
+      }
+      if (existing === null) localStorage.setItem(key, raw);
+      if (localStorage.getItem(key) !== raw)
+        throw new Error("Storage unavailable");
+      preservation.current = { key, value: raw };
+      try {
+        if (retainedAt)
+          localStorage.setItem(
+            retainedMetadataKey(key),
+            JSON.stringify({ value: raw, at: retainedAt }),
+          );
+      } catch {
+        /* Timing metadata is optional. */
+      }
+      const query = new URLSearchParams({
+        [kind === "menu" ? "menuId" : "dishId"]: retained.id,
+      });
+      const result = await request(undefined, `?${query}`);
+      if (current.current !== retained) return;
+      if (
+        !result.item ||
+        result.item.id !== retained.id ||
+        !Number.isInteger(result.item.version) ||
+        result.item.version < 1
+      )
+        throw new Error("Invalid saved draft");
+      // A new editor key prevents subsequent edits from replacing the retained copy.
+      editor.current = crypto.randomUUID();
+      preservation.current = null;
+      recoveredFrom.current = null;
+      generation.current++;
+      current.current = result.item as T;
+      setItem(current.current);
+      setState("saved");
+      setError("");
+      setRetainedAt(null);
+      onSavedRef.current(current.current);
+    } catch {
+      setError(
+        "The latest saved draft could not be opened. Your edits are still here; try again.",
+      );
+    }
+  }, [actor.id, kind, retainedAt]);
+  return {
+    item,
+    state,
+    error,
+    open,
+    recover,
+    change,
+    retry: save,
+    openLatest,
+    retainedAt,
+  };
 }

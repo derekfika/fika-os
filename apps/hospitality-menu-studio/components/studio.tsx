@@ -43,10 +43,21 @@ import {
   type Page,
 } from "./studio-ui";
 import { request, useDraft } from "./use-studio-draft";
+import { StudioRecovery } from "./studio-recovery";
+import {
+  formatRetainedTime,
+  retainedMetadataKey,
+  retainedTimestamp,
+} from "./studio-model";
 import styles from "./studio.module.css";
 
 type Entity = Menu | Dish;
-type Recovery = { key: string; kind: "menu" | "dish"; item: Entity };
+type Recovery = {
+  key: string;
+  kind: "menu" | "dish";
+  item: Entity;
+  retainedAt: string | null;
+};
 
 export default function Studio({
   actor,
@@ -122,10 +133,10 @@ export default function Studio({
   const anchor = calendarDay(menu?.anchorMonday || "");
   const previewValid = Boolean(
     menu &&
-      day >= calendarDay(menu.startDate) &&
-      day <= calendarDay(menu.endDate) &&
-      (!menu.sections.some((item) => item.mode === "rotation") ||
-        (Number.isFinite(anchor) && new Date(anchor).getUTCDay() === 1)),
+    day >= calendarDay(menu.startDate) &&
+    day <= calendarDay(menu.endDate) &&
+    (!menu.sections.some((item) => item.mode === "rotation") ||
+      (Number.isFinite(anchor) && new Date(anchor).getUTCDay() === 1)),
   );
   const kitchenCollection =
     page === "kitchen" &&
@@ -185,6 +196,17 @@ export default function Studio({
     window.scrollTo(0, 0);
   }, [page, sectionId, createKind, menu?.id, dish?.id]);
 
+  function readRetainedTime(key: string, raw: string): string | null {
+    try {
+      return retainedTimestamp(
+        raw,
+        localStorage.getItem(retainedMetadataKey(key)),
+      );
+    } catch {
+      return null;
+    }
+  }
+
   useEffect(() => {
     if (page !== "home") return;
     const copies: Recovery[] = [];
@@ -198,7 +220,13 @@ export default function Studio({
           if (!raw) continue;
           try {
             const item = JSON.parse(raw) as Entity;
-            if (item.id) copies.push({ key, kind, item });
+            if (item.id)
+              copies.push({
+                key,
+                kind,
+                item,
+                retainedAt: readRetainedTime(key, raw),
+              });
           } catch {
             /* Preserve unreadable entries. */
           }
@@ -341,23 +369,43 @@ export default function Studio({
     setPreviewMessage("");
     setPage("preview");
   }
-  function recoverDraft({ key, kind, item }: Recovery) {
-    if (kind === "menu") {
-      menuDraft.recover(
-        item as Menu,
-        key,
-        menus.find((row) => row.id === item.id)?.version,
+  async function recoverDraft({ key, kind, item }: Recovery) {
+    try {
+      const query = new URLSearchParams({
+        [kind === "menu" ? "menuId" : "dishId"]: item.id,
+      });
+      let savedVersion: number;
+      try {
+        const latest = await request(undefined, `?${query}`);
+        if (
+          !latest.item ||
+          latest.item.id !== item.id ||
+          !Number.isInteger(latest.item.version) ||
+          latest.item.version < 1
+        )
+          throw new Error("Invalid saved draft");
+        savedVersion = latest.item.version;
+      } catch (failure) {
+        if (
+          item.version !== 0 ||
+          (failure as Error & { status?: number }).status !== 404
+        )
+          throw failure;
+        savedVersion = 0;
+      }
+      if (kind === "menu") {
+        menuDraft.recover(item as Menu, key, savedVersion);
+        setSectionId("");
+        setPage("menus");
+      } else {
+        dishDraft.recover(item as Dish, key, savedVersion);
+        setDishBackToSection(false);
+        setPage("dishes");
+      }
+    } catch {
+      setError(
+        "The saved draft could not be checked. Your retained copy remains on this device; try again.",
       );
-      setSectionId("");
-      setPage("menus");
-    } else {
-      dishDraft.recover(
-        item as Dish,
-        key,
-        dishes.find((row) => row.id === item.id)?.version,
-      );
-      setDishBackToSection(false);
-      setPage("dishes");
     }
   }
 
@@ -603,6 +651,28 @@ export default function Studio({
       demo={demo}
       navigate={navigate}
     >
+      {page !== "home" &&
+        page !== "dishes" &&
+        page !== "assortment" &&
+        menuDraft.state === "conflict" &&
+        menu && (
+          <StudioRecovery
+            item={menu}
+            retainedAt={menuDraft.retainedAt}
+            openLatest={menuDraft.openLatest}
+            dishes={dishes}
+          />
+        )}
+      {(page === "dishes" || page === "assortment") &&
+        dishDraft.state === "conflict" &&
+        dish && (
+          <StudioRecovery
+            item={dish}
+            retainedAt={dishDraft.retainedAt}
+            openLatest={dishDraft.openLatest}
+            dishes={dishes}
+          />
+        )}
       {loading && <p role="status">Loading menus and dishes…</p>}
       {error && (
         <div className="fika-notice fika-notice--danger" role="alert">
@@ -636,20 +706,24 @@ export default function Studio({
                   <section className={styles.panelBody}>
                     <h2>Unsaved drafts on this device</h2>
                     <p>
-                      Choose a retained copy to recover. A newer saved version
-                      needs reconciliation.
+                      Choose a copy to review. If a newer draft was saved
+                      elsewhere, you can open it without losing this copy.
                     </p>
                     {recoverable.map((copy) => (
                       <button
                         type="button"
                         className={styles.listButton}
                         key={copy.key}
-                        onClick={() => recoverDraft(copy)}
+                        onClick={() => void recoverDraft(copy)}
                       >
                         <strong>{copy.item.name || "Untitled draft"}</strong>
                         <span>
-                          {title(copy.kind)} · Version {copy.item.version} ·
-                          Recovery {copy.key.slice(-8)} <Icon name="forward" />
+                          {title(copy.kind)} · Started from version{" "}
+                          {copy.item.version} ·
+                          {copy.retainedAt
+                            ? ` Retained ${formatRetainedTime(copy.retainedAt)} ·`
+                            : " Time unavailable ·"}
+                          Copy {copy.key.slice(-8)} <Icon name="forward" />
                         </span>
                       </button>
                     ))}
