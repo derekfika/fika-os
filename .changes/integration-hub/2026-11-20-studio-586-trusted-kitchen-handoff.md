@@ -4,5 +4,5 @@ Hub can attach a frozen kitchen specification to a CPU-routed Production Order l
 
 The per-quote private record stays outside customer and staff booking payloads. Only Studio-marked CPU handoffs read it. Earlier bookings and in-house work keep their existing paths. A future acceptance writer must verify the publication and signed evidence and commit the marker and private record with the booking and quote.
 
-Validation: Hub typecheck and 10 isolated Firestore emulator tests passed. The tests cover replay, missing or stale evidence, quantity and line validation, legacy client choices and in-house routing.
+Validation: Hub typecheck, build and 10 isolated Firestore emulator tests. The tests cover replay, missing or stale evidence, quantity and line validation, legacy client choices, fulfilment and in-house routing.
 Deployment: none.

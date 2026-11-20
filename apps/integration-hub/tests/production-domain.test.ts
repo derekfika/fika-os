@@ -108,6 +108,10 @@ test("emulator: the saved Hub quote and accepted Studio specification freeze exa
   const events = await db.collection("fikaDomainEventsV1").where("sourceAggregateId", "==", fixture.orderId).get();
   assert.equal(events.size, 1);
   assert.deepEqual(events.docs[0].get("payload.productionOrder.lines")[0].studioKitchenSpec, fixture.spec);
+  const fulfilment = await db.collection("fikaFulfilmentRequirementsV1").where("sourceEntityId", "==", fixture.orderId).get();
+  assert.equal(fulfilment.size, 1);
+  assert.equal(fulfilment.docs[0].get("sourceVersion"), first.order?.version);
+  assert.doesNotMatch(JSON.stringify(fulfilment.docs[0].data()), /studioKitchenSpec|Label each tray/);
   await fixture.acceptedRef.update({ lines: [{ ...fixture.evidence.lines[0], spec: { ...fixture.spec, selections: [{ ...fixture.spec.selections[0], kitchenDescription: "Changed after handoff" }] } }] });
   await assert.rejects(fixture.handoff(), { code: "STUDIO_KITCHEN_SPEC_INTEGRITY_FAILURE" });
   assert.deepEqual((await fixture.canonicalOrderRef.get()).get("lines")[0].studioKitchenSpec, fixture.spec);
@@ -134,6 +138,7 @@ test("emulator: a stale quote, substituted line or invalid count fails without a
   assert.deepEqual((await fixture.bookingRef.get()).data(), baseline);
   assert.equal((await fixture.canonicalOrderRef.get()).exists, false);
   assert.equal((await db.collection("fikaProductionRequirements").where("sourceBookingId", "==", fixture.booking.canonicalId).get()).size, 0);
+  assert.equal((await db.collection("fikaFulfilmentRequirementsV1").where("sourceEntityId", "==", fixture.orderId).get()).size, 0);
   assert.equal((await db.collection("fikaDomainEventsV1").where("sourceAggregateId", "==", fixture.orderId).get()).size, 0);
   assert.equal((await db.collection("fikaBookingNotifications").where("bookingId", "==", fixture.booking.canonicalId).get()).size, 0);
 });
@@ -145,6 +150,7 @@ test("emulator: client choices cannot supply the private specification and in-ho
   await legacy.acceptedRef.create(legacy.evidence);
   assert.equal((await legacy.handoff()).order?.lines[0].studioKitchenSpec, undefined);
   const inHouse = studioKitchenBooking();
+  inHouse.booking.studioKitchenEvidenceVersion = 1;
   await inHouse.seed(false);
   await inHouse.acceptedRef.create({ deliberatelyInvalid: true });
   assert.equal((await inHouse.handoff()).status, "no_cpu_production_required");
