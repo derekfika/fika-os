@@ -5,6 +5,9 @@ import { NextRequest } from "next/server";
 import { resolveMenuActor } from "../lib/auth";
 import { middleware } from "../middleware";
 
+const siteScope = { all: false, ids: ["oploc:staff-site"] };
+const managePermissions = { manageOplocIds: siteScope.ids, publishOplocIds: [], canManageOrganisation: true, canPublishOrganisation: false };
+
 test("hosted mutation auth uses FIKA_HUB_BASE_URL and forwards the session cookie", async () => {
   const originalMode = process.env.FIKA_RUNTIME_MODE;
   const originalFikaHub = process.env.FIKA_HUB_BASE_URL;
@@ -15,7 +18,7 @@ test("hosted mutation auth uses FIKA_HUB_BASE_URL and forwards the session cooki
   process.env.FIKA_RUNTIME_MODE = "staging";
   process.env.FIKA_HUB_BASE_URL = "https://fika-hub-staging.example/";
   process.env.INTEGRATION_HUB_BASE_URL = "http://localhost:3200";
-  globalThis.fetch = (async (input, init) => { calledUrl = String(input); calledCookie = new Headers(init?.headers).get("cookie") || ""; return Response.json({ principal: { identityId: "staff-1", email: "staff@example.com" }, canManage: true, canPublish: false }); }) as typeof fetch;
+  globalThis.fetch = (async (input, init) => { calledUrl = String(input); calledCookie = new Headers(init?.headers).get("cookie") || ""; return Response.json({ principal: { identityId: "staff-1", email: "staff@example.com" }, scope: siteScope, permissions: managePermissions }); }) as typeof fetch;
   try {
     const actor = await resolveMenuActor(new NextRequest("https://menu.example/api/rolling-menu", { headers: { cookie: "fika_os_session=session-value" } }));
     assert.equal(actor.role, "reviewer");

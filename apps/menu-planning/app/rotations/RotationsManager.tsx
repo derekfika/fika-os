@@ -20,7 +20,11 @@ const nextDateAfter = (date: string) => {
 };
 const todayLondon = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 
-export default function RotationsManager({ styles, permissions, initialHead, initialDraft, dishes, items, classifications }: Props) {
+import { useMenuAccess } from "../menu-access";
+
+export default function RotationsManager({ styles, permissions: rotationsPermissions, initialHead, initialDraft, dishes, items, classifications }: Props) {
+  const access = useMenuAccess();
+  const permissions = { ...rotationsPermissions, Manage: rotationsPermissions.Manage && access.canManageOrganisation, Publish: rotationsPermissions.Publish && access.canManageOrganisation };
   const router = useRouter();
   const [head, setHead] = useState(initialHead);
   const [draft, setDraft] = useState(initialDraft);

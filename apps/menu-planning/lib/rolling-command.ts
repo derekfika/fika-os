@@ -11,6 +11,7 @@ export type RollingMutationCommand = {
   touchedEntryIds: string[];
   touchedDayIds: string[];
   entryDayIds?: Record<string, string>;
+  authorizeEntry?: (entry: RollingEntry) => void;
   patch: {
     entries?: Record<string, RollingEntryPatch>;
     days?: Record<string, RollingDayPatch>;

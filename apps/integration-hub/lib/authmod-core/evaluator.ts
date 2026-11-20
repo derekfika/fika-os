@@ -4,6 +4,7 @@ import type { AuthPrincipal, AuthorizationDecision, AuthModAction, Scope } from 
 import { isPersonRequiredAuthority } from "./authority";
 import { BEVERAGE_AUTHMOD_APP_ID } from "./beverage-admission";
 import { STUDIO_AUTHMOD_APP } from "./hospitality-studio-admission";
+import { applicationAccessPolicy, configuredApplicationAssignment, isCurrentLevelGrant } from "./application-access-levels";
 import { LOGISTICS_VEHICLE_IDS, isLogisticsVehicleId } from "../../../shared/logistics-authority";
 export { LOGISTICS_VEHICLE_IDS, type LogisticsVehicleId } from "../../../shared/logistics-authority";
 
@@ -17,19 +18,40 @@ export class AuthModEvaluationContext {
   private applicationPromises = new Map<string, Promise<Awaited<ReturnType<AuthModRepository["getApplication"]>>>>();
   private oplocPromises = new Map<string, Promise<Awaited<ReturnType<AuthModRepository["getActiveOploc"]>>>>();
   private delegationsPromise?: Promise<Awaited<ReturnType<AuthModRepository["listDelegations"]>>>;
+  private delegatedGrantIdsPromise?: Promise<Set<string>>;
   private activeOplocsPromise?: Promise<Awaited<ReturnType<AuthModRepository["listActiveOplocs"]>>>;
+  private oplocRedirectsPromise?: Promise<Record<string, string>>;
   private readonly seededOplocs: Map<string, OplocReference>;
-  constructor(readonly repository: AuthModRepository, readonly principal: AuthPrincipal, activeOplocs: OplocReference[] = []) { this.seededOplocs = new Map(activeOplocs.map(oploc => [oploc.id, oploc])); }
-  identity() { return this.identityPromise ||= this.principal.type === "interactive" && this.repository.getRuntimeAccessPackage ? this.runtimePackage().then(value => value?.identity) : this.principal.type === "interactive" ? this.repository.getIdentity(this.principal.id) : Promise.resolve(undefined); }
+  private readonly useRuntimePackage: boolean;
+  constructor(readonly repository: AuthModRepository, readonly principal: AuthPrincipal, activeOplocs: OplocReference[] = [], options = { useRuntimePackage: true }) {
+    this.seededOplocs = new Map(activeOplocs.map(oploc => [oploc.id, oploc]));
+    this.useRuntimePackage = options.useRuntimePackage && Boolean(repository.getRuntimeAccessPackage);
+  }
+  identity() { return this.identityPromise ||= this.principal.type === "interactive" && this.useRuntimePackage ? this.runtimePackage().then(value => value?.identity) : this.principal.type === "interactive" ? this.repository.getIdentity(this.principal.id) : Promise.resolve(undefined); }
   runtimePackage() { return this.runtimePackagePromise ||= this.principal.type === "interactive" && this.repository.getRuntimeAccessPackage ? this.repository.getRuntimeAccessPackage(this.principal.id) : Promise.resolve(undefined as never); }
-  grants() { return this.grantsPromise ||= this.repository.getRuntimeAccessPackage ? this.runtimePackage().then(value => value?.authorityGrants || []) : this.principal.type === "interactive" ? this.repository.listAuthorityGrants(this.principal.id, "interactive") : Promise.resolve([]); }
-  appAssignments() { return this.appAssignmentsPromise ||= this.repository.getRuntimeAccessPackage ? this.runtimePackage().then(value => value?.appAssignments || []) : this.identity().then(identity => identity ? this.repository.listAppAssignments(identity.id) : []); }
-  siteAssignments() { return this.siteAssignmentsPromise ||= this.repository.getRuntimeAccessPackage ? this.runtimePackage().then(value => value?.siteAssignments || []) : this.identity().then(identity => identity ? this.repository.listSiteAssignments(identity.id) : []); }
-  appOplocScopes() { return this.appOplocScopesPromise ||= this.repository.getRuntimeAccessPackage ? this.runtimePackage().then(value => value?.appOplocScopes || []) : this.identity().then(identity => identity ? this.repository.listAppOplocScopes(identity.id) : []); }
+  grants() { return this.grantsPromise ||= this.useRuntimePackage ? this.runtimePackage().then(value => value?.authorityGrants || []) : this.principal.type === "interactive" ? this.repository.listAuthorityGrants(this.principal.id, "interactive") : Promise.resolve([]); }
+  appAssignments() { return this.appAssignmentsPromise ||= this.useRuntimePackage ? this.runtimePackage().then(value => value?.appAssignments || []) : this.identity().then(identity => identity ? this.repository.listAppAssignments(identity.id) : []); }
+  siteAssignments() { return this.siteAssignmentsPromise ||= this.useRuntimePackage ? this.runtimePackage().then(value => value?.siteAssignments || []) : this.identity().then(identity => identity ? this.repository.listSiteAssignments(identity.id) : []); }
+  appOplocScopes() { return this.appOplocScopesPromise ||= this.useRuntimePackage ? this.runtimePackage().then(value => value?.appOplocScopes || []) : this.identity().then(identity => identity ? this.repository.listAppOplocScopes(identity.id) : []); }
   application(appId: string) { let result = this.applicationPromises.get(appId); if (!result) { result = this.repository.getApplication(appId); this.applicationPromises.set(appId, result); } return result; }
   activeOploc(oplocId: string) { const seeded = this.seededOplocs.get(oplocId); if (seeded) return Promise.resolve(seeded); let result = this.oplocPromises.get(oplocId); if (!result) { result = this.repository.getActiveOploc(oplocId); this.oplocPromises.set(oplocId, result); } return result; }
   activeOplocs() { return this.activeOplocsPromise ||= this.repository.listActiveOplocs(); }
+  seedOplocPackage(oplocs: OplocReference[], redirects: Record<string, string>) {
+    for (const oploc of oplocs) this.seededOplocs.set(oploc.id, oploc);
+    this.oplocRedirectsPromise ||= Promise.resolve(redirects);
+  }
+  oplocRedirects() { return this.oplocRedirectsPromise ||= this.repository.listOplocRedirects(); }
   delegations() { return this.delegationsPromise ||= this.principal.type === "interactive" ? this.repository.listDelegations(this.principal.id) : Promise.resolve([]); }
+  delegatedGrantIds() {
+    return this.delegatedGrantIdsPromise ||= this.delegations().then(async delegations => {
+      const ids = await Promise.all(delegations.filter(value => isEffective(value)).map(async value => {
+        const grant = await this.repository.getAuthorityGrant(value.sourceAuthorityGrantId);
+        return grant && grant.id === value.sourceAuthorityGrantId && grant.subjectId === value.delegatorId && grant.subjectType === "interactive" && isEffective(grant)
+          ? value.delegatedAuthorityGrantId : undefined;
+      }));
+      return new Set(ids.filter((id): id is string => Boolean(id)));
+    });
+  }
 }
 
 
@@ -39,7 +61,7 @@ export async function resolvePermittedVehicleIds(repository: AuthModRepository, 
   return { permittedVehicleIds: vehicleIds.filter((_, index) => decisions[index].allowed), resolutionFailed: decisions.some(decision => decision.reasonCode === "store-unavailable") };
 }
 
-export function createAuthModEvaluationContext(repository: AuthModRepository, principal: AuthPrincipal, activeOplocs?: OplocReference[]) { return new AuthModEvaluationContext(repository, principal, activeOplocs); }
+export function createAuthModEvaluationContext(repository: AuthModRepository, principal: AuthPrincipal, activeOplocs?: OplocReference[], options?: { useRuntimePackage: boolean }) { return new AuthModEvaluationContext(repository, principal, activeOplocs, options); }
 
 function earliestExpiry(...values: Array<{ effectiveTo?: string } | undefined>) {
   const expiries = values.map(value => value?.effectiveTo).filter((value): value is string => Boolean(value));
@@ -70,21 +92,32 @@ export async function resolveUserAccess(repository: AuthModRepository, input: { 
     if (!input.appId) return { allowed: true, principalId: input.principal.id, principalType: "interactive", matchedGrantIds: [], reasonCode: "allowed" };
     const app = await context.application(input.appId);
     if (!app || !app.enabled) return deny(input.principal, "app-disabled", { appId: input.appId });
-    const hasFullAccess = identity.identityKind === "person" && identity.fullAccess;
-    const assignment = (await context.appAssignments()).find(value => value.appId === input.appId && isEffective(value));
+    const assignments = await context.appAssignments();
+    const configured = configuredApplicationAssignment(assignments, identity.id, input.appId);
+    const hasFullAccess = !configured && identity.identityKind === "person" && identity.fullAccess;
+    const assignment = configured ?? assignments.find(value => value.appId === input.appId && isEffective(value));
+    if (configured && ((configured.permissionLevel !== "view" && configured.permissionLevel !== "manage") ||
+      !isEffective(configured) || !grants.some(grant => isCurrentLevelGrant(grant, configured, app.standardResource, "View")))) {
+      return deny(input.principal, "app-not-assigned", { appId: input.appId });
+    }
     if (!assignment && !hasFullAccess) return deny(input.principal, "app-not-assigned", { appId: input.appId });
     const requestedOplocIds = input.oplocIds || (input.oplocId ? [input.oplocId] : []);
+    const redirects = requestedOplocIds.length && applicationAccessPolicy(input.appId) ? await context.oplocRedirects() : {};
+    const canonicalIds = requestedOplocIds.map(id => redirects[id] || id);
+    const selectedSites = requestedOplocIds.length ? await context.siteAssignments() : [];
+    const assignedSite = (id: string) => selectedSites.find(value => (redirects[value.oplocId] || value.oplocId) === id && isEffective(value));
     const appOplocScopes = await context.appOplocScopes();
-    const allActiveScope = appOplocScopes.find(value => value.appId === input.appId && value.kind === "all-active-oplocs" && isEffective(value));
+    const allActiveScope = !configured || identity.identityKind === "operational"
+      ? appOplocScopes.find(value => value.appId === input.appId && value.kind === "all-active-oplocs" && isEffective(value))
+      : undefined;
     if (app.scopeModel !== "none" && requestedOplocIds.length) {
-      const siteAssignments = await context.siteAssignments();
-      const activeOplocs = await Promise.all(requestedOplocIds.map(oplocId => context.activeOploc(oplocId)));
-      const siteAllowed = requestedOplocIds.every((oplocId, index) => Boolean(activeOplocs[index]) && (hasFullAccess || Boolean(allActiveScope) || siteAssignments.some(value => value.oplocId === oplocId && isEffective(value))));
+      const activeOplocs = await Promise.all(canonicalIds.map(oplocId => context.activeOploc(oplocId)));
+      const siteAllowed = canonicalIds.every((oplocId, index) => Boolean(activeOplocs[index]) && (hasFullAccess || Boolean(allActiveScope) || assignedSite(oplocId)));
       if (!siteAllowed) return deny(input.principal, "oploc-not-assigned", { appId: input.appId, scope: { kind: "oploc", ids: requestedOplocIds } });
     }
-    const normalGrantIds = grants.filter(value => value.appId === input.appId && value.provenance === "standard-app-access" && isEffective(value)).map(value => value.id);
-    const selectedSiteAssignments = requestedOplocIds.length ? await context.siteAssignments() : [];
-    const validUntil = earliestExpiry(identity, assignment, ...(allActiveScope && requestedOplocIds.length ? [allActiveScope] : []), ...requestedOplocIds.map(id => selectedSiteAssignments.find(value => value.oplocId === id && isEffective(value))));
+    const normalGrantIds = grants.filter(value => value.appId === input.appId && value.provenance === "standard-app-access" &&
+      (!configured || value.bundleId === configured.bundleId) && isEffective(value)).map(value => value.id);
+    const validUntil = earliestExpiry(identity, assignment, ...(allActiveScope && requestedOplocIds.length ? [allActiveScope] : []), ...canonicalIds.map(assignedSite));
     return { allowed: true, principalId: identity.id, principalType: "interactive", appId: input.appId, scope: input.oplocId ? { kind: "oploc", ids: [input.oplocId] } : undefined, matchedGrantIds: normalGrantIds, ...(allActiveScope && requestedOplocIds.length && !hasFullAccess ? { matchedAccessScopeIds: [allActiveScope.id] } : {}), reasonCode: "allowed", ...(validUntil ? { validUntil } : {}) };
   } catch { return deny(input.principal, "store-unavailable"); }
 }
@@ -96,7 +129,7 @@ export async function evaluateAuthority(repository: AuthModRepository, input: { 
     const app = await context.application(input.appId);
     if (!app || !app.enabled) return deny(input.principal, "app-disabled", { appId: input.appId, action: input.action });
     const operationalApp = app.scopeModel !== "none";
-    if (operationalApp && !input.scope) return deny(input.principal, "invalid-request", { appId: input.appId, action: input.action });
+    if (operationalApp && (!input.scope || (applicationAccessPolicy(input.appId) && input.scope.kind === "oploc" && !input.scope.ids.length))) return deny(input.principal, "invalid-request", { appId: input.appId, action: input.action });
     if (input.principal.type === "service") {
       const service = await repository.getServicePrincipal(input.principal.id);
       if (!service || service.status !== "active" || !isEffective(service)) return deny(input.principal, "service-inactive", { appId: input.appId, action: input.action });
@@ -108,11 +141,23 @@ export async function evaluateAuthority(repository: AuthModRepository, input: { 
     if (!base.allowed) return { ...base, action: input.action };
     const identity = await context.identity();
     if (!identity || identity.status !== "active") return deny(input.principal, "identity-inactive", { appId: input.appId, action: input.action });
+    const configured = configuredApplicationAssignment(await context.appAssignments(), identity.id, input.appId);
+    if (configured?.permissionLevel === "view" && input.action !== "View") return deny(input.principal, "authority-not-granted", { appId: input.appId, action: input.action, scope: input.scope });
+    if (configured && input.resource === app.standardResource) {
+      const policy = applicationAccessPolicy(input.appId);
+      const matched = (await context.grants()).filter(grant => isCurrentLevelGrant(grant, configured, input.resource, input.action));
+      return policy && (policy.manageActions as readonly AuthModAction[]).includes(input.action) &&
+        input.scope?.kind !== "resource" && matched.length
+        ? { ...base, action: input.action, scope: input.scope, matchedGrantIds: matched.map(grant => grant.id) }
+        : deny(input.principal, "authority-not-granted", { appId: input.appId, action: input.action, scope: input.scope });
+    }
     if (input.resource === "logistics.driver" && (identity.identityKind !== "person" || !isEffective(identity) || identity.identityLinkStatus !== "matched" || !(await context.appAssignments()).some(item => item.identityId === identity.id && item.appId === "logistics" && isEffective(item)))) return deny(input.principal, "authority-not-granted");
-    const grants = await context.grants(); const delegations = await context.delegations(); const delegatedSourceIds = new Set((await Promise.all(delegations.filter(value => isEffective(value)).map(async value => { const grant = await repository.getAuthorityGrant(value.sourceAuthorityGrantId); return grant && grant.id === value.sourceAuthorityGrantId && grant.subjectId === value.delegatorId && grant.subjectType === "interactive" && isEffective(grant) ? value.delegatedAuthorityGrantId : undefined; }))).filter(Boolean));
     if (isPersonRequiredAuthority(input.resource) && identity.identityKind !== "person") return deny(input.principal, "authority-not-granted", { appId: input.appId, action: input.action, scope: input.scope });
-    if (identity.identityKind === "person" && identity.fullAccess && app.standardResource === input.resource && app.standardActions.includes(input.action) && await fullAccessScopeAllowed(context, input.scope)) return { ...base, allowed: true, action: input.action, scope: input.scope, matchedGrantIds: [], reasonCode: "allowed" };
+    if (!configured && identity.identityKind === "person" && identity.fullAccess && app.standardResource === input.resource && app.standardActions.includes(input.action) && await fullAccessScopeAllowed(context, input.scope)) return { ...base, allowed: true, action: input.action, scope: input.scope, matchedGrantIds: [], reasonCode: "allowed" };
     const requestedScope = input.scope;
+    const grants = await context.grants();
+    const delegatedSourceIds = grants.some(grant => grant.appId === input.appId && grant.resource === input.resource && grant.action === input.action && grant.delegationSourceGrantId)
+      ? await context.delegatedGrantIds() : new Set<string>();
     const matched = grants.filter(value => value.appId === input.appId && value.resource === input.resource && value.action === input.action && isEffective(value) && (input.resource !== "logistics.driver" || value.subjectType === "interactive" && value.subjectId === identity.id && value.scope.kind === "resource" && value.scope.ids.length > 0 && value.scope.ids.every(isLogisticsVehicleId)) && (!value.delegationSourceGrantId || delegatedSourceIds.has(value.id)) && scopeAllows(value.scope, requestedScope));
     if (!matched.length) return deny(input.principal, "authority-not-granted", { appId: input.appId, action: input.action, scope: input.scope });
     return { ...base, allowed: true, action: input.action, scope: input.scope, matchedGrantIds: matched.map(value => value.id), reasonCode: "allowed" };

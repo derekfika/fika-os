@@ -6,7 +6,8 @@ import { listCanonicalMenuItems, recordDishSourceAliases } from "@/lib/canonical
 import { applyDishResolutions, parseWorkbookWeekCommencing, repairArchivedWeekDishIdentities, resolveDishNames, safeDishKey } from "@/lib/legacy-week-importer";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import type { RollingSnapshot } from "@/lib/rolling-menu-types";
-import { requireCatalogueMutationActor, resolveMenuActor } from "@/lib/auth";
+import { requireMutationActor, requireCatalogueMutationActor, resolveMenuActor } from "@/lib/auth";
+import { assertMenuSnapshotMutationScope, requireSharedMenuWriter } from "@/lib/menu-mutation-scope";
 
 type ResolutionInput = { sourceName: string; canonicalId?: string; ignored?: boolean; remember?: boolean };
 
@@ -38,12 +39,12 @@ async function previewFiles(files: File[], request: NextRequest, weekDates: Reco
 
 async function handlePost(request: NextRequest) {
   try {
+    const actor = requireMutationActor(await resolveMenuActor(request));
+    requireSharedMenuWriter(actor);
     const contentType = request.headers.get("content-type") || "";
     if (contentType.includes("application/json")) {
       const body = await request.json() as { action?: string; snapshot?: RollingSnapshot; snapshots?: RollingSnapshot[]; resolutions?: ResolutionInput[]; replaceWeeks?: Array<{ weekCommencing: string; expectedVersion: number }> };
-      const actor = body.action === "commit" || body.action === "repair-archived-identities" && Boolean((body as typeof body & { confirm?: boolean }).confirm)
-        ? requireCatalogueMutationActor(await resolveMenuActor(request))
-        : undefined;
+      if (body.action === "commit" || body.action === "repair-archived-identities" && Boolean((body as typeof body & { confirm?: boolean }).confirm)) requireCatalogueMutationActor(actor);
       if (body.action === "repair-archived-identities") {
         const repair = body as typeof body & { weekCommencing?: string; expectedVersion?: number; confirm?: boolean };
         if (!repair.weekCommencing) return NextResponse.json({ error: { message: "Exactly one planning week is required for an identity repair." } }, { status: 422 });
@@ -56,7 +57,7 @@ async function handlePost(request: NextRequest) {
         if (repair.expectedVersion !== snapshot.week.version) return NextResponse.json({ error: { message: "The planning week changed; rerun the dry-run report before applying repair." } }, { status: 409 });
         if (report.blocked.length) return NextResponse.json({ error: { message: "Repair is blocked because one or more archived dish identities have no active survivor.", report } }, { status: 422 });
         report.snapshot.week.version += 1;
-        report.snapshot.week.audit.push({ action: "archived-dish-identity-repair", at: new Date().toISOString(), by: actor?.uid || "menu-planning-repair" });
+        report.snapshot.week.audit.push({ action: "archived-dish-identity-repair", at: new Date().toISOString(), by: actor.uid });
         const saved = await replaceSnapshotsExplicit([report.snapshot], { [repair.weekCommencing]: snapshot.week.version });
         return NextResponse.json({ dryRun: false, report: { ...report, snapshot: saved[0] } });
       }
@@ -78,6 +79,7 @@ async function handlePost(request: NextRequest) {
       if (duplicateWeeks.length) return NextResponse.json({ error: { message: "Two selected workbooks use the same week. Remove one before importing." } }, { status: 409 });
       const catalogue = await listCanonicalMenuItems();
       const oplocs = await readDeliveredInOplocs(request);
+      const oplocAliases = new Map(oplocs.flatMap(oploc => (oploc.legacyIds || []).map(id => [id, oploc.canonicalId] as const)));
       const aliasesById: Record<string, string[]> = {};
       const prepared: RollingSnapshot[] = [];
       for (const source of snapshots) {
@@ -87,9 +89,10 @@ async function handlePost(request: NextRequest) {
           prepared.push(snapshot);
         } catch (error) { return NextResponse.json({ error: { message: `Week ${source.week.weekCommencing} could not be imported: ${error instanceof Error ? error.message : "Please review this week."}` } }, { status: 422 }); }
       }
+      prepared.forEach(snapshot => assertMenuSnapshotMutationScope(snapshot, actor, "manage", oplocAliases));
       let saved: RollingSnapshot[];
       try { saved = replaceWeeks.size ? await replaceSnapshotsExplicit(prepared, Object.fromEntries(replaceWeeks), oplocs) : await saveSnapshotsCreateOnly(prepared, oplocs); } catch (error) { const status = (error as { status?: number }).status === 409 ? 409 : 422; return NextResponse.json({ error: { message: error instanceof Error ? error.message : "The menu weeks could not be imported." } }, { status }); }
-      await recordDishSourceAliases(aliasesById, actor!.uid);
+      await recordDishSourceAliases(aliasesById, actor.uid);
       const blockers = (await Promise.all(saved.map(snapshot => validateWeekAuthoritative(snapshot, { governedOplocIds: new Set(oplocs.map(oploc => oploc.canonicalId)) })))).flat();
       return NextResponse.json({ snapshots: saved, weeks: await listWeeksByCommencing(saved.map(snapshot => snapshot.week.weekCommencing)), blockers });
     }
@@ -99,7 +102,7 @@ async function handlePost(request: NextRequest) {
     let weekDates: Record<string, string> = {};
     try { weekDates = JSON.parse(String(form.get("weekDates") || "{}")) as Record<string, string>; } catch { /* Invalid overrides are treated as absent. */ }
     return NextResponse.json(await previewFiles(files, request, weekDates));
-  } catch (error) { return NextResponse.json({ error: { message: error instanceof Error ? error.message : "Workbook import failed." } }, { status: 400 }); }
+  } catch (error) { return NextResponse.json({ error: { message: error instanceof Error ? error.message : "Workbook import failed." } }, { status: (error as { status?: number }).status || 400 }); }
 }
 
 export async function POST(request: NextRequest) {

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { archivePublishedDayMatrix, getMenuPublication, listMenuPublications, listMenuPublicationsForDateRange, repairPublishedMenuPublication, withdrawPublishedMenuDay, withdrawPublishedMenuWeek } from "@/lib/menu-publication";
-import { requirePublicationActor, resolveMenuActor, scopeMenuPublication } from "@/lib/auth";
+import { actorCanWriteOneOff, requirePublicationActor, resolveMenuActor, scopeMenuPublication } from "@/lib/auth";
+import { assertPublishedMenuDaysScope } from "@/lib/menu-mutation-scope";
+import { readGovernedOplocs } from "@/lib/oploc-authority";
+import type { PublishedMenuDay } from "@/lib/menu-publication";
 import { forwardProductionMaterialisationEvent } from "@/lib/production-client";
 import { replayMenuPublicationOutbox } from "@/lib/menu-publication";
 import { listMenuPlanningEventIdsForPublication } from "@/lib/operational-store";
@@ -13,7 +16,7 @@ async function handleGet(request: NextRequest) {
   if (publicationId) {
     const publication = await getMenuPublication(publicationId);
     if (!publication) return NextResponse.json({ error: { message: "Menu publication was not found." } }, { status: 404 });
-    return NextResponse.json({ publication: scopeMenuPublication(publication, actor), handoff: await getPublicationHandoff(publicationId) });
+    return NextResponse.json({ publication: scopeMenuPublication(publication, actor), ...(actor.allOplocs ? { handoff: await getPublicationHandoff(publicationId) } : {}) });
   }
   const fromWeek = request.nextUrl.searchParams.get("fromWeek");
   const toWeek = request.nextUrl.searchParams.get("toWeek");
@@ -26,8 +29,11 @@ async function handleGet(request: NextRequest) {
 
 async function handlePost(request: NextRequest) {
   try {
-    const body = await request.json() as { action?: string; publicationId?: string; publicationDayId?: string; reason?: string; actor?: string };
     const actor = requirePublicationActor(await resolveMenuActor(request));
+    const body = await request.json() as { action?: string; publicationId?: string; publicationDayId?: string; reason?: string };
+    if (["retry-handoff", "repair-handoff", "retry-archive"].includes(body.action || "") && !actorCanWriteOneOff(actor, "publish")) {
+      throw Object.assign(new Error("Publication recovery requires Menu Publish authority across all sites."), { status: 403 });
+    }
     if (body.action === "retry-handoff") {
       if (!body.publicationId) return NextResponse.json({ error: { message: "Publication is required for a targeted handoff retry." } }, { status: 422 });
       const eventIds = await listMenuPlanningEventIdsForPublication(body.publicationId);
@@ -41,11 +47,20 @@ async function handlePost(request: NextRequest) {
       return NextResponse.json({ publication: scopeMenuPublication(publication, actor), handoff: { status: handoff.deadLettered ? "intervention-required" : handoff.pending || handoff.failed ? "pending" : "delivered", delivered: handoff.delivered, failed: handoff.failed, pending: handoff.pending, deadLettered: handoff.deadLettered } });
     }
     if (body.action === "withdraw-week") {
-      const publication = await withdrawPublishedMenuWeek(body.publicationId, body.reason || "", actor.uid);
+      const oplocs = await readGovernedOplocs(request);
+      const aliases = new Map(oplocs.flatMap(oploc => (oploc.legacyIds || []).map(id => [id, oploc.canonicalId] as const)));
+      const authorize = (days: PublishedMenuDay[]) => assertPublishedMenuDaysScope(days, actor, aliases);
+      const publication = await withdrawPublishedMenuWeek(body.publicationId, body.reason || "", actor.uid, authorize);
       return NextResponse.json({ publication: scopeMenuPublication(publication, actor), handoff: queuedPublicationHandoff(publication) });
     }
     if (!body.publicationDayId) return NextResponse.json({ error: { message: "Publication day is required." } }, { status: 422 });
-    if (body.action === "withdraw") { const publication = await withdrawPublishedMenuDay(body.publicationId, body.publicationDayId, body.reason || "", actor.uid); return NextResponse.json({ publication: scopeMenuPublication(publication, actor), handoff: queuedPublicationHandoff(publication) }); }
+    if (body.action === "withdraw") {
+      const oplocs = await readGovernedOplocs(request);
+      const aliases = new Map(oplocs.flatMap(oploc => (oploc.legacyIds || []).map(id => [id, oploc.canonicalId] as const)));
+      const authorize = (days: PublishedMenuDay[]) => assertPublishedMenuDaysScope(days, actor, aliases);
+      const publication = await withdrawPublishedMenuDay(body.publicationId, body.publicationDayId, body.reason || "", actor.uid, authorize);
+      return NextResponse.json({ publication: scopeMenuPublication(publication, actor), handoff: queuedPublicationHandoff(publication) });
+    }
     if (body.action === "retry-archive") {
       const archive = await archivePublishedDayMatrix(body.publicationId, body.publicationDayId);
       const publication = await getMenuPublication(body.publicationId);

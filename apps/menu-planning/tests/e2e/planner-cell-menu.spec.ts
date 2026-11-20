@@ -1,3 +1,4 @@
+import { fixtureMenuAccess, fixtureMenuScopeHeaders } from "./menu-access-fixture";
 import { expect, test, type Page } from "@playwright/test";
 import type { RollingEntry, RollingSnapshot } from "../../lib/rolling-menu-types";
 
@@ -28,6 +29,7 @@ async function mount(page: Page) {
   await page.route("**/api/**", async route => {
     const request = route.request();
     const url = new URL(request.url());
+    if (url.pathname === "/api/access") return route.fulfill({ json: fixtureMenuAccess("fixture-cell-menu") });
     if (request.method() !== "GET") {
       const body = request.postDataJSON();
       writes.push({ path: url.pathname, ...body });
@@ -42,7 +44,7 @@ async function mount(page: Page) {
       return route.fulfill({ json: { entries: [{ id: "fixture-dish:leaf", displayName: "Baby leaves", category: "Salad", item: { subcategory: "Leaf" } }, { id: "fixture-dish:slaw", displayName: "Asian slaw", category: "Salad", item: { subcategory: "Slaw" } }], categories: ["Salad"] } });
     }
     if (url.pathname === "/api/dish-tags") return route.fulfill({ json: { version: 1, total: 0, tags: [], groups: [] } });
-    if (url.pathname === "/api/rolling-menu") return route.fulfill({ json: { snapshot, weeks: [snapshot.week], publicationState: {} } });
+    if (url.pathname === "/api/rolling-menu") return route.fulfill({ headers: fixtureMenuScopeHeaders("fixture-cell-menu"), json: { snapshot, weeks: [snapshot.week], publicationState: {} } });
     return route.fulfill({ json: {} });
   });
   await page.goto("/?week=2099-01-05", { waitUntil: "domcontentloaded" });

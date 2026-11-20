@@ -21,7 +21,10 @@ function cycle(value: SandwichAllergens[string]) {
       : "clear";
 }
 
+import { useMenuAccess } from "../menu-access";
+
 export default function SandwichesPage() {
+  const access = useMenuAccess();
   const [sandwiches, setSandwiches] = useState<SavedSandwich[]>([]);
   const [title, setTitle] = useState("");
   const [allergens, setAllergens] = useState<SandwichAllergens>(blank());
@@ -37,6 +40,7 @@ export default function SandwichesPage() {
     void load();
   }, []);
   const choose = (sandwich: SavedSandwich) => {
+    if (!access.canManageOrganisation) return;
     setTitle(sandwich.title);
     setAllergens({ ...blank(), ...sandwich.allergens });
     setMessage(`Editing ${sandwich.title}. Save to update it.`);
@@ -55,12 +59,13 @@ export default function SandwichesPage() {
       return next;
     });
   const save = async () => {
+    if (!access.canManageOrganisation) return;
     setBusy(true);
     setMessage("");
     const response = await fetch("/api/sandwiches", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ title, allergens, updatedBy: "Menu Planning" }),
+      body: JSON.stringify({ title, allergens }),
     });
     const body = await response.json();
     if (!response.ok)
@@ -80,7 +85,7 @@ export default function SandwichesPage() {
         </a>
         <div>
           <small>Reusable production knowledge</small>
-          <h1>Saved sandwiches</h1>
+          <h1>Saved sandwiches</h1>{access.status === "ready" && !access.canManage && <span className="menu-access-notice" role="status">View only</span>}
         </div>
         <a className="button button-soft" href="/">
           Back to Menu Planning
@@ -89,7 +94,7 @@ export default function SandwichesPage() {
       <section className="menu-page-heading">
         <div>
           <small>Production chefs and recipe team</small>
-          <h2>Save the sandwich once.</h2>
+          <h2>Reusable sandwich records</h2>
           <p>
             Keep a title and its reviewed allergen pattern together, then recall
             it from any production plan without retyping.
@@ -110,7 +115,7 @@ export default function SandwichesPage() {
               {sandwiches.length === 1 ? "" : "es"}
             </h3>
           </div>
-          <button
+          {access.canManageOrganisation && <button
             className="button button-soft"
             onClick={() => {
               setTitle("");
@@ -119,7 +124,7 @@ export default function SandwichesPage() {
             }}
           >
             New sandwich
-          </button>
+          </button>}
         </header>
         {sandwiches.length ? (
           <div className="library-list">
@@ -127,6 +132,7 @@ export default function SandwichesPage() {
               <button
                 className="library-row"
                 key={sandwich.id}
+                disabled={!access.canManageOrganisation}
                 onClick={() => choose(sandwich)}
               >
                 <div>
@@ -157,7 +163,7 @@ export default function SandwichesPage() {
           </div>
         )}
       </section>
-      <section className="workspace-panel sandwich-editor">
+      {access.canManageOrganisation && <section className="workspace-panel sandwich-editor">
         <header className="panel-header">
           <div>
             <small>Identical master-style matrix</small>
@@ -217,7 +223,7 @@ export default function SandwichesPage() {
           Click each cell to cycle clear → contains → may contain → clear. “No
           key allergens” clears the other cells.
         </p>
-      </section>
+      </section>}
     </main>
   );
 }

@@ -1075,12 +1075,14 @@ export async function publicationState(
   snapshot: RollingSnapshot,
   governedOplocs: readonly GovernedOploc[] = [],
   canonicalDishes: readonly MenuItem[] = [],
+  scopePublication?: (publication: MenuPublication) => MenuPublication,
 ): Promise<Record<string, PublicationDayState>> {
   const normalized = normaliseRollingSnapshotDestinations(snapshot, governedOplocs);
   const resolvedCanonicalDishes = canonicalDishes.length ? canonicalDishes : await authoritativeDishesFor(normalized);
-  const publication = (
+  const storedPublication = (
     await readPublicationStateForWeek<StoredPublications>(normalized.week.id)
   ).publications.find((value) => value.sourceWeekId === snapshot.week.id);
+  const publication = scopePublication && storedPublication ? scopePublication(storedPublication) : storedPublication;
   const comparison = compareWorkingWeekToPublication(normalized, publication, governedOplocs, resolvedCanonicalDishes);
   return Object.fromEntries(
     normalized.days.slice(0, 5).map((day) => {
@@ -1167,6 +1169,7 @@ export async function publishScopedPublishedWeekAmendment(
   governedOplocIds?: Set<string>,
   governedOplocs: readonly GovernedOploc[] = [],
   allowedPaxOplocs?: ReadonlySet<string>,
+  authorize?: (snapshot: RollingSnapshot, changes: PublishedWeekDemandChangeSet) => void,
 ) {
   if (!input.requestId.trim() || input.requestId.length > 160 || !Number.isSafeInteger(input.sourceWeekVersion) || !Number.isSafeInteger(input.publicationVersion) || !/^[a-f0-9]{64}$/.test(input.changeSetHash))
     throw Object.assign(new Error("The amendment review request is invalid."), { status: 400 });
@@ -1188,6 +1191,7 @@ export async function publishScopedPublishedWeekAmendment(
       throw conflict("The published week changed after amendment review. Refresh, save and review the latest version.");
     const comparison = compareWorkingWeekToPublication(snapshot, publication, governedOplocs, canonicalDishes);
     assertAmendmentPaxScope(comparison.changeSet, allowedPaxOplocs);
+    authorize?.(snapshot, comparison.changeSet);
     if (contentHash(comparison.changeSet) !== input.changeSetHash)
       throw conflict("The amendment changed after review. Refresh and review the exact current demand before publishing.");
     const changedDayIds = Object.entries(comparison.dayHasUnpublishedChanges).filter(([, changed]) => changed).map(([dayId]) => dayId);
@@ -1403,6 +1407,7 @@ export async function createPublishedMenuWeek(
   actor = "local-menu-planner",
   governedOplocIds?: Set<string>,
   governedOplocs?: readonly GovernedOploc[],
+  authorize?: (snapshot: RollingSnapshot, previousDays: PublishedMenuDay[]) => void,
 ) {
   const expectedSnapshot = await getWeek(weekId);
   const expectedWeekVersion = expectedSnapshot.week.version;
@@ -1436,6 +1441,7 @@ export async function createPublishedMenuWeek(
       let publication = stored.publications.find(
         (value) => value.sourceWeekId === snapshot.week.id,
       );
+      authorize?.(snapshot, publication?.days.filter(day => day.status === "published") || []);
       if (!publication) {
         publication = {
           publicationId: `menu-publication:${snapshot.week.id}`,
@@ -1685,6 +1691,7 @@ export async function withdrawPublishedMenuDay(
   publicationDayId: string,
   reason: string,
   actor = "local-menu-planner",
+  authorize?: (days: PublishedMenuDay[]) => void,
 ) {
   if (!reason.trim())
     throw Object.assign(new Error("A withdrawal reason is required."), {
@@ -1707,6 +1714,7 @@ export async function withdrawPublishedMenuDay(
         });
       if (day.status !== "published")
         throw conflict("Only the current published day can be withdrawn.");
+      authorize?.([day]);
       const at = now();
       day.status = "withdrawn";
       day.withdrawal = { actor, at, reason: reason.trim() };
@@ -1764,6 +1772,7 @@ export async function withdrawPublishedMenuWeek(
   publicationId: string,
   reason: string,
   actor = "local-menu-planner",
+  authorize?: (days: PublishedMenuDay[]) => void,
 ) {
   if (!reason.trim())
     throw Object.assign(new Error("A withdrawal reason is required."), {
@@ -1786,6 +1795,7 @@ export async function withdrawPublishedMenuWeek(
         throw conflict(
           "This menu week has no current published days to withdraw.",
         );
+      authorize?.(publishedDays);
       const at = now();
        const handoffEventIds: string[] = [];
        for (const day of publishedDays) {

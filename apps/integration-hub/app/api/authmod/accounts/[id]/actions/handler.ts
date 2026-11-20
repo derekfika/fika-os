@@ -6,6 +6,7 @@ import { assignPrimaryCustodian, assignSite, createDelegation, grantAllActiveOpl
 import { buildAuthmodAccount } from "@/lib/authmod-admin-read-model";
 import { resolveAuthmodReason } from "@/lib/authmod-reasons";
 import { runCommittedCommand } from "@/lib/authmod-core/commit-publication";
+import { applicationAccessPolicy, setApplicationAccessLevel } from "@/lib/authmod-core/application-access-levels";
 
 const common = { expectedVersion: z.number().int().positive().optional(), reason: z.string().trim().min(3).max(500).optional(), reasonCode: z.string().trim().optional(), reasonNote: z.string().trim().max(500).optional() };
 const period = { accessType: z.enum(["permanent", "temporary", "cover"]).optional(), effectiveFrom: z.string().datetime().optional(), effectiveTo: z.string().datetime().optional() };
@@ -16,6 +17,7 @@ const Command = z.discriminatedUnion("action", [
   z.object({ ...common, action: z.literal("custodian"), custodianLegendId: z.string().trim().min(1) }),
   z.object({ ...common, action: z.literal("site"), oplocId: z.string().trim().min(1), enabled: z.boolean(), ...period }),
   z.object({ ...common, action: z.literal("app"), appId: z.string().trim().min(1), enabled: z.boolean(), ...period }),
+  z.object({ ...common, action: z.literal("app-access-level"), appId: z.string().trim().min(1), level: z.enum(["none", "view", "manage"]), expectedAssignmentVersion: z.number().int().nonnegative() }),
   z.object({ ...common, action: z.literal("app-oploc-scope"), appId: z.string().trim().min(1), enabled: z.boolean(), ...period }),
   z.object({ ...common, action: z.literal("full-access"), fullAccess: z.boolean() }),
   z.object({ ...common, action: z.literal("authority-grant"), appId: z.string().trim().min(1), resource: z.string().trim().min(1), authorityAction: z.enum(["View", "Contribute", "Manage", "Approve", "Publish", "Administer"]), scope: z.object({ kind: z.enum(["organisation", "oploc", "resource"]), ids: z.array(z.string()).max(100) }), effectiveFrom: z.string().datetime().optional(), effectiveTo: z.string().datetime().optional() }),
@@ -34,7 +36,14 @@ export async function handleAccountAction(request: NextRequest, { params }: { pa
     else if (command.action === "legend") await linkLegend(context.repository, { identityId: id, legendId: command.legendId!, actor: context.principal, reason });
     else if (command.action === "custodian") await assignPrimaryCustodian(context.repository, { operationalIdentityId: id, custodianLegendId: command.custodianLegendId!, actor: context.principal, reason });
     else if (command.action === "site") command.enabled ? await assignSite(context.repository, { identityId: id, oplocId: command.oplocId, actor: context.principal, accessType: command.accessType, reason, effectivePeriod: { effectiveFrom: command.effectiveFrom, effectiveTo: command.effectiveTo } }) : await revokeSite(context.repository, { identityId: id, oplocId: command.oplocId, actor: context.principal, reason });
-    else if (command.action === "app") command.enabled ? await grantStandardApplicationAccess(context.repository, { identityId: id, appId: command.appId, actor: context.principal, accessType: command.accessType, reason, effectivePeriod: { effectiveFrom: command.effectiveFrom, effectiveTo: command.effectiveTo } }) : await revokeStandardApplicationAccess(context.repository, { identityId: id, appId: command.appId, actor: context.principal, reason });
+    else if (command.action === "app") {
+      if (applicationAccessPolicy(command.appId)) throw Object.assign(new Error("Choose this application's permission level and refresh its access record."), { status: 422, code: "AUTHMOD_ACCESS_LEVEL_REQUIRED" });
+      if (command.enabled) await grantStandardApplicationAccess(context.repository, { identityId: id, appId: command.appId, actor: context.principal, accessType: command.accessType, reason, effectivePeriod: { effectiveFrom: command.effectiveFrom, effectiveTo: command.effectiveTo } });
+      else await revokeStandardApplicationAccess(context.repository, { identityId: id, appId: command.appId, actor: context.principal, reason });
+    }
+    else if (command.action === "app-access-level") await setApplicationAccessLevel(context.repository, {
+      identityId: id, appId: command.appId, level: command.level, expectedVersion: command.expectedAssignmentVersion, actor: context.principal, reason,
+    });
     else if (command.action === "app-oploc-scope") command.enabled ? await grantAllActiveOplocAccess(context.repository, { identityId: id, appId: command.appId, actor: context.principal, accessType: command.accessType, reason, effectivePeriod: { effectiveFrom: command.effectiveFrom, effectiveTo: command.effectiveTo } }) : await revokeAllActiveOplocAccess(context.repository, { identityId: id, appId: command.appId, actor: context.principal, reason });
     else if (command.action === "full-access") await setFullAccess(context.repository, { identityId: id, fullAccess: command.fullAccess!, actor: context.principal, reason });
     else if (command.action === "authority-grant") await grantAuthority(context.repository, { subjectId: id, subjectType: "interactive", actor: context.principal, appId: command.appId, resource: command.resource, action: command.authorityAction, scope: command.scope, effectivePeriod: { effectiveFrom: command.effectiveFrom, effectiveTo: command.effectiveTo }, reason });

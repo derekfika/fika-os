@@ -35,9 +35,11 @@ export type AppOplocScope = EffectivePeriod & {
   id: string; identityId: string; appId: string; kind: "all-active-oplocs"; status: RecordStatus;
   accessType?: AccessType; reason?: string; grantedBy: string; revokedBy?: string; version: number; createdAt: string; updatedAt: string;
 };
+export type ApplicationAccessLevel = "none" | "view" | "manage";
 export type AppAssignment = EffectivePeriod & {
   id: string; identityId: string; appId: string; status: RecordStatus; bundleId?: string; source: Provenance; accessType?: AccessType;
   reason?: string; grantedBy?: string; revokedBy?: string; version: number; createdAt: string; updatedAt: string;
+  permissionLevel?: ApplicationAccessLevel;
 };
 export type AuthorityGrant = EffectivePeriod & {
   id: string; subjectType: PrincipalType; subjectId: string; appId?: string; resource: string; action: AuthModAction;

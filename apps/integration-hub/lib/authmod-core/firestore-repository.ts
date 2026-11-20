@@ -11,6 +11,7 @@ import { bumpCacheDatasets } from "../integration-cache-server";
 import { getOplocReadPackage } from "../oploc-read-package";
 import { bootstrapAuthmodAccessPackage, bumpAuthmodAccessHead, getAuthmodAccessReadPackage } from "../authmod-access-read-package";
 import { publishAfterCommit } from "./commit-publication";
+import { applicationAssignmentId, planApplicationAccessLevel, type ApplicationAccessLevelCommand } from "./application-access-levels";
 const collections = { identities: "authmodIdentities", custodians: "authmodCustodianAssignments", applications: "authmodApplications", sites: "authmodSiteAssignments", appOplocScopes: "authmodAppOplocScopes", apps: "authmodAppAssignments", grants: "authmodAuthorityGrants", delegations: "authmodDelegations", services: "authmodServicePrincipals", imports: "authmodImports", resolutions: "authmodImportResolutions", audits: "authmodAccessAudit" } as const;
 const REFERENCE_CACHE_SCOPE = "global";
 const firestoreResource = (collection: string) => `Firestore database (default), collection ${collection}`;
@@ -102,7 +103,7 @@ export class FirestoreAuthModRepository implements AuthModRepository {
   async getDelegation(id: string) { const snapshot = await firestoreRead("getDelegation", collections.delegations, () => db.collection(collections.delegations).doc(id).get()); return snapshot.exists ? snapshot.data() as DelegationRecord : undefined; }
   async listDelegations(delegateId?: string) { const query = delegateId ? db.collection(collections.delegations).where("delegateId", "==", delegateId) : db.collection(collections.delegations); const snapshot = await firestoreRead("listDelegations", collections.delegations, () => query.get()); return snapshot.docs.map(document => document.data() as DelegationRecord); }
   async saveDelegationWithGrant(input: { delegation: DelegationRecord; grant: AuthorityGrant; audit: AccessAuditEvent }) { await db.runTransaction(async transaction => { transaction.create(db.collection(collections.delegations).doc(input.delegation.id), input.delegation as unknown as DocumentData); transaction.create(db.collection(collections.grants).doc(input.grant.id), input.grant as unknown as DocumentData); bumpAuthmodAccessHead(transaction, input.delegation.delegateId); bumpAuthmodAccessHead(transaction, input.delegation.delegatorId); transaction.create(db.collection(collections.audits).doc(input.audit.id), input.audit as unknown as DocumentData); }); await bootstrapAuthmodAccessPackage(input.delegation.delegateId); await bootstrapAuthmodAccessPackage(input.delegation.delegatorId); invalidateAuthmodReferenceCaches(); invalidateAuthmodAdmissionCache(); }
-  async saveStandardApplicationBundle(input: { assignment: AppAssignment; grants: AuthorityGrant[]; audit?: AccessAuditEvent; expectedAssignmentVersion?: number }) {
+  async saveStandardApplicationBundle(input: { assignment: AppAssignment; grants: AuthorityGrant[]; audit?: AccessAuditEvent; expectedAssignmentVersion?: number | null }) {
     await db.runTransaction(async transaction => {
       const assignmentRef = db.collection(collections.apps).doc(input.assignment.id);
       const assignmentSnapshot = await transaction.get(assignmentRef);
@@ -115,6 +116,29 @@ export class FirestoreAuthModRepository implements AuthModRepository {
     invalidateAuthmodReferenceCaches();
     invalidateAuthmodAdmissionCache();
     await publishAfterCommit(input.assignment.identityId, this.publishApplicationAccess);
+  }
+  async saveApplicationAccessLevel(input: ApplicationAccessLevelCommand) {
+    await db.runTransaction(async transaction => {
+      const assignmentRef = db.collection(collections.apps).doc(applicationAssignmentId(input.identityId, input.appId));
+      const scopedGrants = db.collection(collections.grants).where("subjectId", "==", input.identityId);
+      const scopedOplocs = db.collection(collections.appOplocScopes).where("identityId", "==", input.identityId);
+      const [assignment, grants, scopes] = await Promise.all([
+        transaction.get(assignmentRef), transaction.get(scopedGrants),
+        input.level === "none" ? transaction.get(scopedOplocs) : undefined,
+      ]);
+      const change = planApplicationAccessLevel(input, assignment.data() as AppAssignment | undefined,
+        grants.docs.map(document => document.data() as AuthorityGrant),
+        scopes?.docs.map(document => document.data() as AppOplocScope) ?? []);
+      transaction.set(assignmentRef, change.assignment);
+      for (const grant of change.revoked) transaction.set(db.collection(collections.grants).doc(grant.id), grant);
+      for (const grant of change.issued) transaction.create(db.collection(collections.grants).doc(grant.id), grant);
+      for (const scope of change.revokedScopes) transaction.set(db.collection(collections.appOplocScopes).doc(scope.id), scope);
+      transaction.create(db.collection(collections.audits).doc(change.audit.id), change.audit);
+      bumpAuthmodAccessHead(transaction, input.identityId);
+    });
+    invalidateAuthmodReferenceCaches();
+    invalidateAuthmodAdmissionCache();
+    await publishAfterCommit(input.identityId, this.publishApplicationAccess);
   }
   async revokeStandardApplicationBundle(input: { assignment: AppAssignment; grants: AuthorityGrant[]; appOplocScopes?: AppOplocScope[]; audit?: AccessAuditEvent; additionalAudits?: AccessAuditEvent[]; expectedAssignmentVersion?: number }) {
     await db.runTransaction(async transaction => {

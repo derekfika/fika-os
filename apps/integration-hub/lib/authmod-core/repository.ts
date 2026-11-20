@@ -1,4 +1,5 @@
 import type { AccessAuditEvent, AppAssignment, AppOplocScope, ApplicationRegistryEntry, AuditPage, AuthIdentity, AuthorityGrant, CustodianAssignment, DelegationRecord, ImportRecord, ImportRowResolution, LegendReference, ServicePrincipal, SiteAssignment } from "./model";
+import type { ApplicationAccessLevelCommand } from "./application-access-levels";
 export type OplocReference = { id: string; label: string; active: boolean };
 export type AuthmodRuntimeAccessPackage = import("../authmod-access-read-package").AuthmodAccessReadPackage;
 export type AuthModRepository = {
@@ -19,7 +20,8 @@ export type AuthModRepository = {
   saveAppAssignment(assignment: AppAssignment, expectedVersion?: number): Promise<void>;
   listAuthorityGrants(subjectId: string, subjectType?: "interactive" | "service"): Promise<AuthorityGrant[]>; getAuthorityGrant(id: string): Promise<AuthorityGrant | undefined>; listAuthorityGrantsForDecision(input: { subjectId: string; subjectType: "interactive" | "service"; appId: string; resource: string; action: AuthorityGrant["action"] }): Promise<AuthorityGrant[]>; saveAuthorityGrant(grant: AuthorityGrant, expectedVersion?: number): Promise<void>; saveAuthorityGrantWithAudit(grant: AuthorityGrant, audit: AccessAuditEvent, expectedVersion?: number): Promise<void>;
   getDelegation(id: string): Promise<DelegationRecord | undefined>; listDelegations(delegateId?: string): Promise<DelegationRecord[]>; saveDelegationWithGrant(input: { delegation: DelegationRecord; grant: AuthorityGrant; audit: AccessAuditEvent }): Promise<void>;
-  saveStandardApplicationBundle(input: { assignment: AppAssignment; grants: AuthorityGrant[]; audit?: AccessAuditEvent; expectedAssignmentVersion?: number }): Promise<void>;
+  saveStandardApplicationBundle(input: { assignment: AppAssignment; grants: AuthorityGrant[]; audit?: AccessAuditEvent; expectedAssignmentVersion?: number | null }): Promise<void>;
+  saveApplicationAccessLevel(input: ApplicationAccessLevelCommand): Promise<void>;
   revokeStandardApplicationBundle(input: { assignment: AppAssignment; grants: AuthorityGrant[]; appOplocScopes?: AppOplocScope[]; audit?: AccessAuditEvent; additionalAudits?: AccessAuditEvent[]; expectedAssignmentVersion?: number }): Promise<void>;
   getServicePrincipal(id: string): Promise<ServicePrincipal | undefined>; listServicePrincipals(): Promise<ServicePrincipal[]>;
   saveServicePrincipal(principal: ServicePrincipal, expectedVersion?: number): Promise<void>; saveServicePrincipalWithAudit(principal: ServicePrincipal, audit: AccessAuditEvent, expectedVersion?: number): Promise<void>;
@@ -31,6 +33,6 @@ export class AuthModStoreUnavailable extends Error {
   code: string;
   constructor(message = "AUTHMOD authorization data is unavailable.", code = "AUTHMOD_STORE_UNAVAILABLE") { super(message); this.code = code; }
 }
-export function assertExpectedVersion(actual: number | undefined, expectedVersion: number | undefined) {
-  if (expectedVersion !== undefined && actual !== expectedVersion) throw Object.assign(new Error("AUTHMOD record changed since it was read."), { status: 409, code: "AUTHMOD_VERSION_CONFLICT" });
+export function assertExpectedVersion(actual: number | undefined, expectedVersion: number | null | undefined) {
+  if (expectedVersion !== undefined && actual !== (expectedVersion ?? undefined)) throw Object.assign(new Error("AUTHMOD record changed since it was read."), { status: 409, code: "AUTHMOD_VERSION_CONFLICT" });
 }

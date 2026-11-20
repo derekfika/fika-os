@@ -1,3 +1,4 @@
+import { fixtureMenuAccess, fixtureMenuScopeHeaders } from "./menu-access-fixture";
 import { expect, test } from "@playwright/test";
 
 /** Read-only browser fixture: all API traffic is answered locally. */
@@ -10,11 +11,12 @@ test("filter toggle keeps the dish picker centered and usable at common desktop 
   await page.route("**/api/**", async route => {
     const request = route.request();
     const url = new URL(request.url());
+    if (url.pathname === "/api/access") return route.fulfill({ json: fixtureMenuAccess("fixture-dish-picker") });
     if (request.method() !== "GET") {
       writes.push(`${request.method()} ${url.pathname}`);
       return route.fulfill({ status: 409, json: { error: { message: "Unexpected fixture write" } } });
     }
-    if (url.pathname === "/api/rolling-menu") return route.fulfill({ json: { weeks: [snapshot.week], snapshot, publicationState: {} } });
+    if (url.pathname === "/api/rolling-menu") return route.fulfill({ headers: fixtureMenuScopeHeaders("fixture-dish-picker"), json: { weeks: [snapshot.week], snapshot, publicationState: {} } });
     if (url.pathname === "/api/catalogue") return route.fulfill({ json: { entries: [
       { id: "fixture-dish:one", displayName: "Fixture salad", category: "Salad", tagIds: tags.map(tag => tag.id), item: { subcategory: "Leaf", tagIds: tags.map(tag => tag.id) } },
     ], categories: ["Salad"] } });

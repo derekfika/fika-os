@@ -5,7 +5,7 @@ import type { RollingSnapshot } from "../../lib/rolling-menu-types";
 import type { WeekSaveRequest } from "../../lib/week-draft";
 import { menuSiteKey } from "../../lib/site-pax";
 
-async function fixture(page: Page, portions = false) {
+async function fixture(page: Page, portions = false, viewOnly = false) {
   const weeks = ["2098-11-03", "2098-11-10"].map(date => {
     const snapshot = emptyWeek(date, "isolated-browser");
     snapshot.entries = snapshot.days.slice(0, 2).map((day, index) => ({ id: `${day.id}:entry:synthetic`, dayId: day.id, date: day.date, slot: "SOUP", itemId: `dish:synthetic:${index}`, itemLabel: index ? "Synthetic sauce" : "Synthetic soup", portions: 7, allocations: [], allergens: {}, audit: [] }));
@@ -26,11 +26,16 @@ async function fixture(page: Page, portions = false) {
   await page.route(/^https:\/\//, route => route.abort());
   await page.route("**/api/**", async route => {
     const request = route.request(), url = new URL(request.url());
+    if (url.pathname === "/api/access") return route.fulfill({ json: {
+      canManage: !viewOnly, canManageOrganisation: !viewOnly, canManageAllSites: !viewOnly,
+      canPublish: !viewOnly, canPublishAllSites: !viewOnly,
+      manageOplocIds: viewOnly ? [] : ["oploc:synthetic:a", "oploc:synthetic:b"], scopeKey: connection.identity,
+    } });
     if (url.pathname === "/api/oplocs") return route.fulfill({ json: { oplocs: [{ canonicalId: "oploc:synthetic:a", label: "Shared venue", address: "1 Governed Street" }, { canonicalId: "oploc:synthetic:b", label: "Site B" }] } });
     if (url.pathname !== "/api/rolling-menu") return route.fulfill({ json: {} });
     const weekId = url.searchParams.get("weekId");
     const snapshot = weeks.find(week => week.week.id === weekId || week.week.weekCommencing === weekId) || weeks[0];
-    if (request.method() === "GET") return route.fulfill({ headers: { "x-fika-menu-identity": connection.identity }, json: url.searchParams.has("summariesOnly") ? { week: snapshot.week, weeks: weeks.map(week => week.week) } : { snapshot, weeks: weeks.map(week => week.week), publicationState: {} } });
+    if (request.method() === "GET") return route.fulfill({ headers: { "x-fika-menu-identity": connection.identity, "x-fika-menu-cache-scope": connection.identity }, json: url.searchParams.has("summariesOnly") ? { week: snapshot.week, weeks: weeks.map(week => week.week) } : { snapshot, weeks: weeks.map(week => week.week), publicationState: {} } });
     const body = request.postDataJSON();
     writes.push(body);
     const target = weeks.find(week => week.week.id === body.weekId)!;
@@ -53,6 +58,26 @@ async function fixture(page: Page, portions = false) {
   else await expect(page.getByRole("button", { name: /Synthetic soup, No key allergens:/ })).toBeVisible();
   return { weeks, writes, connection };
 }
+
+test("View-only pages keep planning reads and export while suppressing mutation controls", async ({ page }) => {
+  const server = await fixture(page, true, true);
+  await expect(page.getByRole("status").filter({ hasText: "View only" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save changes", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Publish whole week", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("spinbutton", { name: "Synthetic soup portions for Shared venue (one-off)", exact: true })).toHaveAttribute("readonly", "");
+  await page.getByRole("link", { name: "Allergen Checker" }).click();
+  await expect(page.getByRole("button", { name: /Synthetic soup, Milk:/ })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Save allergen changes", exact: true })).toHaveCount(0);
+  await page.getByRole("link", { name: "Week Planner" }).click();
+  await expect(page.getByText("Synthetic soup", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Export menu", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Save Week|Duplicate planning|Start blank week|Reset week|Make available to Hospitality/ })).toHaveCount(0);
+  await page.goto("/dishes/new");
+  await expect(page.getByText("This workspace requires Menu Planning Manage access.")).toBeVisible();
+  await page.goto("/import-menu-week");
+  await expect(page.getByText("This workspace requires Manage access across all sites.")).toBeVisible();
+  expect(server.writes).toEqual([]);
+});
 
 test("manual No Key is exclusive, survives saved reload and never clears an untouched row", async ({ page }) => {
   const server = await fixture(page);

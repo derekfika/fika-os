@@ -2,6 +2,7 @@ import type { AuthPrincipal, AppAssignment, AppOplocScope, ApplicationRegistryEn
 import { assertValidEffectivePeriod, idempotentId, isEffective, now } from "./model";
 import { auditEvent } from "./audit";
 import type { AuthModRepository } from "./repository";
+import { applicationAssignmentId, configuredApplicationAssignment } from "./application-access-levels";
 
 function period(input?: EffectivePeriod) { return { ...(input?.effectiveFrom ? { effectiveFrom: input.effectiveFrom } : {}), ...(input?.effectiveTo ? { effectiveTo: input.effectiveTo } : {}) }; }
 function standardGrant(app: ApplicationRegistryEntry, identityId: string, action: AuthorityGrant["action"], bundleId: string, actor: AuthPrincipal, effective?: EffectivePeriod, accessType: AuthorityGrant["accessType"] = "permanent", reason = "Standard application access"): AuthorityGrant {
@@ -12,16 +13,21 @@ export async function grantStandardApplicationAccess(repository: AuthModReposito
   const accessType = input.accessType || (input.effectivePeriod?.effectiveTo ? "temporary" : "permanent"); assertValidEffectivePeriod(input.effectivePeriod, accessType !== "permanent");
   if (accessType !== "permanent" && !input.reason?.trim()) throw Object.assign(new Error("A reason is required for temporary or cover access."), { status: 422, code: "AUTHMOD_REASON_REQUIRED" });
   const app = await repository.getApplication(input.appId); if (!app || !app.enabled) throw Object.assign(new Error("Application is not enabled."), { status: 422 });
-  const existing = (await repository.listAppAssignments(input.identityId)).find(value => value.appId === input.appId);
-  const timestamp = now(); const bundleId = idempotentId("standard-app-access", input.identityId, input.appId);
-  const assignment: AppAssignment = { id: idempotentId("app-assignment", input.identityId, input.appId), identityId: input.identityId, appId: input.appId, status: "active", bundleId, source: "standard-app-access", accessType, reason: input.reason || "Standard application access", grantedBy: input.actor.id, version: (existing?.version || 0) + 1, createdAt: existing?.createdAt || timestamp, updatedAt: timestamp, ...period(input.effectivePeriod) };
+  const assignments = await repository.listAppAssignments(input.identityId);
+  const assignmentId = applicationAssignmentId(input.identityId, input.appId);
+  const existing = assignments.find(value => value.id === assignmentId);
+  const configured = configuredApplicationAssignment(assignments, input.identityId, input.appId);
   const existingGrants = await repository.listAuthorityGrants(input.identityId, "interactive");
+  // Legacy imports are additive and cannot replace an administrator's explicit level.
+  if (configured) return { assignment: configured, grants: existingGrants.filter(grant => grant.bundleId === configured.bundleId && isEffective(grant)), bundleId: configured.bundleId };
+  const timestamp = now(); const bundleId = idempotentId("standard-app-access", input.identityId, input.appId);
+  const assignment: AppAssignment = { id: assignmentId, identityId: input.identityId, appId: input.appId, status: "active", bundleId, source: "standard-app-access", accessType, reason: input.reason || "Standard application access", grantedBy: input.actor.id, version: (existing?.version || 0) + 1, createdAt: existing?.createdAt || timestamp, updatedAt: timestamp, ...period(input.effectivePeriod) };
   const grants = app.standardActions.map(action => {
     const prior = existingGrants.find(value => value.id === idempotentId("grant", input.identityId, app.appId, action));
     return { ...standardGrant(app, input.identityId, action, bundleId, input.actor, input.effectivePeriod, accessType, input.reason || "Standard application access"), ...(prior ? { version: prior.version + 1, createdAt: prior.createdAt } : {}) };
   });
   const audit = auditEvent({ actor: input.actor, targetType: "AppAssignment", targetId: assignment.id, action: "standard-application-access-granted", afterState: { assignment, grantIds: grants.map(value => value.id) }, provenance: "standard-app-access", outcome: "committed", scope: { kind: "organisation", ids: [] }, idempotencyKey: input.idempotencyKey });
-  await repository.saveStandardApplicationBundle({ assignment, grants, audit, expectedAssignmentVersion: existing?.version });
+  await repository.saveStandardApplicationBundle({ assignment, grants, audit, expectedAssignmentVersion: existing?.version ?? null });
   return { assignment, grants, bundleId };
 }
 export async function revokeStandardApplicationAccess(repository: AuthModRepository, input: { identityId: string; appId: string; actor: AuthPrincipal; reason?: string; idempotencyKey?: string }) {

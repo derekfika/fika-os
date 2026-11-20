@@ -1,5 +1,6 @@
 "use client";
-import { HOSPITALITY_BOOKING_ADMIN } from "@/lib/authmod-core/model";
+import { HOSPITALITY_BOOKING_ADMIN, type ApplicationAccessLevel } from "@/lib/authmod-core/model";
+import type { readMenuPlanningAccountPermissions } from "@/lib/menu-planning-permissions";
 import { ROTATIONS_AUTHORITY } from "../../../../../shared/hospitality-rotations";
 
 import Link from "next/link";
@@ -10,7 +11,7 @@ import { ROUTINE_ACCESS_REASONS } from "@/lib/authmod-reasons";
 import { loadAuthmodOptions } from "../../../ui/authmod-options-cache";
 import { readAccountActionResponse } from "./action-response";
 
-type Account = { identity: { id: string; displayName: string; email?: string; identityKind: "person" | "operational"; status: string; identityLinkStatus: string; legendId?: string; legendLabel?: string; representedOplocId?: string; representedOplocLabel?: string; operationalPurpose?: string; provenance: string; version: number }; custodian?: { id: string; legendId: string; label: string; version: number }; sites: { id: string; label: string }[]; apps: { id: string; label: string }[]; appOplocScopes?: { id: string; appId: string; label: string }[]; specialAuthority: { id: string; resource: string; action: string; scope: { kind: string; ids: string[] }; reason?: string; provenance: string }[]; temporaryAccess?: { id: string; capability: string; label: string; type: string; scope: { kind: string; ids: string[] }; effectiveFrom?: string; effectiveTo?: string; status: string; source?: string }[]; delegatedBy?: { id: string; delegatorName: string; capability: string; scope: { kind: string; ids: string[] }; effectiveFrom?: string; effectiveTo?: string; status: string }[]; fullAccess: boolean; authmodAdmin: boolean };
+type Account = { identity: { id: string; displayName: string; email?: string; identityKind: "person" | "operational"; status: string; identityLinkStatus: string; legendId?: string; legendLabel?: string; representedOplocId?: string; representedOplocLabel?: string; operationalPurpose?: string; provenance: string; version: number }; custodian?: { id: string; legendId: string; label: string; version: number }; sites: { id: string; label: string }[]; apps: { id: string; label: string }[]; menuPlanning: Awaited<ReturnType<typeof readMenuPlanningAccountPermissions>>; appOplocScopes?: { id: string; appId: string; label: string }[]; specialAuthority: { id: string; resource: string; action: string; scope: { kind: string; ids: string[] }; reason?: string; provenance: string }[]; temporaryAccess?: { id: string; capability: string; label: string; type: string; scope: { kind: string; ids: string[] }; effectiveFrom?: string; effectiveTo?: string; status: string; source?: string }[]; delegatedBy?: { id: string; delegatorName: string; capability: string; scope: { kind: string; ids: string[] }; effectiveFrom?: string; effectiveTo?: string; status: string }[]; fullAccess: boolean; authmodAdmin: boolean };
 type Options = { applications: { appId: string; displayName: string; standardActions: string[]; scopeModel: "none" | "oploc" | "mixed" }[]; oplocs: { id: string; label: string }[]; legends: { id: string; label: string }[] };
 type AuditEvent = { id: string; timestamp: string; action: string; outcome: string; actorSnapshot?: { displayName?: string }; scope?: { kind: string; ids: string[] } };
 
@@ -26,6 +27,7 @@ export default function AccountDetail({ id }: { id: string }) {
   const [warning, setWarning] = useState("");
   const [loading, setLoading] = useState(true);
   const [siteBusy, setSiteBusy] = useState(false);
+  const [levelBusy, setLevelBusy] = useState(false);
   const [pendingCommand, setPendingCommand] = useState<Record<string, unknown> | null>(null);
   const [pendingTitle, setPendingTitle] = useState("");
   const [pendingReasonCode, setPendingReasonCode] = useState("role_requirement");
@@ -48,15 +50,19 @@ export default function AccountDetail({ id }: { id: string }) {
   useEffect(() => { void load(); }, [id]);
 
   async function mutate(command: Record<string, unknown>) {
-    if (!command.reason && !command.reasonCode) { const period = command.action === "site" || command.action === "app" || command.action === "app-oploc-scope"; const hospitalityGrant = command.action === "authority-grant" && command.resource === HOSPITALITY_BOOKING_ADMIN; const reasonSelector = period || command.action === "legend"; setPendingCommand(command); setPendingTitle(hospitalityGrant ? "Grant Hospitality Admin" : String(command.action || "Confirm AUTHMOD change").replaceAll("-", " ")); setPendingReasonCode(reasonSelector ? (command.action === "legend" ? "access_correction" : "role_requirement") : "other"); setPendingReasonNote(""); setPendingPeriod(hospitalityGrant || period && command.enabled === true); setPendingAccessType("permanent"); setPendingFrom(""); setPendingTo(""); return; }
+    const levelChange = command.action === "app-access-level";
+    if (!command.reason && !command.reasonCode) { const period = command.action === "site" || command.action === "app" || command.action === "app-oploc-scope"; const hospitalityGrant = command.action === "authority-grant" && command.resource === HOSPITALITY_BOOKING_ADMIN; const reasonSelector = period || levelChange || command.action === "legend"; setPendingCommand(command); setPendingTitle(levelChange ? `Menu Planning access · ${accessLevelLabels[command.level as ApplicationAccessLevel]}` : hospitalityGrant ? "Grant Hospitality Admin" : String(command.action || "Confirm AUTHMOD change").replaceAll("-", " ")); setPendingReasonCode(reasonSelector ? (command.action === "legend" ? "access_correction" : "role_requirement") : "other"); setPendingReasonNote(""); setPendingPeriod(hospitalityGrant || period && command.enabled === true); setPendingAccessType("permanent"); setPendingFrom(""); setPendingTo(""); return; }
+    if (levelChange) setLevelBusy(true);
     try {
       const result = await readAccountActionResponse<Account>(await fetch(`/api/authmod/accounts/${id}/actions`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...command, expectedVersion: account?.identity.version }) }));
       if (result.account) setAccount(result.account);
       setError("");
       setWarning(result.warning || "");
     } catch (e) { setError((e as Error).message); }
+    finally { if (levelChange) setLevelBusy(false); }
   }
-  async function confirmPending() { const routine = pendingCommand?.action === "site" || pendingCommand?.action === "app" || pendingCommand?.action === "app-oploc-scope" || pendingCommand?.action === "legend" || pendingCommand?.action === "bulk-sites"; if (!pendingCommand || (routine ? (pendingReasonCode === "other" && pendingReasonNote.trim().length < 3) : pendingReasonNote.trim().length < 3)) { setError(routine ? "Choose a reason; Other requires a short explanation." : "Enter a specific administrative reason before confirming."); return; } if (pendingPeriod && pendingAccessType !== "permanent" && (!pendingFrom || !pendingTo || new Date(pendingFrom) >= new Date(pendingTo))) { setError("Temporary and cover access require a valid start and end."); return; } const command = pendingCommand; setPendingCommand(null); const period = pendingPeriod ? { accessType: pendingAccessType, effectiveFrom: pendingFrom ? new Date(pendingFrom).toISOString() : undefined, effectiveTo: pendingTo ? new Date(pendingTo).toISOString() : undefined } : {}; const reasonFields = { reasonCode: pendingReasonCode, reasonNote: pendingReasonNote.trim() || undefined }; if (command.action === "bulk-sites") { setSiteBusy(true); try { for (const site of options.oplocs) if (sites.has(site.id) !== command.enabled) await mutate({ action: "site", oplocId: site.id, enabled: command.enabled, ...period, ...reasonFields }); } finally { setSiteBusy(false); } } else await mutate({ ...command, ...period, ...reasonFields }); }
+  const routinePending = ["site", "app", "app-access-level", "app-oploc-scope", "legend", "bulk-sites"].includes(String(pendingCommand?.action));
+  async function confirmPending() { if (!pendingCommand || (routinePending ? (pendingReasonCode === "other" && pendingReasonNote.trim().length < 3) : pendingReasonNote.trim().length < 3)) { setError(routinePending ? "Choose a reason. Other requires a short explanation." : "Enter a specific administrative reason before confirming."); return; } if (pendingPeriod && pendingAccessType !== "permanent" && (!pendingFrom || !pendingTo || new Date(pendingFrom) >= new Date(pendingTo))) { setError("Temporary and cover access require a valid start and end."); return; } const command = pendingCommand; setPendingCommand(null); const period = pendingPeriod ? { accessType: pendingAccessType, effectiveFrom: pendingFrom ? new Date(pendingFrom).toISOString() : undefined, effectiveTo: pendingTo ? new Date(pendingTo).toISOString() : undefined } : {}; const reasonFields = { reasonCode: pendingReasonCode, reasonNote: pendingReasonNote.trim() || undefined }; if (command.action === "bulk-sites") { setSiteBusy(true); try { for (const site of options.oplocs) if (sites.has(site.id) !== command.enabled) await mutate({ action: "site", oplocId: site.id, enabled: command.enabled, ...period, ...reasonFields }); } finally { setSiteBusy(false); } } else await mutate({ ...command, ...period, ...reasonFields }); }
 
   if (loading) return <Shell><div className={styles.empty}>Loading account detail…</div></Shell>;
   if (!account) return <Shell><div className={styles.error}>{error || "AUTHMOD account not found."}</div></Shell>;
@@ -79,19 +85,56 @@ export default function AccountDetail({ id }: { id: string }) {
     <div className={styles.layout}><div className={styles.primary}>
       <Card title="Identity" subtitle={person ? "Person identity and Workspace linkage." : "Operational context, separate from authorization."}><div className={styles.facts}><Fact label="Type" value={person ? "Person" : "Operational account"} /><Fact label="Email" value={account.identity.email || "Not supplied"} /><Fact label="Status" value={account.identity.status} /><Fact label="Provenance" value={account.identity.provenance} />{!person && <Fact label="Represents" value={account.identity.representedOplocLabel || account.identity.operationalPurpose || "Not classified"} />}</div>{person ? <IdentityEditor account={account} options={options} mutate={mutate} /> : <OperationalEditor account={account} options={options} mutate={mutate} />} {!person && <div className={styles.notice}><ServerCog size={17} /><span>This account represents an operational context rather than an individual person. Custodianship never grants or transfers permissions.</span></div>}</Card>
       <Card title="Site Access" subtitle="Canonical OPLOC access is separate from operational representation."><div className={styles.bulkActions}><strong>{account.sites.length} of {options.oplocs.length} sites enabled</strong><button className={styles.secondary} disabled={siteBusy || allSitesEnabled} onClick={() => void setAllSites(true)}>Select all sites</button><button className={styles.secondary} disabled={siteBusy || account.sites.length === 0} onClick={() => void setAllSites(false)}>Clear sites</button></div><div className={styles.accessList}>{options.oplocs.map(site => <AccessRow key={site.id} title={site.label} detail="Operational Location" enabled={sites.has(site.id)} onChange={enabled => void mutate({ action: "site", oplocId: site.id, enabled })} />)}</div></Card>
-      <Card title="Application Access" subtitle="Each toggle controls the approved standard application bundle."><div className={styles.accessList}>{options.applications.map(app => <AccessRow key={app.appId} title={app.displayName} detail={`Normal access: ${app.standardActions.join(" · ")}`} enabled={apps.has(app.appId)} onChange={enabled => void mutate({ action: "app", appId: app.appId, enabled })} />)}</div></Card>
+      <Card title="Application Access" subtitle="Set normal application permissions for this account."><div className={styles.accessList}>
+        {options.applications.map(app => app.appId === "menu-planning"
+          ? <MenuPlanningAccessControl key={app.appId} name={app.displayName} access={account.menuPlanning} oplocs={options.oplocs} busy={levelBusy || pendingCommand?.action === "app-access-level"} onChange={level => void mutate({ action: "app-access-level", appId: app.appId, level, expectedAssignmentVersion: account.menuPlanning.version })} />
+          : <AccessRow key={app.appId} title={app.displayName} detail={`Normal access · ${app.standardActions.join(" · ")}`} enabled={apps.has(app.appId)} onChange={enabled => void mutate({ action: "app", appId: app.appId, enabled })} />)}
+      </div></Card>
       {!person && <Card title="All Sites Access" subtitle="Covers every current and future active OPLOC in the selected application. It adds no app access or actions."><div className={styles.accessList}>{options.applications.filter(app => app.scopeModel !== "none").map(app => { const enabled = (account.appOplocScopes || []).some(scope => scope.appId === app.appId); return <AccessRow key={app.appId} title={app.displayName} detail={apps.has(app.appId) ? "All active OPLOCs · normal app actions only" : "Grant application access first"} enabled={enabled} disabled={!apps.has(app.appId) && !enabled} onChange={value => void mutate({ action: "app-oploc-scope", appId: app.appId, enabled: value })} />; })}</div></Card>}
       <Card title="Temporary & delegated access" subtitle="Historical and scheduled access remains visible without authorizing expired records."><HistoryList account={account} /></Card>
       <DelegationEditor targetId={id} accountsUrl="/api/authmod/accounts" />
     </div><div className={styles.secondaryColumn}>
       {person ? <Card title="Legend" subtitle="Personal identity linkage is explicit."><Fact label="Linked Legend" value={account.identity.legendLabel || "Unresolved"} /></Card> : <Card title="Primary Custodian" subtitle="Custodianship does not grant authorization."><select className={styles.custodianSelect} value={account.custodian?.legendId || ""} onChange={event => { if (event.target.value) void mutate({ action: "custodian", custodianLegendId: event.target.value }); }}><option value="">Select active custodian…</option>{account.custodian && !options.legends.some(legend => legend.id === account.custodian?.legendId) && <option value={account.custodian.legendId}>{account.custodian.label}</option>}{options.legends.map(legend => <option key={legend.id} value={legend.id}>{legend.label}</option>)}</select><div className={styles.notice}><ShieldCheck size={17} /><span>The custodian does not grant access. The operational account remains the actor.</span></div></Card>}
-      {person && <Card title="Superuser" subtitle="All current and future FIKA OS applications and active OPLOCs. Existing assignments are preserved."><div className={styles.fullAccess}><strong>{account.fullAccess ? "Superuser enabled" : "Standard access"}</strong><span>Crosses normal app/site assignment boundaries. It does not include Menu Publish, allergen approval, or AUTHMOD Admin.</span><button className={styles.toggle} onClick={() => void mutate({ action: "full-access", fullAccess: !account.fullAccess })}>{account.fullAccess ? "Remove Superuser" : "Grant Superuser"}</button></div></Card>}
+      {person && <Card title="Superuser" subtitle="Normal access across FIKA OS applications and active OPLOCs, subject to the selected Menu Planning permission level."><div className={styles.fullAccess}><strong>{account.fullAccess ? "Superuser enabled" : "Standard access"}</strong><span>Menu Publish, allergen approval and AUTHMOD Admin require separate authority.</span><button className={styles.toggle} onClick={() => void mutate({ action: "full-access", fullAccess: !account.fullAccess })}>{account.fullAccess ? "Remove Superuser" : "Grant Superuser"}</button></div></Card>}
       <Card title="Special Authority" subtitle="Explicit authority, separate from normal site access."><div className={styles.authorityList}>{person && <HospitalityRotationsControl account={account} mutate={mutate} />}{[["menu.publish", "Menu Publish", "Publish approved menus across the organisation", "menu-planning", "person"], ["authmod", "AUTHMOD Admin", "Administer AUTHMOD", "integration-hub", "person"]].filter(([, , , , audience]) => audience === "all" || person).map(([resource, label, detail, appId]) => <AuthorityControl key={resource} account={account} options={options} resource={resource} label={label} detail={detail} appId={appId} mutate={mutate} />)}{person && <HospitalityAdminControl account={account} options={options} mutate={mutate} />}</div></Card>
       <RetiredAuthorities account={account} options={options} mutate={mutate} />
       <Card title="Recent Changes" subtitle="Bounded account history."><div className={styles.auditList}>{audit.length ? audit.map(event => <div key={event.id}><strong>{event.action.replaceAll("-", " ")}</strong><small>{date(event.timestamp)} · {event.actorSnapshot?.displayName || "AUTHMOD administrator"}</small></div>) : <span className={styles.muted}>No recent changes.</span>}</div><Link className={styles.historyLink} href={`/authmod?tab=audit&targetId=${encodeURIComponent(id)}`}>View full audit history <ChevronRight size={15} /></Link></Card>
     </div></div>
-    {pendingCommand && <ReasonDialog title={pendingTitle} routine={pendingCommand.action === "site" || pendingCommand.action === "app" || pendingCommand.action === "app-oploc-scope" || pendingCommand.action === "legend" || pendingCommand.action === "bulk-sites"} reasonCode={pendingReasonCode} setReasonCode={setPendingReasonCode} note={pendingReasonNote} setNote={setPendingReasonNote} period={pendingPeriod} accessType={pendingAccessType} setAccessType={setPendingAccessType} from={pendingFrom} setFrom={setPendingFrom} to={pendingTo} setTo={setPendingTo} onCancel={() => setPendingCommand(null)} onConfirm={() => void confirmPending()} />}
+    {pendingCommand && <ReasonDialog title={pendingTitle} routine={routinePending} reasonCode={pendingReasonCode} setReasonCode={setPendingReasonCode} note={pendingReasonNote} setNote={setPendingReasonNote} period={pendingPeriod} accessType={pendingAccessType} setAccessType={setPendingAccessType} from={pendingFrom} setFrom={setPendingFrom} to={pendingTo} setTo={setPendingTo} onCancel={() => setPendingCommand(null)} onConfirm={() => void confirmPending()} />}
   </Shell>;
+}
+
+const accessLevelLabels = { none: "No access", view: "View only", manage: "Manage (includes draft edits and saves)" };
+
+function MenuPlanningAccessControl({ name, access, oplocs, busy, onChange }: {
+  name: string;
+  access: Account["menuPlanning"];
+  oplocs: Options["oplocs"];
+  busy: boolean;
+  onChange: (level: ApplicationAccessLevel) => void;
+}) {
+  const displaySites = (ids: string[]) => ids.map(id => oplocs.find(site => site.id === id)?.label || id).join(", ");
+  const siteLabel = access.allOplocs ? "All active sites" : displaySites(access.oplocIds) || "No active sites";
+  const partialManage = access.manageOplocIds.length > 0 && access.manageOplocIds.length < access.oplocIds.length;
+  return <div className={`${styles.accessRow} ${styles.levelRow}`}>
+    <div id="menu-planning-effective-access">
+      <strong>{name}</strong>
+      <small>Effective level · {accessLevelLabels[access.effectiveLevel]}</small>
+      <small>{siteLabel}</small>
+      {partialManage && <small>Manage at {displaySites(access.manageOplocIds)}. View at the other sites listed.</small>}
+      <small>Publish requires the separate Menu Publish grant.</small>
+    </div>
+    <label className={styles.levelField}>Permission level
+      <select value={access.configuredLevel ?? ""} disabled={busy}
+        aria-describedby="menu-planning-effective-access"
+        onChange={event => onChange(event.currentTarget.value as ApplicationAccessLevel)}>
+        <option value="" disabled>Choose a level</option>
+        <option value="none">{accessLevelLabels.none}</option>
+        <option value="view">{accessLevelLabels.view}</option>
+        <option value="manage">{accessLevelLabels.manage}</option>
+      </select>
+    </label>
+  </div>;
 }
 
 const RETIRED_AUTHORITY_LABELS: Record<string, string> = { "production.allergen-sign": "Production Allergen Sign-off", "production.allergen-final-approve": "Final Allergen Approval" };
