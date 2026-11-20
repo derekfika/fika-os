@@ -49,6 +49,7 @@ export function CustomerPreview({
   sitePreview,
   notice,
   back,
+  openMapping,
 }: {
   menu: Menu;
   dishes: Dish[];
@@ -66,12 +67,17 @@ export function CustomerPreview({
   sitePreview: SitePreview | null;
   notice: string;
   back: () => void;
+  openMapping: (sectionId: string) => void;
 }) {
   const [screen, setScreen] = useState<"web" | "mobile">("web");
   const [sectionId, setSectionId] = useState(initialSection);
   const [category, setCategory] = useState("all");
   const section =
     menu.sections.find((item) => item.id === sectionId) || menu.sections[0];
+  const hasMappings = menu.sections.some((item) => item.catalogueItemId);
+  const missingMapping =
+    (section && !section.catalogueItemId ? section : undefined) ||
+    menu.sections.find((item) => !item.catalogueItemId);
   const ids =
     valid && section
       ? section.mode === "rotation"
@@ -100,7 +106,7 @@ export function CustomerPreview({
             <span>Preview</span>
           </Breadcrumb>
         }
-        context={<p>Review the customer-facing copy for an event date.</p>}
+        context={<p>This draft shows customer-facing menu content for an event date. It does not confirm customer availability or make the menu bookable.</p>}
       >
         <div
           className={styles.segmented}
@@ -154,12 +160,31 @@ export function CustomerPreview({
           </label>
         )}
         <Button
-          disabled={busy || !siteId || !valid || !saved}
+          disabled={busy || !siteId || !valid || !saved || !hasMappings}
           onClick={checkSite}
         >
-          Check site eligibility
+          Check site offerings
         </Button>
       </div>
+      <p className="fika-help">
+        Site checks use linked Hub catalogue items for the selected site and event date. Save the draft before checking.
+      </p>
+      {!hasMappings && (
+        <div className="fika-notice">
+          <p>No sections are linked to Hub catalogue items, so there are no offerings to check.</p>
+          {missingMapping ? (
+            <Button onClick={() => openMapping(missingMapping.id)}>
+              Set up mapping for {missingMapping.name || "Untitled section"}
+            </Button>
+          ) : (
+            <Button onClick={back}>Go to menu overview</Button>
+          )}
+        </div>
+      )}
+      {busy && <p role="status">Loading catalogue information…</p>}
+      {hasMappings && !busy && !sitePreview && !notice && (
+        <p className="fika-help">Select a site to check its linked offerings.</p>
+      )}
       {notice && (
         <p role="status" className="fika-notice">
           {notice}
@@ -257,16 +282,11 @@ export function CustomerPreview({
           </p>
         )}
       </div>
-      <p className="fika-help">
-        Drafts show menu content only. Hub checks prices, choice rules and
-        booking eligibility.
-      </p>
       {sitePreview && (
         <section className={styles.panelBody}>
-          <h2>Site eligibility result</h2>
-          <p>Parent offering visibility for this site and date.</p>
+          <h2>Site offerings check</h2>
           {!sitePreview.items.length && (
-            <p>No parent offerings were returned.</p>
+            <p>No linked offerings are visible for this site and date. Try another site or date, or review the section mappings.</p>
           )}
           {sitePreview.items.map((item) => (
             <div key={item.id}>

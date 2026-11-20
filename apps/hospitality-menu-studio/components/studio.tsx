@@ -92,6 +92,7 @@ export default function Studio({
   const [catalogueItems, setCatalogueItems] = useState<typeof sites>([]);
   const [sitePreview, setSitePreview] = useState<SitePreview | null>(null);
   const [previewMessage, setPreviewMessage] = useState("");
+  const [mappingSectionId, setMappingSectionId] = useState("");
   const [recoverable, setRecoverable] = useState<Recovery[]>([]);
   const reviewGeneration = useRef(0);
   const previewGeneration = useRef(0);
@@ -216,6 +217,7 @@ export default function Studio({
   useEffect(() => {
     previewGeneration.current++;
     setSitePreview(null);
+    setPreviewMessage("");
   }, [menu, eventDate, siteId]);
   useEffect(() => {
     setHistory([]);
@@ -246,6 +248,7 @@ export default function Studio({
   }
   function openSection(id: string) {
     setSectionId(id);
+    setMappingSectionId("");
     setWeek(0);
     setPreviewMessage("");
   }
@@ -383,7 +386,7 @@ export default function Studio({
         setPreviewMessage("No sites are available from the catalogue.");
     } catch {
       setPreviewMessage(
-        "Hub catalogue is unavailable. Existing mappings are retained; eligibility cannot be checked.",
+        "Hub catalogue is unavailable. Existing mappings are retained; site offerings cannot be checked.",
       );
     } finally {
       setActionBusy(false);
@@ -392,6 +395,7 @@ export default function Studio({
   async function checkSitePreview() {
     if (!menu || !siteId || !eventDate) return;
     const generation = previewGeneration.current;
+    setSitePreview(null);
     setActionBusy(true);
     setPreviewMessage("");
     try {
@@ -408,7 +412,7 @@ export default function Studio({
       if (generation === previewGeneration.current) {
         setSitePreview(null);
         setPreviewMessage(
-          "Site eligibility could not be checked. Final availability is unknown.",
+          "Site offerings could not be checked. Try again; customer availability remains unknown.",
         );
       }
     } finally {
@@ -764,6 +768,7 @@ export default function Studio({
                 catalogue={catalogueItems}
                 loadCatalogue={() => void loadSites()}
                 catalogueNotice={previewMessage}
+                openSettings={mappingSectionId === section.id}
                 busy={actionBusy}
               />
             )}
@@ -829,6 +834,13 @@ export default function Studio({
                 sitePreview={sitePreview}
                 notice={previewMessage}
                 back={() => setPage("menus")}
+                openMapping={(id) => {
+                  setSectionId(id);
+                  setMappingSectionId(id);
+                  setWeek(0);
+                  setPreviewMessage("");
+                  setPage("menus");
+                }}
               />
             )}
             {page === "review" && menu && (

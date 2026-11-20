@@ -217,6 +217,7 @@ export function SectionEditor({
   catalogue,
   loadCatalogue,
   catalogueNotice,
+  openSettings,
   busy,
 }: {
   menu: Menu;
@@ -237,6 +238,7 @@ export function SectionEditor({
   catalogue: { id: string; name: string }[];
   loadCatalogue: () => void;
   catalogueNotice: string;
+  openSettings?: boolean;
   busy: boolean;
 }) {
   const [group, setGroup] = useState<DishGroup | "all">("all");
@@ -373,7 +375,7 @@ export function SectionEditor({
             </div>
           </div>
         )}
-        <details className={styles.disclosure}>
+        <details className={styles.disclosure} open={openSettings || undefined}>
           <summary>Section settings</summary>
           <label className="fika-field">
             Section name
