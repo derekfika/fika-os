@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Firestore } from "firebase-admin/firestore";
 import type { ProductionOrder, ProductionLine } from "./production-types";
+import { orderHasInvalidStudioKitchenSpec, studioKitchenSpecError } from "./studio-kitchen-spec";
 export const PACKING_COLLECTION = "fikaCpuPackingChecklistsV1";
 export type PackingEntry = {
   fingerprint: string;
@@ -68,6 +69,8 @@ export function packingFingerprint(o: ProductionOrder, l: ProductionLine) {
 export function validatePackingOrder(o: ProductionOrder) {
   if (o.supersededBy || ["cancelled", "rejected"].includes(o.status))
     throw packingError("This collection is cancelled or superseded.");
+  if (orderHasInvalidStudioKitchenSpec(o))
+    throw packingError(studioKitchenSpecError, 422);
   if (
     o.lines.length > 250 ||
     new Set(o.lines.map((l) => l.canonicalId)).size !== o.lines.length

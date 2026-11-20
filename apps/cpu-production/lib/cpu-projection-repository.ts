@@ -68,7 +68,8 @@ function withoutProjectionMetadata(value: unknown): unknown {
   if (!value || typeof value !== "object") return value;
   return Object.fromEntries(Object.entries(value as Record<string, unknown>)
     .filter(([key]) => !["revision", "rebuiltAt", "generatedAt", "projectionContentHash"].includes(key))
-    .map(([key, item]) => [key, withoutProjectionMetadata(item)]));
+    // Nested Studio revisions identify accepted dish evidence and are part of the content.
+    .map(([key, item]) => [key, key === "studioKitchenSpec" ? item : withoutProjectionMetadata(item)]));
 }
 
 export function cpuProjectionContentHash(projection: ProjectionRecord) {

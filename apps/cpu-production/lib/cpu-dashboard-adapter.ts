@@ -3,6 +3,7 @@ import type { CpuDayProjection, CpuWeekProjection } from "./cpu-projection";
 import type { ProductionScope } from "./production-scope";
 import { europeLondonDate } from "./operational-date";
 import { isAdHocProductionOrderId } from "./production-presentation";
+import { readStudioKitchenSpec } from "../../shared/hospitality-menu-studio-kitchen";
 
 export function weekCommencingFor(serviceDate: string) { const date = new Date(`${serviceDate}T00:00:00Z`); const day = date.getUTCDay() || 7; date.setUTCDate(date.getUTCDate() - day + 1); return date.toISOString().slice(0, 10); }
 export function dashboardOperationalDate(now = new Date()) { const date = new Date(`${europeLondonDate(now)}T12:00:00Z`); const day = date.getUTCDay(); if (day === 0) date.setUTCDate(date.getUTCDate() + 1); else if (day === 6) date.setUTCDate(date.getUTCDate() + 2); return date.toISOString().slice(0, 10); }
@@ -41,6 +42,11 @@ export function cpuProjectionToOrders(projection: CpuProjection): ProductionOrde
       customerUnit: quantity.unit,
       ...(quantity.productionQuantity !== undefined ? { productionQuantity: quantity.productionQuantity } : {}),
       ...(quantity.productionUnit ? { productionUnit: quantity.productionUnit } : {}),
+      ...(quantity.studioKitchenSpec === undefined ? {} : {
+        studioKitchenSpec: row.origin === "hospitality_booking"
+          ? readStudioKitchenSpec(quantity.studioKitchenSpec, row.sourceReference, quantity.sourceBookingLineId) ?? null
+          : null,
+      }),
       dietaries: quantity.dietaries || {},
       ...(quantity.allergenEvidenceStatus ? { allergenEvidenceStatus: quantity.allergenEvidenceStatus } : {}),
       ...(quantity.approvedAllergenSnapshot ? { approvedAllergenSnapshot: quantity.approvedAllergenSnapshot } : {}),
