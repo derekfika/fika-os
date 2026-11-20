@@ -444,7 +444,7 @@ export function PublicationReview({
           <Icon name="calendar" />
           <strong>Future booking impact</strong>
           <span>
-            {result?.impact.status === "available"
+            {result?.impact.status === "available" && result.impact.coverage === "complete"
               ? result.impact.bookings.length + " affected"
               : "Affected bookings unknown"}
           </span>
@@ -639,8 +639,9 @@ export function BookingImpact({
   result: Review | null;
   back: () => void;
 }) {
-  const available =
-    result?.impact.status === "available" ? result.impact.bookings : null;
+  const impact = result?.impact.status === "available" ? result.impact : null;
+  const available = impact?.bookings ?? [];
+  const complete = impact?.coverage === "complete";
   return (
     <>
       <PageHeading
@@ -656,24 +657,28 @@ export function BookingImpact({
       <div
         className={
           "fika-notice " +
-          (available?.length === 0 ? "" : "fika-notice--warning")
+          (complete && available.length === 0 ? "" : "fika-notice--warning")
         }
         role="status"
       >
         <strong>
-          {available
+          {complete
             ? available.length
               ? available.length + " affected future bookings"
               : "No affected bookings reported"
-            : "Booking impact is unavailable"}
+            : impact
+              ? "Booking impact is only partially checked"
+              : "Booking impact is unavailable"}
         </strong>
         <p>
-          {available
+          {complete
             ? "The current impact check is advisory."
-            : "The number of affected bookings is unknown. The booking check is not available yet. Continue editing your draft and return to this check when it becomes available."}
+            : impact
+              ? "The total number of affected bookings is unknown. The table shows any matches the check could confirm."
+              : "The number of affected bookings is unknown. The booking check is not available yet. Continue editing your draft and return to this check when it becomes available."}
         </p>
       </div>
-      {available && available.length > 0 && (
+      {available.length > 0 && (
         <div className={styles.tableScroll}>
           <table className={styles.table}>
             <thead>
