@@ -70,9 +70,9 @@ test("unrecorded cell is styled neutral white in both stylesheet rules", async (
 });
 
 test("accessible name keeps unrecorded distinct from clear and unrecorded blocks completion", async () => {
-  const src = await readFile(new URL("../app/ui/HospitalityAllergenDetail.tsx", import.meta.url), "utf8");
+  const src = await readFile(new URL("../app/ui/HospitalityAllergenCell.tsx", import.meta.url), "utf8");
   // Issue 251: the Hospitality boxes are binary and text-free; the accessible name carries allergen, row and on/off state, and unrecorded still blocks completion below.
-  assert.match(src, /aria-label=\{binaryCellAriaLabel\(label, sub\.name, view\)\}/);
+  assert.match(src, /aria-label=\{binaryCellAriaLabel\(label, rowName, view\)\}/);
   assert.match(src, /aria-pressed=\{binaryCellPressed\(view\)\}/);
   assert.equal(cellState({}, "milk"), "unrecorded");
   assert.equal(cellState({ milk: "clear" }, "milk"), "clear");
