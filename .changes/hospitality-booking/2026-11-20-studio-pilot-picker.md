@@ -2,5 +2,5 @@
 
 The staging MNK pilot uses the selected event date to read Hub's eligible dishes. Existing quantity controls show public descriptions and keep Hub's commercial terms. A submit uses the approved fictional booking ID and forwards the operator's session to Hub for validation.
 
-Validation: scoped pilot and portal catalogue tests, Hospitality typecheck and build.
+Validation: 491 Hospitality tests including scoped pilot and portal catalogue coverage, Hospitality typecheck and build.
 Deployment: none. The staged pilot stays off by default.

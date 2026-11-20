@@ -7,7 +7,7 @@ import { seedVisibility } from "./support/rcoa-service-visibility";
 
 register("data:text/javascript," + encodeURIComponent(`export async function load(url, context, next) {
   if (url.endsWith('.css')) return { format: 'module', source: 'export default new Proxy({}, { get: (_, key) => String(key) })', shortCircuit: true };
-  if (url.endsWith('/lib/hospitality-portal-catalogue.ts')) return { format: 'module', source: 'export async function loadHospitalityPortalMenu() { return { menu: globalThis.__buffetTestMenu, catalogue: { source: "network" }, visibility: globalThis.__buffetTestVisibility }; }', shortCircuit: true };
+  if (url.endsWith('/lib/hospitality-portal-catalogue.ts')) return { format: 'module', source: 'export async function loadHospitalityPortalMenu() { return { menu: globalThis.__buffetTestMenu, catalogue: { source: "network" }, visibility: globalThis.__buffetTestVisibility }; } export async function loadStudioPortalMenu() { throw new Error(); }', shortCircuit: true };
   return next(url, context);
 }`));
 const dom = new JSDOM("<!doctype html><html><body></body></html>", { url: "http://localhost/" });
