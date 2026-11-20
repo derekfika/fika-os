@@ -62,9 +62,13 @@ type Recovery = {
 export default function Studio({
   actor,
   demo,
+  safetyAvailable,
+  checkerOrigin,
 }: {
   actor: StudioActor;
   demo: boolean;
+  safetyAvailable: boolean;
+  checkerOrigin?: string;
 }) {
   const [page, setPage] = useState<Page>("home");
   const [menus, setMenus] = useState<Menu[]>([]);
@@ -891,6 +895,8 @@ export default function Studio({
             {page === "dishes" && dishProps && (
               <DishEditor
                 {...dishProps}
+                safetyAvailable={safetyAvailable}
+                checkerOrigin={checkerOrigin}
                 back={dishBack}
                 backLabel={
                   contextualDish ? "Section editor" : "Dish collection"
@@ -1003,6 +1009,7 @@ export default function Studio({
                 versions={draftVersions}
                 history={history}
                 historyLoaded={historyLoaded}
+                canPreviewPublishedKitchen={safetyAvailable}
                 loadVersions={() => void loadHistory("versions")}
                 loadHistory={() => void loadHistory("history")}
                 compare={compareDrafts}
