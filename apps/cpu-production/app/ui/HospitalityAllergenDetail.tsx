@@ -22,7 +22,8 @@ import "./hospitality-allergen-detail.css";
 import { mayContainNotes } from "./allergen-matrix";
 import { isCompleteOperationalAllergenMap, toggleOperationalAllergen, type CanonicalAllergenKey } from "../../../shared/allergen-contract";
 import { matrixColumns } from "./allergen-matrix";
-import { applyHospitalityBinaryClick, binaryCellAriaLabel, binaryCellPressed, binaryCellView, rowReviewBadge, emptyAllergens, hydrateSavedAllergens } from "./allergen-cell-state";
+import { applyHospitalityBinaryClick, rowReviewBadge, emptyAllergens, hydrateSavedAllergens } from "./allergen-cell-state";
+import { HospitalityAllergenCell } from "./HospitalityAllergenCell";
 import { DELI_STYLE_PARENT_KEY, isDeliStyleParent } from "../../lib/production-item-scope";
 import { canonicalAllergenMatrixForHash } from "../../../shared/allergen-matrix-hash";
 const allergenColumns = matrixColumns;
@@ -1051,26 +1052,19 @@ export default function HospitalityAllergenDetail({
                                 </button>
                               </div>
                             </th>
-                            {allergenColumns.map(([key, label]) => {
-                              // Issue 251: every box (No Key included) is a text-free binary white/black button. Names live only in the purple header row; the review status sits in the Check column.
-                              const view = binaryCellView(sub.allergens, key, rowContext(sub));
-                              return (
-                                <td key={key}>
-                                  <button
-                                    type="button"
-                                    aria-label={binaryCellAriaLabel(label, sub.name, view)}
-                                    aria-pressed={binaryCellPressed(view)}
-                                    aria-disabled={reviewLockedByAuthority || undefined}
-                                    data-allergen-key={key}
-                                    data-cell-state={view}
-                                    className={`allergen-cell allergen-cell--${view === "on" ? "contains" : view === "may_contain" ? "may_contain" : "off"}`}
-                                    onClick={() =>
-                                      toggleCell(menuItem.id, sub, key)
-                                    }
-                                  />
-                                </td>
-                              );
-                            })}
+                            {allergenColumns.map(([key, label]) => (
+                              <td key={key}>
+                                <HospitalityAllergenCell
+                                  allergenKey={key}
+                                  label={label}
+                                  rowName={sub.name}
+                                  allergens={sub.allergens}
+                                  context={rowContext(sub)}
+                                  locked={reviewLockedByAuthority}
+                                  onToggle={() => toggleCell(menuItem.id, sub, key)}
+                                />
+                              </td>
+                            ))}
                             <td className="may-contain-notes">
                               <textarea
                                 aria-label={`Notes for ${sub.name || "sub-item"}`}
