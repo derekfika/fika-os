@@ -64,6 +64,7 @@ import {
   listWeekSummaries,
 } from "@/lib/operational-store";
 import type { RollingEntry, RollingWeek } from "@/lib/rolling-menu-types";
+import type { MenuItem } from "@/lib/domain";
 import {
   duplicateMenuPlanning,
   type DuplicateDestinationRequest,
@@ -234,14 +235,11 @@ async function handleGet(request: NextRequest) {
     const governedOplocs = (await readDeliveredInOplocs(request)).filter(
       (oploc) => actorCanAccessOploc(actor, oploc.canonicalId),
     );
-    const sourceSnapshot = normaliseRollingSnapshotDestinations(
-      storedSnapshot ||
-        await createWeekSnapshot(
-          requestedWeekCommencing || planningWeekFromQuery(undefined),
-        ),
-      governedOplocs,
+    const sourceSnapshot = storedSnapshot || await createWeekSnapshot(
+      requestedWeekCommencing || planningWeekFromQuery(undefined),
     );
-    const snapshot = scopedSnapshot(sourceSnapshot, actor);
+    // Scope the stored IDs before presentation normalisation can apply a legacy label or ID fallback.
+    const snapshot = normaliseRollingSnapshotDestinations(scopedSnapshot(sourceSnapshot, actor), governedOplocs);
     const governedOplocIds = governedOplocs
       ? new Set(governedOplocs.map((oploc) => oploc.canonicalId))
       : undefined;
@@ -323,6 +321,8 @@ async function handlePost(request: NextRequest) {
     );
     const liveOplocs = readableOplocs.filter(oploc => actorCanWriteOploc(actor, oploc.canonicalId, "manage"));
     const aliases = oplocAliases(readableOplocs);
+    const readPublicationState = (snapshot: Awaited<ReturnType<typeof getWeek>>, catalogue: readonly MenuItem[] = []) =>
+      publicationState(scopedSnapshot(snapshot, actor), readableOplocs, catalogue, publication => scopeMenuPublication(publication, actor));
     const mutationScope = (snapshot: Awaited<ReturnType<typeof getWeek>>) => assertMenuSnapshotMutationScope(snapshot, actor, "manage", aliases);
     const entryScope = (entry: RollingEntry) => {
       if (!entry.allocations.length) requireOrganisationMutationActor(actor);
@@ -333,7 +333,7 @@ async function handlePost(request: NextRequest) {
       const weekId = String(body.weekId || "");
       const oplocs = liveOplocs.filter(oploc => actorCanWriteOploc(actor, oploc.canonicalId, "publish"));
       const governedOplocIds = new Set(oplocs.map(oploc => oploc.canonicalId));
-      const sourceSnapshot = normaliseRollingSnapshotDestinations(await getWeek(weekId), readableOplocs);
+      const sourceSnapshot = await getWeek(weekId);
       assertMenuSnapshotMutationScope(sourceSnapshot, actor, "publish", aliases);
       const publication = await publishScopedPublishedWeekAmendment(weekId, {
         sourceWeekVersion: Number(body.sourceWeekVersion),
@@ -353,20 +353,20 @@ async function handlePost(request: NextRequest) {
         handoff,
         weeks: await readWeeks(),
         blockers: await validateWeekAuthoritative(scopedSnapshot(saved, actor)),
-        publicationState: await publicationState(saved, oplocs),
+        publicationState: await readPublicationState(saved),
       });
     }
     if (action === "save-week") {
       const { action: _action, ...saveRequest } = body;
       const result = await saveWeekDraft(saveRequest, actor.uid, new Set(liveOplocs.map(oploc => oploc.canonicalId)), aliases, actorCanWriteOneOff(actor, "manage"), actorCanManageOrganisation(actor));
-      const snapshot = scopedSnapshot(normaliseRollingSnapshotDestinations(result.snapshot, readableOplocs), actor);
-      return respond({ snapshot, replayed: result.replayed, publicationState: await publicationState(snapshot, readableOplocs) });
+      const snapshot = normaliseRollingSnapshotDestinations(scopedSnapshot(result.snapshot, actor), readableOplocs);
+      return respond({ snapshot, replayed: result.replayed, publicationState: await readPublicationState(snapshot) });
     }
     if (action === "set-hospitality-availability") {
       requireOrganisationMutationActor(actor);
       const result = await setWeekAvailableToHospitality(String(body.weekId || ""), Number(body.expectedWeekVersion), body.available === true, actor.uid, mutationScope);
       const snapshot = await getWeek(result.week.id);
-      return respond({ snapshot: scopedSnapshot(snapshot, actor), weeks: await readWeeks(), changed: result.changed, publicationState: await publicationState(scopedSnapshot(snapshot, actor), readableOplocs) });
+      return respond({ snapshot: scopedSnapshot(snapshot, actor), weeks: await readWeeks(), changed: result.changed, publicationState: await readPublicationState(snapshot) });
     }
     if (action === "create-week") {
       requireOrganisationMutationActor(actor);
@@ -378,7 +378,7 @@ async function handlePost(request: NextRequest) {
         snapshot: await resolvedSnapshot(snapshot, undefined, actor),
         weeks: await readWeeks(),
         blockers: await validateWeekAuthoritative(scopedSnapshot(snapshot, actor)),
-        publicationState: await publicationState(snapshot, liveOplocs),
+        publicationState: await readPublicationState(snapshot),
       });
     }
     if (action === "duplicate-week") {
@@ -396,7 +396,7 @@ async function handlePost(request: NextRequest) {
         blockers: await validateWeekAuthoritative(scopedSnapshot(snapshot, actor), {
           governedOplocIds: new Set(liveOplocs.map((oploc) => oploc.canonicalId)),
         }),
-        publicationState: await publicationState(snapshot, liveOplocs),
+        publicationState: await readPublicationState(snapshot),
       });
     }
     if (action === "duplicate-plan") {
@@ -432,7 +432,7 @@ async function handlePost(request: NextRequest) {
         snapshot: await resolvedSnapshot(snapshot, undefined, actor),
         weeks: await readWeeks(),
         blockers: await validateWeekAuthoritative(scopedSnapshot(snapshot, actor)),
-        publicationState: await publicationState(snapshot, liveOplocs),
+        publicationState: await readPublicationState(snapshot),
       });
     }
     if (action === "update-entry") {
@@ -468,21 +468,14 @@ async function handlePost(request: NextRequest) {
         liveOplocs,
         entryScope,
       );
-      const saved = scopedSnapshot(
-        normaliseRollingSnapshotDestinations(
-          await getWeek(String(body.weekId)),
-          liveOplocs,
-        ),
-        actor,
-      );
+      const saved = scopedSnapshot(await getWeek(String(body.weekId)), actor);
       const catalogue = await listCatalogueEntriesForIds(
         saved.entries.map((entry) => entry.itemId || ""),
       );
       return respond({
         mutation: { ...mutation, week: visibleWeekSummary(mutation.week, actor) },
-        publicationState: await publicationState(
+        publicationState: await readPublicationState(
           saved,
-          liveOplocs,
           catalogue
             .map((entry) => entry.item)
             .filter((item): item is NonNullable<typeof item> => Boolean(item)),
@@ -504,7 +497,7 @@ async function handlePost(request: NextRequest) {
         snapshot: await resolvedSnapshot(snapshot, undefined, actor),
         weeks: await readWeeks(),
         blockers: await validateWeekAuthoritative(scopedSnapshot(snapshot, actor)),
-        publicationState: await publicationState(snapshot, liveOplocs),
+        publicationState: await readPublicationState(snapshot),
       });
     }
     if (action === "add-one-off-destination") {
@@ -520,7 +513,7 @@ async function handlePost(request: NextRequest) {
         snapshot: await resolvedSnapshot(snapshot, undefined, actor),
         weeks: await readWeeks(),
         blockers: await validateWeekAuthoritative(scopedSnapshot(snapshot, actor)),
-        publicationState: await publicationState(snapshot, liveOplocs),
+        publicationState: await readPublicationState(snapshot),
       });
     }
     if (action === "add-menu-slot") {
@@ -538,7 +531,7 @@ async function handlePost(request: NextRequest) {
         slot: result.slot,
         weeks: await readWeeks(),
         blockers: await validateWeekAuthoritative(scopedSnapshot(snapshot, actor)),
-        publicationState: await publicationState(snapshot, liveOplocs),
+        publicationState: await readPublicationState(snapshot),
       });
     }
     if (action === "remove-menu-slot") {
@@ -552,7 +545,7 @@ async function handlePost(request: NextRequest) {
         snapshot: await resolvedSnapshot(snapshot, undefined, actor),
         weeks: await readWeeks(),
         blockers: await validateWeekAuthoritative(scopedSnapshot(snapshot, actor)),
-        publicationState: await publicationState(snapshot, liveOplocs),
+        publicationState: await readPublicationState(snapshot),
       });
     }
     if (action === "clean-duplicate-entries") {
@@ -570,16 +563,13 @@ async function handlePost(request: NextRequest) {
         blockers: await validateWeekAuthoritative(scopedSnapshot(result.snapshot, actor), {
           governedOplocIds: new Set(liveOplocs.map((oploc) => oploc.canonicalId)),
         }),
-        publicationState: await publicationState(result.snapshot, liveOplocs),
+        publicationState: await readPublicationState(result.snapshot),
       });
     }
     if (action === "publish") {
       const requestedWeekId = String(body.weekId);
       const oplocs = liveOplocs.filter(oploc => actorCanWriteOploc(actor, oploc.canonicalId, "publish"));
-      const sourceSnapshot = normaliseRollingSnapshotDestinations(
-        await getWeek(requestedWeekId),
-        readableOplocs,
-      );
+      const sourceSnapshot = await getWeek(requestedWeekId);
       assertMenuSnapshotMutationScope(sourceSnapshot, actor, "publish", aliases);
       const publication = await createPublishedMenuWeek(
         requestedWeekId,
@@ -608,7 +598,7 @@ async function handlePost(request: NextRequest) {
         handoff,
         weeks: await readWeeks(),
         blockers: await validateWeekAuthoritative(scopedSnapshot(saved, actor)),
-        publicationState: await publicationState(saved, liveOplocs),
+        publicationState: await readPublicationState(saved),
       });
     }
     return NextResponse.json(

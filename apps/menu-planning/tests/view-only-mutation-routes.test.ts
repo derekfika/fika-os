@@ -128,6 +128,9 @@ test("historical published menus expose only allowed allocations and PAX with no
   assert.deepEqual(visible.days[0].entries.map(entry => [entry.sourceEntryId, entry.portions]), [["shared", 4]]);
   assert.notEqual(menuReadScopeKey(actor), menuReadScopeKey({ ...actor, oplocIds: [first, second] }));
   assert.notEqual(menuReadScopeKey(actor), menuReadScopeKey({ ...actor, allOplocs: true }));
+  const afterRedirect = { ...actor, oplocRedirects: {} };
+  assert.notEqual(menuReadScopeKey(actor), menuReadScopeKey(afterRedirect));
+  assert.deepEqual(scopeMenuPublication(publication, afterRedirect).days, []);
 });
 
 test("a scoped Manage session cannot write through a different site or an ungoverned one-off", () => {

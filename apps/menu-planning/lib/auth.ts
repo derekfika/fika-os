@@ -2,7 +2,6 @@ import type { NextRequest } from "next/server";
 import { createHash } from "node:crypto";
 import { menuPlanningHubBaseUrl } from "./hub-url";
 import type { MenuPublication } from "./menu-publication";
-import { oplocIdsMatch } from "./fika-contracts";
 
 export type MenuActor = {
   uid: string;
@@ -84,8 +83,7 @@ export function actorCanWriteOneOff(actor: MenuActor, action: "manage" | "publis
 export function actorCanAccessOploc(actor: MenuActor, oplocId?: string) {
   if (actor.allOplocs) return true;
   if (!oplocId) return false;
-  if (actor.oplocRedirects) return actor.oplocIds.includes(canonicalMenuOplocId(actor, oplocId));
-  return actor.oplocIds.some(allowed => oplocIdsMatch(allowed, oplocId));
+  return actor.oplocIds.includes(canonicalMenuOplocId(actor, oplocId));
 }
 
 function canonicalMenuOplocId(actor: MenuActor, id: string) {
@@ -93,7 +91,8 @@ function canonicalMenuOplocId(actor: MenuActor, id: string) {
 }
 
 export function menuReadScopeKey(actor: MenuActor) {
-  return createHash("sha256").update(JSON.stringify([actor.uid, actor.allOplocs, [...actor.oplocIds].sort()])).digest("base64url");
+  const redirects = Object.entries(actor.oplocRedirects || {}).sort(([left], [right]) => left.localeCompare(right));
+  return createHash("sha256").update(JSON.stringify([actor.uid, actor.allOplocs, [...actor.oplocIds].sort(), redirects])).digest("base64url");
 }
 
 export function assertActorCanAccessOploc(actor: MenuActor, oplocId?: string) {
