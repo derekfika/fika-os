@@ -199,6 +199,12 @@ test("staging commands are limited to synthetic draft actions before accessing s
   const state = await make.GET(new Request("https://menu-studio-staging.fikacatering.com/api/studio?dishId=dish-1&reviewVersion=1"));
   assert.equal(state.status, 200);
   assert.deepEqual(await state.json(), { status: "unavailable" });
+  for (const query of ["list=published-kitchen-dishes&menuId=menu-1&publicationId=pub-1",
+    "menuId=menu-1&publicationId=pub-1&kitchenDishId=dish-1"]) {
+    const response = await make.GET(new Request("https://menu-studio-staging.fikacatering.com/api/studio?" + query));
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), { code: "PUBLICATION_UNAVAILABLE", error: "Published kitchen specifications are unavailable." });
+  }
   for (const action of ["save-dish", "save-menu", "restore-draft", "review"]) assert.doesNotThrow(() => assertStudioDraftCommand(action));
   assert.throws(() => assertStudioDraftCommand("sign-allergens"), { code: "STUDIO_WRITE_DENIED" });
 });
