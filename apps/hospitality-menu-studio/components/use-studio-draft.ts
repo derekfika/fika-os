@@ -254,6 +254,7 @@ export function useDraft<T extends Entity>(
       if (timer.current) clearTimeout(timer.current);
       context.current++;
       generation.current++;
+      setRetainedAt(null);
       recoveredFrom.current = { key, value: raw };
       // New edits use an independent key, even if the selected copy changed.
       editor.current = crypto.randomUUID();
