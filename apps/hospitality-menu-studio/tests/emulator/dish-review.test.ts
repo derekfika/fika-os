@@ -9,6 +9,7 @@ import {
 } from "../../../shared/hospitality-menu-studio-safety";
 import type { Dish, Menu } from "../../lib/contract";
 import { studioHandlers } from "../../lib/http";
+import { assertStudioDraftCommand } from "../../lib/runtime";
 import { StudioStore } from "../../lib/store";
 
 test("Studio submits only a saved exact dish revision and verifies the CPU release header", async () => {
@@ -86,6 +87,51 @@ test("Studio submits only a saved exact dish revision and verifies the CPU relea
       body: JSON.stringify({ action: "review", menuId: menu.id, version: menu.version, effectiveDate: menu.startDate, scope: {} }) }));
     assert.equal(review.status, 200);
     assert.deepEqual((await review.json()).safety, { status: "unverified" });
+  } finally {
+    await deleteApp(app);
+  }
+});
+
+test("the staged transport submits only archived dish revisions without writing a review in the Studio store", async () => {
+  assert.match(process.env.FIRESTORE_EMULATOR_HOST || "", /^(127\.0\.0\.1|localhost):\d+$/);
+  const app = initializeApp({ projectId: "demo-fika-os" }, randomUUID());
+  const db = getFirestore(app);
+  const store = new StudioStore(db);
+  const url = "https://menu-studio-staging.fikacatering.com/api/studio";
+  const actor = { id: "synthetic-author", name: "Fixture author", canManage: true, canPublish: false };
+  let submission: StudioDishReviewRequest | undefined;
+  const transport = {
+    async submit(request: StudioDishReviewRequest) {
+      submission = request;
+      return { subject: request.subject };
+    },
+    async status(subject: StudioDishSafetyFence["subject"]) {
+      assert.deepEqual(subject, submission?.subject);
+      return { status: "in_review" as const };
+    },
+  };
+  const route = (canManage: boolean) => studioHandlers(async () => ({ ...actor, canManage }), () => store, () => {},
+    undefined, command => assertStudioDraftCommand(command.action, true), undefined, undefined, () => transport);
+  const dish: Dish = { id: randomUUID(), version: 0, name: "Synthetic dish", category: "other", temperature: null,
+    customerDescription: "Customer description", kitchenDescription: "Saved kitchen instructions", assortment: null, updatedAt: "" };
+  const submit = (version: number, canManage = true) => route(canManage).POST(new Request(url, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ action: "submit-dish-review", dishId: dish.id, version, confirmed: true }),
+  }));
+  try {
+    const saved = await store.save("dishes", actor.id, dish);
+    assert.equal((await submit(saved.version, false)).status, 403);
+    assert.equal((await submit(saved.version + 1)).status, 409);
+    assert.equal(submission, undefined);
+    const response = await submit(saved.version);
+    assert.equal(response.status, 200);
+    const { subject } = await response.json();
+    assert.equal(subject.revision, saved.version);
+    assert.equal(submission!.dish.kitchenDescription, saved.kitchenDescription);
+    assert.equal(submission!.requestedBy, actor.id);
+    assert.equal((await db.collection(studioDishReviewRequests).doc(studioDishReviewKey(dish.id, saved.version)).get()).exists, false);
+    const status = await route(false).GET(new Request(`${url}?dishId=${dish.id}&reviewVersion=${saved.version}`));
+    assert.deepEqual(await status.json(), { status: "in_review" });
   } finally {
     await deleteApp(app);
   }

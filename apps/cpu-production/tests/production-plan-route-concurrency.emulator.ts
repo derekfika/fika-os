@@ -1105,6 +1105,7 @@ test("Studio pre-booking allergen checker signs exact reviewed evidence and atom
   } = await import("../../shared/hospitality-menu-studio-safety");
   const { db } = await import("../lib/firebase-admin");
   const { GET, POST } = await import("../app/api/studio-dish-review/[dishId]/[revision]/route");
+  const { StudioDishReviewStore } = await import("../lib/studio-dish-review");
   const dish = {
     id: randomUUID(), version: 1, name: "Synthetic pastry box", category: "other", temperature: null,
     kitchenDescription: "Pack both components.", customerDescription: "Pastry box",
@@ -1119,7 +1120,18 @@ test("Studio pre-booking allergen checker signs exact reviewed evidence and atom
   const fence = db.collection(studioDishSafetyFences).doc(key);
   const release = head.collection("releases").doc("1");
   const productionBefore = await snapshotEvidence(db, dish.id);
-  await source.create({ contract: "hospitality-menu-studio.dish-review-request.v1", subject, dish, requestedAt: new Date().toISOString(), requestedBy: "synthetic-author" });
+  const store = new StudioDishReviewStore(db);
+  const request = { contract: "hospitality-menu-studio.dish-review-request.v1", subject, dish,
+    requestedAt: new Date().toISOString(), requestedBy: "synthetic-author" } as const;
+  assert.deepEqual(await store.readiness(subject), { subject, status: "unverified" });
+  assert.deepEqual(await store.register(request), { subject });
+  assert.deepEqual(await store.register({ ...request, requestedBy: "test-retry" }), { subject });
+  assert.equal((await source.get()).get("requestedBy"), request.requestedBy);
+  const changedDish = { ...dish, kitchenDescription: "Different content for the same version." };
+  await assert.rejects(store.register({ ...request, dish: changedDish, subject: studioDishReviewSubject(changedDish) }),
+    { code: "CPU_STUDIO_SOURCE_CONFLICT" });
+  await assert.rejects(store.readiness(studioDishReviewSubject(changedDish)), { code: "CPU_STUDIO_REVIEW_INTEGRITY" });
+  assert.deepEqual(await store.readiness(subject), { subject, status: "in_review" });
   const restoreFetch = globalThis.fetch;
   globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
     assert.match(String(input), /^http:\/\/(?:127\.0\.0\.1|localhost):\d+\/api\/cpu-production\/access$/);
@@ -1177,10 +1189,22 @@ test("Studio pre-booking allergen checker signs exact reviewed evidence and atom
     const savedRelease = (await release.get()).data()!;
     assert.equal(matchesStudioDishRelease(savedRelease as never, (await fence.get()).data() as never), true);
     assert.ok(!JSON.stringify(signed).includes("signatureDataUrl"));
+    const readiness = await store.readiness(subject);
+    assert.equal(readiness.status, "verified");
+    assert.equal(readiness.fence?.releaseId, savedRelease.releaseId);
+    assert.doesNotMatch(JSON.stringify(readiness), /signatureDataUrl|kitchenDescription|first-chef|second-chef/);
+    const eventRef = head.collection("events").doc(second.commandId);
+    const signingEvent = (await eventRef.get()).data()!;
+    await eventRef.update({ signatureHash: "0".repeat(64) });
+    await assert.rejects(store.readiness(subject), { code: "CPU_STUDIO_REVIEW_INTEGRITY" });
+    await eventRef.set({ ...signingEvent, signatureDataUrl: "data:image/png;base64,iVBORw0KGgoAAAA=" });
+    await assert.rejects(store.readiness(subject), { code: "CPU_STUDIO_REVIEW_INTEGRITY" });
+    await eventRef.set(signingEvent);
     const revoked = await reviewed(await post("second-chef", input({ action: "reopen", reason: "Review revised supplier declaration." }, 4)));
     assert.equal(revoked.status, "revoked");
     assert.equal(revoked.checked, false);
     assert.equal((await fence.get()).data()?.status, "revoked");
+    assert.equal((await store.readiness(subject)).status, "revoked");
     assert.deepEqual((await release.get()).data(), savedRelease);
     assert.equal((await reviewed(await post("second-chef", second))).status, "revoked");
     assert.deepEqual(await snapshotEvidence(db, dish.id), productionBefore);

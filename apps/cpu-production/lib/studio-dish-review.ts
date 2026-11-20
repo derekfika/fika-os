@@ -3,8 +3,10 @@ import type { Firestore } from "firebase-admin/firestore";
 import { z } from "zod";
 import { CANONICAL_ALLERGEN_KEYS } from "../../shared/allergen-contract";
 import {
-  sameStudioDishReviewSubject, studioDishReviewKey, studioDishReviewRecords, studioDishReviewRequests, studioDishReviewSubject, studioDishSafetyFences,
-  studioDishSignatureRoles, validStudioDishSafetyFence, type StudioDishReleaseSignature, type StudioDishReviewRequest, type StudioDishSafetyFence,
+  matchesStudioDishRelease, matchesStudioDishSignatureEvent, sameStudioDishReviewSubject,
+  studioDishReleaseVersion, studioDishReviewKey, studioDishReviewRecords, studioDishReviewRequests, studioDishReviewSubject, studioDishSafetyFences,
+  studioDishSignatureRoles, validStudioDishSafetyFence, type StudioDishReleaseHeader, type StudioDishReleaseSignature,
+  type StudioDishReviewRequest, type StudioDishReviewSubject, type StudioDishSafetyFence,
 } from "../../shared/hospitality-menu-studio-safety";
 import { explicitReviewMatches, PENDING_DECLARATION } from "../app/lib/allergen-explicit";
 import { stampAllergenReviews } from "../app/lib/allergen-review-stamp";
@@ -36,9 +38,10 @@ type Signature = StudioDishReleaseSignature;
 type ReviewState = { version: number; menuItems: PlannedMenuItem[]; signatures: Signature[]; lastReleaseVersion: number };
 type AuditEvent = { commandHash: string; actorId: string; at: string; version: number; action: string };
 
-const sourceSchema = z.object({
+export const studioDishReviewSubjectSchema = z.strictObject({ dishId: studioDishId, revision: studioDishRevision, sourceHash: digest });
+export const studioDishReviewRequestSchema = z.object({
   contract: z.literal("hospitality-menu-studio.dish-review-request.v1"),
-  subject: z.object({ dishId: studioDishId, revision: studioDishRevision, sourceHash: digest }),
+  subject: studioDishReviewSubjectSchema,
   dish: z.object({
     id: studioDishId, version: studioDishRevision, name: z.string().trim().min(1).max(200), category: z.string().min(1),
     temperature: z.enum(["hot", "cold"]).nullable(), customerDescription: z.string().max(4000), kitchenDescription: z.string().trim().min(1).max(12000),
@@ -50,6 +53,53 @@ const sourceSchema = z.object({
 
 export class StudioDishReviewStore {
   constructor(private readonly db: Firestore, private readonly now = () => new Date()) {}
+
+  async register(request: StudioDishReviewRequest) {
+    const { dishId, revision } = request.subject;
+    const incoming = reviewSource(request, dishId, revision);
+    const refs = this.refs(dishId, revision);
+    return this.db.runTransaction(async transaction => {
+      const existing = await transaction.get(refs.source);
+      if (!existing.exists) transaction.create(refs.source, incoming);
+      else if (!sameStudioDishReviewSubject(reviewSource(existing.data(), dishId, revision).subject, incoming.subject)) {
+        throw reviewProblem(409, "CPU_STUDIO_SOURCE_CONFLICT", "A different source is already registered for this dish revision.");
+      }
+      return { subject: incoming.subject };
+    });
+  }
+
+  async readiness(subject: StudioDishReviewSubject) {
+    const refs = this.refs(subject.dishId, subject.revision);
+    return this.db.runTransaction(async transaction => {
+      const [source, current] = await transaction.getAll(refs.source, refs.fence);
+      if (!source.exists) {
+        if (current.exists) throw integrityProblem();
+        return { subject, status: "unverified" as const };
+      }
+      const request = reviewSource(source.data(), subject.dishId, subject.revision);
+      if (!sameStudioDishReviewSubject(request.subject, subject)) throw integrityProblem();
+      const fence = decodeFence(current.data(), request);
+      if (!fence) return { subject, status: "in_review" as const };
+      const { contract, status, releaseId, matrixHash, changedAt } = fence;
+      const publicFence: StudioDishSafetyFence = { contract, subject, status, releaseId, matrixHash, changedAt };
+      if (status === "revoked") return { subject, status: "revoked" as const, fence: publicFence };
+      const releaseRef = refs.head.collection("releases").doc(studioDishReleaseVersion(fence));
+      const [savedRelease] = await transaction.getAll(releaseRef, {
+        fieldMask: ["contract", "subject", "status", "releaseId", "matrixHash", "changedAt", "signatures"],
+      });
+      const release = savedRelease.data() as StudioDishReleaseHeader | undefined;
+      if (!release || !matchesStudioDishRelease(release, fence)) throw integrityProblem();
+      const events = await transaction.getAll(...release.signatures.map(signature => refs.head.collection("events").doc(signature.eventId)), {
+        fieldMask: ["action", "source", "role", "actorId", "eventId", "signedAt", "matrixHash", "sourceHash", "signatureHash", "signatureDataUrl"],
+      });
+      if (!release.signatures.every((signature, index) => {
+        const event = events[index].data() as (NonNullable<Parameters<typeof matchesStudioDishSignatureEvent>[0]> & { signatureDataUrl?: string }) | undefined;
+        const image = png.safeParse(event?.signatureDataUrl);
+        return matchesStudioDishSignatureEvent(event, signature) && image.success && sha256(image.data) === signature.signatureHash;
+      })) throw integrityProblem();
+      return { subject, status: "verified" as const, fence: publicFence };
+    }, { readOnly: true });
+  }
 
   async read(dishId: string, revision: number) {
     const refs = this.refs(dishId, revision);
@@ -134,7 +184,7 @@ export type StudioDishReviewView = ReturnType<typeof reviewView>;
 
 function reviewSource(value: unknown, dishId: string, revision: number): StudioDishReviewRequest {
   if (!value) throw reviewProblem(404, "CPU_STUDIO_REVIEW_MISSING", "This Studio dish revision has not been sent to the allergen checker.");
-  const parsed = sourceSchema.safeParse(value);
+  const parsed = studioDishReviewRequestSchema.safeParse(value);
   if (!parsed.success || !sameStudioDishReviewSubject(parsed.data.subject, studioDishReviewSubject(parsed.data.dish))
     || parsed.data.subject.dishId !== dishId || parsed.data.subject.revision !== revision) throw integrityProblem();
   const assortment = parsed.data.dish.assortment;

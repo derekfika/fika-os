@@ -37,10 +37,15 @@ export function studioRuntime(env = process.env) {
   return { ...config, ...stage, writes: true, fixture: false };
 }
 
-export function assertStudioDraftCommand(action: string) {
+export function assertStudioDraftCommand(action: string, stagedReview = false) {
+  if (stagedReview && action === "submit-dish-review") return;
   if (!["save-dish", "save-menu", "restore-draft", "review"].includes(action)) {
     throw new StudioProblem(403, "STUDIO_WRITE_DENIED", "Studio staging only permits draft authoring.");
   }
+}
+
+export function stagedStudioSafetyAvailable(env = process.env) {
+  return studioRuntime(env).mode === "staging" && env.FIKA_STUDIO_CPU_REVIEW_ENABLED === "true";
 }
 
 export function localStudioSafetyAvailable(env = process.env) {
