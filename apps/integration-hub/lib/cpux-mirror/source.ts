@@ -2,6 +2,10 @@ import { TIME_ZONE, londonTimestamp, type MirrorDetails, type MirrorSource } fro
 import type { CanonicalBooking } from "../hospitality-booking-service";
 import type { ProductionOrder } from "../production-domain";
 
+export class HospitalityMirrorSourceError extends Error {
+  constructor(readonly code: string, message: string) { super(message); }
+}
+
 const cpu = new Set(["sandwiches", "hospitality", "delivered_in"]);
 
 export function hasRecordedHospitalityHandoff(booking: CanonicalBooking) {
@@ -17,7 +21,7 @@ export function hasCurrentHospitalityHandoff(booking: CanonicalBooking) {
   return (booking.lifecycleStatus === "Sent to CPU" || booking.lifecycleStatus === "Completed") && hasRecordedHospitalityHandoff(booking);
 }
 
-export function hospitalityMirrorSource(booking: CanonicalBooking, order: ProductionOrder | undefined) {
+export function hospitalityMirrorSource(booking: CanonicalBooking, order: ProductionOrder | undefined, readOnly = false) {
   if (!hasRecordedHospitalityHandoff(booking)) return undefined;
   if (order && (order.origin !== "hospitality_booking" || order.sourceBookingId !== booking.canonicalId))
     throw new Error("The Production Order does not belong to this Hospitality booking.");
@@ -36,14 +40,15 @@ export function hospitalityMirrorSource(booking: CanonicalBooking, order: Produc
   if (!lines.length) return { site, source: { ...source, withdrawn: true } };
   if (lines.some(line => !line.canonicalId?.trim() || !line.sourceBookingLineId?.trim() || !line.itemName?.trim() ||
     typeof line.customerQuantity !== "number" || !Number.isFinite(line.customerQuantity) || line.customerQuantity <= 0 || !line.customerUnit?.trim()))
-    throw new Error("CPU customer quantities, units, or line identities are unresolved.");
+    throw new HospitalityMirrorSourceError("MIRROR_ORDER_LINES_UNRESOLVED", "CPU customer quantities, units, or line identities are unresolved.");
   const quote = booking.quoteState?.revisions.find(item => item.id === booking.quoteState?.currentRevisionId);
   const priorQuote = booking.quoteState?.revisions.find(item => item.id === order.sourceQuoteRevisionId);
   // Completed bookings can refresh charges without replacing the CPU order. Menu changes reopen the booking.
   const commercialRefresh = booking.lifecycleStatus === "Completed" && Boolean(priorQuote);
-  if (!quote || quote.stale || (quote.commercialVersion !== undefined && quote.commercialVersion !== (booking.commercialVersion || 1)) ||
-    (quote.id !== order.sourceQuoteRevisionId && !commercialRefresh) || quote.pdfStatus !== "saved" || !quote.driveFileId)
-    throw new Error("The current approved quote PDF is missing or does not match the CPU handoff.");
+  const fileId = quote && !quote.stale && (quote.commercialVersion === undefined || quote.commercialVersion === (booking.commercialVersion || 1)) &&
+    (quote.id === order.sourceQuoteRevisionId || commercialRefresh) && quote.pdfStatus === "saved" ? quote.driveFileId : undefined;
+  if (!fileId && !readOnly)
+    throw new HospitalityMirrorSourceError("MIRROR_QUOTE_UNREADY", "The current approved quote PDF is missing or does not match the CPU handoff.");
 
   const service = booking.service;
   if (order.serviceDate !== service.eventDate || order.destinationOplocId !== site) throw new Error("The current order does not match the booking service date and destination.");
@@ -66,5 +71,5 @@ export function hospitalityMirrorSource(booking: CanonicalBooking, order: Produc
     ].join("\n"),
     location, start: { dateTime: start, timeZone: TIME_ZONE }, end: { dateTime: end, timeZone: TIME_ZONE },
   };
-  return { source, site, details, fileId: quote.driveFileId };
+  return { source, site, details, fileId };
 }

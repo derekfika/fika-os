@@ -8,7 +8,7 @@ import type { ProductionOrder } from "../production-domain";
 import { RCOA_HOSPITALITY_OPLOC_ID } from "../booking-email-site-identities";
 import { mirrorEnabled } from "../../../shared/cpux-calendar/google";
 import { inspectMirrorOplocs } from "./oplocs";
-import { dueHospitalityMirrorQuery } from "./outbox-query";
+import { dueHospitalityMirrorQuery, hospitalityMirrorOutboxStatus } from "./outbox-query";
 import { outboxInventoryRead } from "./outbox-inventory-errors";
 
 export const HOSPITALITY_MIRROR_SCHEDULER_BATCH_LIMIT = 3;
@@ -30,7 +30,10 @@ export function classifyHospitalityMirrorOutboxRecord(documentId: string, rawVal
   const attempts = typeof delivery?.attempts === "number" && Number.isInteger(delivery.attempts) && delivery.attempts >= 0 ? delivery.attempts : null;
   const topLevelNextEligibleAt = raw?.nextEligibleAt;
   const queryTimeValid = safeTimestamp(topLevelNextEligibleAt);
-  const workerQueryDue = queryTimeValid && (topLevelNextEligibleAt as string) <= asOf;
+  const live = objectValue(payload?.cpuProjection) !== null;
+  const expectedOutboxStatus = status ? hospitalityMirrorOutboxStatus(status, live) : null;
+  const workerQueryDue = live && (status === "pending" || status === "failed") &&
+    raw?.outboxStatus === expectedOutboxStatus && queryTimeValid && (topLevelNextEligibleAt as string) <= asOf;
   let leaseState: "none" | "active" | "expired" | "legacy-active" | "invalid" = "none";
   if (delivery?.leaseExpiresAt !== undefined) {
     leaseState = safeTimestamp(delivery.leaseExpiresAt)
@@ -57,7 +60,7 @@ export function classifyHospitalityMirrorOutboxRecord(documentId: string, rawVal
   if (!safeId(payload?.bookingId)) anomalies.push("booking-id-missing-or-invalid");
   if (!safeId(payload?.orderId)) anomalies.push("order-id-missing-or-invalid");
   if (!DELIVERY_STATES.has(status || "")) anomalies.push("delivery-status-invalid");
-  if (raw?.outboxStatus !== undefined && raw.outboxStatus !== status) anomalies.push("delivery-outbox-status-mismatch");
+  if (raw?.outboxStatus !== undefined && raw.outboxStatus !== expectedOutboxStatus) anomalies.push("delivery-outbox-status-mismatch");
   if (attempts === null) anomalies.push("attempt-count-invalid");
   if (topLevelNextEligibleAt !== undefined && !queryTimeValid) anomalies.push("next-eligible-time-invalid");
   if (delivery?.leaseExpiresAt !== undefined && leaseState === "invalid") anomalies.push("lease-expiry-invalid");
@@ -76,7 +79,9 @@ export function classifyHospitalityMirrorOutboxRecord(documentId: string, rawVal
     orderId: safeId(payload?.orderId) ? payload!.orderId as string : null,
     persistedStatus: status,
     outboxStatus: typeof raw?.outboxStatus === "string" ? raw.outboxStatus : null,
-    statusConsistent: raw?.outboxStatus === undefined || raw.outboxStatus === status,
+    statusConsistent: raw?.outboxStatus === undefined || raw.outboxStatus === expectedOutboxStatus,
+    live,
+    calendarDisposition: typeof raw?.calendarDisposition === "string" ? raw.calendarDisposition : null,
     attempts,
     nextEligibleAt: safeTimestamp(topLevelNextEligibleAt) ? topLevelNextEligibleAt : null,
     nestedNextEligibleAt: safeTimestamp(delivery?.nextEligibleAt) ? delivery!.nextEligibleAt : null,
@@ -226,7 +231,7 @@ export async function readHospitalityMirrorOutboxInventory(input: OutboxInventor
       deliveryEnabled,
       wouldRunIfSchedulerResumed: deliveryEnabled && schedulerCandidates.length > 0,
       batchLimit: HOSPITALITY_MIRROR_SCHEDULER_BATCH_LIMIT,
-      query: "nextEligibleAt <= asOf ordered by nextEligibleAt, then eventIsDue rechecked before claim",
+      query: "live pending or failed with nextEligibleAt <= asOf, then eventIsDue rechecked before claim",
       candidates: schedulerCandidates.map(row => ({
         ...row,
         schedulerWillAttemptIfResumed: deliveryEnabled && row.wouldBeClaimedIfUnchanged,
