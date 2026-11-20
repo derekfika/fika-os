@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   londonDate,
   rotationWeek,
@@ -17,6 +17,10 @@ import {
   title,
 } from "./studio-ui";
 import styles from "./studio.module.css";
+import {
+  presentReviewIssues,
+  type ReviewIssueTarget,
+} from "./studio-review-model";
 
 type Site = { id: string; name: string };
 export type SitePreview = {
@@ -45,6 +49,7 @@ export function CustomerPreview({
   sitePreview,
   notice,
   back,
+  openMapping,
 }: {
   menu: Menu;
   dishes: Dish[];
@@ -62,12 +67,17 @@ export function CustomerPreview({
   sitePreview: SitePreview | null;
   notice: string;
   back: () => void;
+  openMapping: (sectionId: string) => void;
 }) {
   const [screen, setScreen] = useState<"web" | "mobile">("web");
   const [sectionId, setSectionId] = useState(initialSection);
   const [category, setCategory] = useState("all");
   const section =
     menu.sections.find((item) => item.id === sectionId) || menu.sections[0];
+  const hasMappings = menu.sections.some((item) => item.catalogueItemId);
+  const missingMapping =
+    (section && !section.catalogueItemId ? section : undefined) ||
+    menu.sections.find((item) => !item.catalogueItemId);
   const ids =
     valid && section
       ? section.mode === "rotation"
@@ -96,7 +106,7 @@ export function CustomerPreview({
             <span>Preview</span>
           </Breadcrumb>
         }
-        context={<p>Review the customer-facing copy for an event date.</p>}
+        context={<p>This draft shows customer-facing menu content for an event date. It does not confirm customer availability or make the menu bookable.</p>}
       >
         <div
           className={styles.segmented}
@@ -150,12 +160,31 @@ export function CustomerPreview({
           </label>
         )}
         <Button
-          disabled={busy || !siteId || !valid || !saved}
+          disabled={busy || !siteId || !valid || !saved || !hasMappings}
           onClick={checkSite}
         >
-          Check site eligibility
+          Check site offerings
         </Button>
       </div>
+      <p className="fika-help">
+        Site checks use linked Hub catalogue items for the selected site and event date. Save the draft before checking.
+      </p>
+      {!hasMappings && (
+        <div className="fika-notice">
+          <p>No sections are linked to Hub catalogue items, so there are no offerings to check.</p>
+          {missingMapping ? (
+            <Button onClick={() => openMapping(missingMapping.id)}>
+              Set up mapping for {missingMapping.name || "Untitled section"}
+            </Button>
+          ) : (
+            <Button onClick={back}>Go to menu overview</Button>
+          )}
+        </div>
+      )}
+      {busy && <p role="status">Loading catalogue information…</p>}
+      {hasMappings && !busy && !sitePreview && !notice && (
+        <p className="fika-help">Select a site to check its linked offerings.</p>
+      )}
       {notice && (
         <p role="status" className="fika-notice">
           {notice}
@@ -253,16 +282,11 @@ export function CustomerPreview({
           </p>
         )}
       </div>
-      <p className="fika-help">
-        Drafts show menu content only. Hub checks prices, choice rules and
-        booking eligibility.
-      </p>
       {sitePreview && (
         <section className={styles.panelBody}>
-          <h2>Site eligibility result</h2>
-          <p>Parent offering visibility for this site and date.</p>
+          <h2>Site offerings check</h2>
           {!sitePreview.items.length && (
-            <p>No parent offerings were returned.</p>
+            <p>No linked offerings are visible for this site and date. Try another site or date, or review the section mappings.</p>
           )}
           {sitePreview.items.map((item) => (
             <div key={item.id}>
@@ -298,6 +322,7 @@ type ReviewProps = {
   check: () => void;
   publish: () => void;
   impact: () => void;
+  editIssue: (target: ReviewIssueTarget) => void;
 };
 
 export function PublicationReview({
@@ -318,8 +343,14 @@ export function PublicationReview({
   check,
   publish,
   impact,
+  editIssue,
 }: ReviewProps) {
   const today = londonDate();
+  const issueDetails = useRef<HTMLDetailsElement>(null);
+  const presented = result ? presentReviewIssues(result, menu, dishes) : null;
+  const hasDraftIssues = Boolean(
+    presented && (presented.editable.length || presented.other.length),
+  );
   const [schedule, setSchedule] = useState(!date || date !== today);
   const approved = Boolean(
     result?.canPublish &&
@@ -360,29 +391,54 @@ export function PublicationReview({
           />
           <strong>Allergen verification</strong>
           <span>
-            {result?.safety.status === "verified"
-              ? "Verified by the existing safety process"
-              : "Signed verification is unavailable"}
+            {!result
+              ? "Run checks for this draft"
+              : result.safety.status === "verified"
+                ? "Verified by the existing safety process"
+                : result.safety.status === "unverified"
+                  ? "Signed verification has not been confirmed"
+                  : "Signed verification is unavailable"}
           </span>
           <Pill
             tone={result?.safety.status === "verified" ? "success" : "warning"}
           >
-            {result?.safety.status === "verified" ? "Verified" : "Blocked"}
+            {!result
+              ? "Pending"
+              : result.safety.status === "verified"
+                ? "Verified"
+                : "Blocked"}
           </Pill>
         </div>
         <div className={styles.checkRow}>
-          <Icon name={result && !result.issues.length ? "check" : "warning"} />
-          <strong>Menu completeness</strong>
+          <Icon name={result && !hasDraftIssues ? "check" : "warning"} />
+          <strong>Draft details</strong>
           <span>
-            {result
-              ? result.issues.length
-                ? result.issues.length + " checks need attention"
-                : "Required draft details present"
-              : "Run checks for this draft"}
+            {!presented
+              ? "Run checks for this draft"
+              : hasDraftIssues
+                ? presented.editable.length +
+                  presented.other.length +
+                  " items need attention"
+                : "No draft detail issues reported"}
           </span>
-          <Pill tone={result && !result.issues.length ? "success" : "neutral"}>
-            {result && !result.issues.length ? "Complete" : "Pending"}
-          </Pill>
+          {hasDraftIssues ? (
+            <button
+              type="button"
+              className={styles.textAction}
+              onClick={() => {
+                if (issueDetails.current) {
+                  issueDetails.current.open = true;
+                  issueDetails.current.querySelector("summary")?.focus();
+                }
+              }}
+            >
+              View details <Icon name="forward" />
+            </button>
+          ) : (
+            <Pill tone={result ? "success" : "neutral"}>
+              {result ? "Checked" : "Pending"}
+            </Pill>
+          )}
         </div>
         <div className={styles.checkRow}>
           <Icon name="calendar" />
@@ -509,14 +565,55 @@ export function PublicationReview({
           <p>Existing bookings keep their original specifications.</p>
         </section>
       </div>
-      {result?.issues.length ? (
-        <details className={styles.disclosure}>
-          <summary>Review issues ({result.issues.length})</summary>
-          <ul>
-            {result.issues.map((issue, index) => (
-              <li key={index}>{issue}</li>
-            ))}
-          </ul>
+      {presented && (hasDraftIssues || presented.authoritiesUnavailable) ? (
+        <details className={styles.disclosure} ref={issueDetails}>
+          <summary>Review details</summary>
+          {presented.editable.length > 0 && (
+            <>
+              <h2>Draft details to check</h2>
+              <ul>
+                {presented.editable.map((issue, index) => (
+                  <li key={index}>
+                    {issue.text}{" "}
+                    {issue.target && (
+                      <button
+                        type="button"
+                        className={styles.textAction}
+                        onClick={() => editIssue(issue.target!)}
+                      >
+                        {issue.target.kind === "dish"
+                          ? "Edit dish"
+                          : issue.target.kind === "section"
+                            ? "Edit section"
+                            : "Open menu"}
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          {presented.other.length > 0 && (
+            <>
+              <h2>Other checks</h2>
+              <ul>
+                {presented.other.map((issue, index) => (
+                  <li key={index}>{issue}</li>
+                ))}
+              </ul>
+            </>
+          )}
+          {presented.authoritiesUnavailable && (
+            <>
+              <h2>Checks not available yet</h2>
+              <p>
+                Food-safety sign-off, customer availability and the booking
+                impact check are not available here yet. Your menu is still a
+                draft. Continue editing and return to these checks when they
+                become available.
+              </p>
+            </>
+          )}
         </details>
       ) : null}
       {notice && <p role="status">{notice}</p>}
@@ -573,7 +670,7 @@ export function BookingImpact({
         <p>
           {available
             ? "The current impact check is advisory."
-            : "The number of affected bookings is unknown. An authoritative impact check is required."}
+            : "The number of affected bookings is unknown. The booking check is not available yet. Continue editing your draft and return to this check when it becomes available."}
         </p>
       </div>
       {available && available.length > 0 && (

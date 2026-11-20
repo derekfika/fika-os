@@ -2,6 +2,7 @@ import { useState } from "react";
 import { categories, type Dish, type Menu } from "../lib/contract";
 import { assortmentIsComplete, type kitchenQuantities } from "../lib/review";
 import { assortmentTotal } from "./studio-model";
+import { assortmentProgress } from "./studio-review-model";
 import {
   Breadcrumb,
   Button,
@@ -410,8 +411,17 @@ export function AssortmentBuilder({
               {valid ? "Assortment totals match" : "Assortment needs attention"}
             </strong>
             <br />
-            Total per box: {total} of {assortment.expectedTotal}{" "}
-            {assortment.unit}
+            {assortmentProgress(
+              total,
+              assortment.expectedTotal,
+              assortment.unit,
+            )}
+            {!valid && (
+              <p>
+                Complete the box details before publishing. Your draft can still
+                be saved.
+              </p>
+            )}
           </div>
         </section>
         <section>
