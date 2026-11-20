@@ -22,6 +22,7 @@ export function DishCollection({
   canManage,
   create,
   edit,
+  backToSection,
   loadMore,
   busy,
   error,
@@ -31,6 +32,7 @@ export function DishCollection({
   canManage: boolean;
   create: () => void;
   edit: (dish: Dish) => void;
+  backToSection?: () => void;
   loadMore?: () => void;
   busy: boolean;
   error: string;
@@ -64,6 +66,17 @@ export function DishCollection({
     <>
       <PageHeading
         title="Dish collection"
+        eyebrow={
+          backToSection && (
+            <Breadcrumb>
+              <button type="button" onClick={backToSection}>
+                Section editor
+              </button>
+              <span>/</span>
+              <span>Dish collection</span>
+            </Breadcrumb>
+          )
+        }
         context={<p>Your reusable Hospitality dishes</p>}
       >
         <Button primary onClick={create} disabled={!canManage}>

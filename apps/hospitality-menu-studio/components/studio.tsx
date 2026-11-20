@@ -74,6 +74,7 @@ export default function Studio({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [sectionId, setSectionId] = useState("");
+  const [newSectionId, setNewSectionId] = useState("");
   const [week, setWeek] = useState(0);
   const [createKind, setCreateKind] = useState<Menu["kind"] | null>(null);
   const [dishBackToSection, setDishBackToSection] = useState(false);
@@ -133,10 +134,10 @@ export default function Studio({
   const anchor = calendarDay(menu?.anchorMonday || "");
   const previewValid = Boolean(
     menu &&
-    day >= calendarDay(menu.startDate) &&
-    day <= calendarDay(menu.endDate) &&
-    (!menu.sections.some((item) => item.mode === "rotation") ||
-      (Number.isFinite(anchor) && new Date(anchor).getUTCDay() === 1)),
+      day >= calendarDay(menu.startDate) &&
+      day <= calendarDay(menu.endDate) &&
+      (!menu.sections.some((item) => item.mode === "rotation") ||
+        (Number.isFinite(anchor) && new Date(anchor).getUTCDay() === 1)),
   );
   const kitchenCollection =
     page === "kitchen" &&
@@ -275,6 +276,7 @@ export default function Studio({
     setPage("menus");
   }
   function openSection(id: string) {
+    setNewSectionId("");
     setSectionId(id);
     setMappingSectionId("");
     setWeek(0);
@@ -333,6 +335,7 @@ export default function Studio({
       ],
     }));
     openSection(id);
+    setNewSectionId(id);
   }
   function openDish(item: Dish, fromSection = false) {
     dishDraft.open(item);
@@ -340,18 +343,21 @@ export default function Studio({
     setActionError("");
     setPage("dishes");
   }
-  function newDish() {
-    openDish({
-      id: crypto.randomUUID(),
-      version: 0,
-      name: "",
-      category: "other",
-      temperature: null,
-      customerDescription: "",
-      kitchenDescription: "",
-      assortment: null,
-      updatedAt: "",
-    });
+  function newDish(fromSection = false) {
+    openDish(
+      {
+        id: crypto.randomUUID(),
+        version: 0,
+        name: "",
+        category: "other",
+        temperature: null,
+        customerDescription: "",
+        kitchenDescription: "",
+        assortment: null,
+        updatedAt: "",
+      },
+      fromSection,
+    );
   }
   function showKitchen(from: "dishes" | "assortment" | "activation") {
     setKitchenReturn(from);
@@ -811,48 +817,64 @@ export default function Studio({
                 />
               </>
             )}
-            {page === "menus" && menu && section && (
-              <SectionEditor
-                key={section.id}
-                menu={menu}
-                section={section}
-                dishes={dishes}
-                selected={selected}
-                week={week}
-                setWeek={setWeek}
-                save={menuSave}
-                canManage={actor.canManage}
-                update={reviseSection}
-                updateSelected={updateSelected}
-                remove={() => {
-                  menuDraft.change((item) => ({
-                    ...item,
-                    sections: item.sections.filter(
-                      (row) => row.id !== sectionId,
-                    ),
-                  }));
-                  setSectionId("");
-                }}
-                back={() => setSectionId("")}
-                preview={showPreview}
-                editDish={(item) => openDish(item, true)}
-                loadMore={
-                  dishCursor ? () => void loadMore("dishes") : undefined
-                }
-                catalogue={catalogueItems}
-                loadCatalogue={() => void loadSites()}
-                catalogueNotice={previewMessage}
-                openSettings={mappingSectionId === section.id}
-                busy={actionBusy}
-              />
-            )}
+            {menu &&
+              section &&
+              (page === "menus" ||
+                (page === "dishes" && dishBackToSection)) && (
+                <div hidden={page !== "menus"}>
+                  <SectionEditor
+                    key={section.id}
+                    menu={menu}
+                    section={section}
+                    dishes={dishes}
+                    selected={selected}
+                    week={week}
+                    setWeek={setWeek}
+                    save={menuSave}
+                    canManage={actor.canManage}
+                    update={reviseSection}
+                    updateSelected={updateSelected}
+                    remove={() => {
+                      menuDraft.change((item) => ({
+                        ...item,
+                        sections: item.sections.filter(
+                          (row) => row.id !== sectionId,
+                        ),
+                      }));
+                      setSectionId("");
+                    }}
+                    back={() => setSectionId("")}
+                    preview={showPreview}
+                    editDish={(item) => openDish(item, true)}
+                    browseDishes={() => {
+                      dishDraft.open(null);
+                      setDishBackToSection(true);
+                      setPage("dishes");
+                    }}
+                    createDish={() => newDish(true)}
+                    active={page === "menus"}
+                    focusName={newSectionId === section.id}
+                    loadMore={
+                      dishCursor ? () => void loadMore("dishes") : undefined
+                    }
+                    catalogue={catalogueItems}
+                    loadCatalogue={() => void loadSites()}
+                    catalogueNotice={previewMessage}
+                    openSettings={mappingSectionId === section.id}
+                    busy={actionBusy}
+                  />
+                </div>
+              )}
             {page === "dishes" && !dish && (
               <DishCollection
                 dishes={dishes}
                 menus={menus}
                 canManage={actor.canManage}
-                create={newDish}
-                edit={(item) => openDish(item)}
+                create={() => newDish(dishBackToSection)}
+                edit={(item) => openDish(item, dishBackToSection)}
+                backToSection={
+                  dishBackToSection ? () => setPage("menus") : undefined
+                }
                 busy={actionBusy}
                 error={actionError}
                 loadMore={
