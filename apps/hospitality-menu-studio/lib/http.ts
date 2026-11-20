@@ -1,8 +1,9 @@
 import { z } from "zod";
 import type { CatalogueLoadResult } from "@fika/server-shared/hospitality-catalogue-client";
 import { catalogueUnavailable, siteOfferings, studioCatalogueOptions } from "./catalogue";
-import { londonDate, type Dish, type Menu, type StudioActor } from "./contract";
+import type { Dish, Menu, Review, StudioActor } from "./contract";
 import { StudioProblem } from "./problem";
+import type { PublicationImpactTarget, PublicationRequest } from "./publication";
 import { draftCustomerChoices, draftReadiness, menuDishIds } from "./review";
 import { commandSchema, dateSchema, idSchema, versionQuerySchema, type StudioCommand } from "./schema";
 import type { StudioStore } from "./store";
@@ -14,12 +15,15 @@ const maxBytes = 700_000;
 const readSchema = z.union([
   z.object({ list: z.enum(["menus", "dishes"]), cursor: idSchema.optional() }).strict(),
   z.object({ list: z.literal("history"), menuId: idSchema, cursor: idSchema.optional() }).strict(),
+  z.object({ list: z.literal("published-kitchen-dishes"), menuId: idSchema, publicationId: idSchema, cursor: idSchema.optional() }).strict(),
   z.object({ list: z.literal("versions"), menuId: idSchema, cursor: versionQuerySchema.optional() }).strict(),
   z.object({ list: z.literal("versions"), dishId: idSchema, cursor: versionQuerySchema.optional() }).strict(),
   z.object({ list: z.literal("catalogue") }).strict(),
   z.object({ menuId: idSchema, fromVersion: versionQuerySchema, toVersion: versionQuerySchema }).strict(),
   z.object({ menuId: idSchema, eventDate: dateSchema, siteId: idSchema.optional() }).strict(),
-  z.object({ menuId: idSchema, publicationId: idSchema, kitchenDishId: idSchema }).strict(),
+  z.object({ menuId: idSchema, publicationId: idSchema, kitchenDishId: idSchema,
+    boxes: z.string().regex(/^\d{1,16}$/).transform(Number).pipe(z.number().int().positive()).optional(),
+  }).strict(),
   z.object({ menuId: idSchema }).strict(),
   z.object({ dishId: idSchema, reviewVersion: versionQuerySchema }).strict(),
   z.object({ dishId: idSchema }).strict(),
@@ -32,7 +36,20 @@ export function studioHandlers(
   readCatalogue?: (request: Request) => Promise<CatalogueLoadResult>,
   assertCommand?: (command: StudioCommand) => void,
   safetyAvailable: () => boolean = () => false,
+  readImpact?: (request: Request, target: PublicationImpactTarget) => Promise<Review["impact"]>,
 ) {
+  const publicationInputs = async (request: Request, actor: StudioActor, command: PublicationRequest, db: StudioStore) => {
+    const catalogue = readCatalogue?.(request).catch(() => undefined);
+    let impact: Review["impact"] = { status: "unavailable" };
+    let impactTarget: PublicationImpactTarget | undefined;
+    if (readImpact && !command.scope.sectionId && !command.scope.week && !command.scope.dishId) {
+      impactTarget = await db.publicationImpactTarget(command);
+      if (impactTarget.catalogueItemIds.length && impactTarget.firstEventDate <= impactTarget.lastEventDate) {
+        impact = await readImpact(request, impactTarget).catch(() => ({ status: "unavailable" }));
+      }
+    }
+    return { actor, catalogue: await catalogue, impact, impactTarget };
+  };
   const respond = async (operation: () => Promise<unknown>) => {
     try {
       return Response.json(await operation(), { headers: noStore });
@@ -54,9 +71,15 @@ export function studioHandlers(
       };
       if ("list" in query && query.list === "catalogue") return studioCatalogueOptions((await catalogue()).catalogue);
       if ("reviewVersion" in query && !safetyAvailable()) return { status: "unavailable" };
+      if (("kitchenDishId" in query || ("list" in query && query.list === "published-kitchen-dishes")) && !safetyAvailable()) {
+        throw blocked("Published kitchen specifications are unavailable.");
+      }
       const db = store();
       if ("list" in query) {
         if (query.list === "history") return db.listHistory(query.menuId, query.cursor);
+        if (query.list === "published-kitchen-dishes") {
+          return db.listPublishedKitchenDishes(query.menuId, query.publicationId, query.cursor);
+        }
         if (query.list === "versions") return "menuId" in query
           ? db.listVersions("menus", query.menuId, query.cursor)
           : db.listVersions("dishes", query.dishId, query.cursor);
@@ -75,7 +98,9 @@ export function studioHandlers(
         if (dish.version !== query.reviewVersion) throw new StudioProblem(409, "DRAFT_CONFLICT", "The dish changed. Reload its latest saved revision.");
         return (await db.dishSafety([dish])).get(dish.id);
       }
-      if ("kitchenDishId" in query) throw blocked("Current signed kitchen specifications are unavailable.");
+      if ("kitchenDishId" in query) {
+        return db.previewPublishedKitchen(query.menuId, query.publicationId, query.kitchenDishId, query.boxes);
+      }
       const menu = await db.read<Menu>("menus", query.menuId);
       if ("eventDate" in query) {
         if (!query.siteId) {
@@ -114,19 +139,21 @@ export function studioHandlers(
 
       if (command.action === "review") {
         const db = store();
+        if (safetyAvailable()) return db.reviewPublication(command, await publicationInputs(request, actor, command, db));
         const menu = await db.read<Menu>("menus", command.menuId);
         if (menu.version !== command.version) {
           throw new StudioProblem(409, "DRAFT_CONFLICT", "The draft changed. Review the latest saved version.");
         }
-        const ids = menuDishIds(menu);
-        const dishes = await db.dishes(ids);
-        if (!safetyAvailable()) return draftReadiness(menu, dishes, command.effectiveDate, command.scope);
-        const evidence = await db.dishSafety(dishes);
-        const states = ids.map(id => evidence.get(id)?.status);
-        const status = states.includes("unavailable") ? "unavailable" : states.length && states.every(state => state === "verified") ? "verified" : "unverified";
-        return draftReadiness(menu, dishes, command.effectiveDate, command.scope, londonDate(), { status });
+        return draftReadiness(menu, await db.dishes(menuDishIds(menu)), command.effectiveDate, command.scope);
       }
-      if (command.action === "publish" || command.action === "activate-collection") {
+      if (command.action === "publish") {
+        if (!actor.canPublish) throw denied("You do not have Studio publication access.");
+        if (!safetyAvailable()) throw blocked("Publication is unavailable in this environment.");
+        const db = store();
+        const existing = await db.publishedReceipt(command, actor.id);
+        return { publication: existing ?? await db.publishReviewed(command, await publicationInputs(request, actor, command, db)) };
+      }
+      if (command.action === "activate-collection") {
         if (!actor.canPublish) throw denied("You do not have Studio publication access.");
         throw blocked("Signed dish evidence, catalogue eligibility and booking impact must be verified before proceeding.");
       }
