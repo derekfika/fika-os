@@ -5,9 +5,9 @@ import type { GallagherBooking } from "@/lib/gallagher-dashboard";
 export type LedgerView = "upcoming" | "history";
 export type StatusFilter = string;
 export type DateSort = "asc" | "desc";
-export type LedgerFilters = { query: string; from: string; to: string; status: StatusFilter };
+export type LedgerFilters = { query: string; from: string; to: string; statuses: readonly StatusFilter[] };
 
-export const emptyFilters: LedgerFilters = { query: "", from: "", to: "", status: "all" };
+export const emptyFilters: LedgerFilters = { query: "", from: "", to: "", statuses: [] };
 
 const compareChronological = (a: GallagherBooking, b: GallagherBooking) =>
   a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime) || a.bookingReference.localeCompare(b.bookingReference);
@@ -48,14 +48,14 @@ export function invalidDateRange(filters: Pick<LedgerFilters, "from" | "to">) {
 }
 
 export function filtersActive(filters: LedgerFilters) {
-  return Boolean(filters.query.trim() || filters.from || filters.to || filters.status !== "all");
+  return Boolean(filters.query.trim() || filters.from || filters.to || filters.statuses.length);
 }
 
 export function filterBookings(bookings: GallagherBooking[], filters: LedgerFilters) {
   const terms = filters.query.toLocaleLowerCase("en-GB").split(/\s+/).filter(Boolean);
   if (invalidDateRange(filters)) return [];
   return bookings.filter((booking) => {
-    if (filters.status !== "all" && (booking.displayStatus || booking.status) !== filters.status) return false;
+    if (filters.statuses.length && !filters.statuses.includes(booking.displayStatus || booking.status)) return false;
     if (filters.from && (!booking.date || booking.date < filters.from)) return false;
     if (filters.to && (!booking.date || booking.date > filters.to)) return false;
     if (!terms.length) return true;

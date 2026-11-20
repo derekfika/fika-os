@@ -83,6 +83,12 @@
   background: var(--fika-surface-card); color: var(--fika-text-primary);
 }
 .field input::placeholder { color: var(--fika-text-muted); }
+.statusFilters { min-width: 0; margin: 0; padding: 0; border: 0; }
+.statusFilters legend { padding: 0; color: var(--fika-text-primary); font-size: 13px; font-weight: 700; }
+.statusSummary { display: block; color: var(--fika-text-secondary); font-size: 12px; line-height: 16px; }
+.statusChoices { display: flex; flex-wrap: wrap; gap: 0 8px; }
+.statusChoice { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; color: var(--fika-text-primary); font-size: 13px; font-weight: 400; cursor: pointer; }
+.statusChoice input { width: 18px; min-height: 18px; margin: 0; accent-color: var(--fika-action-primary); }
 .searchBox { position: relative; display: block; }
 .searchBox .icon { position: absolute; left: 12px; top: 13px; color: var(--fika-text-muted); pointer-events: none; }
 .searchBox input { padding-left: 40px; }
@@ -259,7 +265,7 @@
   .tableWrap { display: none; }
   .cards { display: grid; }
   .toolbar { grid-template-columns: 1fr 1fr; padding: 16px; }
-  .searchField, .toolbar .textButton { grid-column: 1 / -1; }
+  .searchField, .statusFilters, .toolbar .textButton { grid-column: 1 / -1; }
   .panelHead { padding-inline: 16px; flex-wrap: wrap; }
   .tabs button { flex: 1; justify-content: center; padding-inline: 8px; }
   .detailGrid { gap: 14px 16px; }

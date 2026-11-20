@@ -19,7 +19,7 @@ import {
   summariseItems,
   summarise,
 } from "@/lib/gallagher-view";
-import type { DateSort, LedgerFilters, LedgerView, StatusFilter } from "@/lib/gallagher-view";
+import type { DateSort, LedgerFilters, LedgerView } from "@/lib/gallagher-view";
 import type { CustomerDashboardConfig } from "./config";
 import { rcoaServiceDisplayName } from "./model";
 import styles from "../../app/angel-court/gallagher/GallagherDashboard.module.css";
@@ -440,11 +440,21 @@ export function CustomerBookingsDashboard({ config }: { config: CustomerDashboar
             </div>
             <div className={styles.field}><label htmlFor={`${idBase}-from`}>From</label><input id={`${idBase}-from`} type="date" value={filters.from} max={filters.to || undefined} onChange={(event) => updateFilters({ from: event.target.value })} /></div>
             <div className={styles.field}><label htmlFor={`${idBase}-to`}>To</label><input id={`${idBase}-to`} type="date" value={filters.to} min={filters.from || undefined} onChange={(event) => updateFilters({ to: event.target.value })} /></div>
-            <div className={styles.field}><label htmlFor={`${idBase}-status`}>Status</label>
-              <select id={`${idBase}-status`} value={filters.status} onChange={(event) => updateFilters({ status: event.target.value as StatusFilter })}>
-                <option value="all">All statuses</option>{config.statusOptions.map(status => <option value={status} key={status}>{status}</option>)}
-              </select>
-            </div>
+            <fieldset className={`${styles.field} ${styles.statusFilters}`} aria-describedby={`${idBase}-status-summary`}>
+              <legend>Status</legend>
+              <span className={styles.statusSummary} id={`${idBase}-status-summary`}>{filters.statuses.length ? `${filters.statuses.length} selected` : "All statuses"}</span>
+              <div className={styles.statusChoices}>
+                {config.statusOptions.map(status => <label className={styles.statusChoice} key={status}>
+                  <input type="checkbox" checked={filters.statuses.includes(status)} onChange={() => {
+                    const statuses = filters.statuses.includes(status)
+                      ? filters.statuses.filter(value => value !== status)
+                      : [...filters.statuses, status];
+                    updateFilters({ statuses });
+                  }} />
+                  <span>{status}</span>
+                </label>)}
+              </div>
+            </fieldset>
             <button type="button" className={styles.textButton} onClick={() => { setFilters(emptyFilters); setVisible(pageSize); }} disabled={!filtersActive(filters)}>Clear filters</button>
           </form>
           {rangeInvalid ? <p className={styles.error} role="alert">The “To” date is before the “From” date. Adjust the range to see bookings.</p> : null}
