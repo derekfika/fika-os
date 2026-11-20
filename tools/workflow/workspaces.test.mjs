@@ -11,7 +11,7 @@ test('real Git workspace lifecycle, scoped concurrency, dirty preservation and r
   const git=(...args)=>execFileSync('git',args,{cwd:repo,encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();
   const run=(args,ok=true)=>{const r=spawnSync(process.execPath,[cli,...args],{cwd:repo,encoding:'utf8'});assert.equal(r.status===0,ok,r.stderr);return r.status===0?JSON.parse(r.stdout):r.stderr;};
   try {
-    execFileSync('git',['init','--bare',remote],{stdio:'ignore'});git('init','-b','main');git('config','user.email','test@example.invalid');git('config','user.name','Workflow test');writeFileSync(path.join(repo,'README.md'),'fixture');writeFileSync(path.join(repo,'.gitignore'),'node_modules/\n.next/\n.env\n');git('add','.');git('commit','-m','Fixture baseline');git('remote','add','origin',remote);git('push','-u','origin','main');
+    execFileSync('git',['init','--bare',remote],{stdio:'ignore'});git('init','-b','main');git('config','user.email','test@example.invalid');git('config','user.name','Workflow test');writeFileSync(path.join(repo,'README.md'),'fixture');writeFileSync(path.join(repo,'.gitignore'),'node_modules/\n.next/\n.env\n');mkdirSync(path.join(repo,'apps','events-dashboard'),{recursive:true});writeFileSync(path.join(repo,'apps','events-dashboard','.source-fixture'),'tracked source fixture');git('add','.');git('commit','-m','Fixture baseline');git('remote','add','origin',remote);git('push','-u','origin','main');
     const one=run(['workspace','create','cpu-one','--owner','agent-one','--scope','apps/cpu-production']);assert.equal(one.state,'active');assert.equal(one.baseline,git('rev-parse','origin/main'));
     run(['workspace','create','cpu-two','--owner','agent-two','--scope','apps/cpu-production/app'],false);
     const two=run(['workspace','create','hub-one','--owner','agent-two','--scope','apps/integration-hub']);assert.ok(existsSync(two.directory));
@@ -32,6 +32,12 @@ test('real Git workspace lifecycle, scoped concurrency, dirty preservation and r
     run(['workspace','finish','cpu-generated','--owner','agent-one']);run(['workspace','retire','cpu-generated','--owner','agent-one'],false);run(['workspace','retire','cpu-generated','--owner','agent-one','--preserve-generated'],false);
     assert.ok(existsSync(path.join(generated.directory,'node_modules','unique-note.txt')));rmSync(path.join(generated.directory,'.env'));
     const retired=run(['workspace','retire','cpu-generated','--owner','agent-one','--preserve-generated']);assert.equal(existsSync(generated.directory),false);assert.equal(readFileSync(path.join(retired.generatedArchive,'node_modules','unique-note.txt'),'utf8'),'must survive even inside generated paths');assert.ok(existsSync(path.join(retired.generatedArchive,'manifest.json')));
+    const events=run(['workspace','create','events-generated','--owner','agent-one','--scope','apps/events-dashboard']);
+    const eventsBuild=path.join(events.directory,'apps','events-dashboard','.next');mkdirSync(eventsBuild,{recursive:true});writeFileSync(path.join(eventsBuild,'user-authored-note.txt'),'preserve this ignored file byte-for-byte');
+    run(['workspace','finish','events-generated','--owner','agent-one']);
+    const eventsRetired=run(['workspace','retire','events-generated','--owner','agent-one','--preserve-generated']);
+    assert.equal(existsSync(events.directory),false);assert.equal(readFileSync(path.join(eventsRetired.generatedArchive,'apps/events-dashboard/.next/user-authored-note.txt'),'utf8'),'preserve this ignored file byte-for-byte');
+    assert.ok(readFileSync(path.join(eventsRetired.generatedArchive,'manifest.json'),'utf8').includes('apps/events-dashboard/.next'));
     const plan=run(['cleanup']);assert.equal(plan.stashes.length,0);assert.equal(plan.worktrees.length,1);
     const file=path.join(base,'plan.json');writeFileSync(file,JSON.stringify({...plan,baseline:'0'.repeat(40)}));run(['cleanup','--execute','--file',file,'--approve-hash',plan.planHash],false);
   } finally {
