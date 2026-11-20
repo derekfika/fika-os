@@ -1,0 +1,22 @@
+.specification {
+  color: var(--fika-text-primary);
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+}
+
+.specification p {
+  margin: 4px 0;
+}
+
+.specification .label {
+  color: var(--fika-text-primary);
+  font-size: inherit;
+}
+
+.description {
+  white-space: pre-wrap;
+}
+
+.error {
+  color: var(--fika-status-danger);
+}
