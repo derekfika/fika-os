@@ -1,16 +1,19 @@
 import { getApps, initializeApp } from "firebase-admin/app";
 import { FieldPath, getFirestore, type DocumentReference, type Firestore, type Transaction } from "firebase-admin/firestore";
 import { isDeepStrictEqual } from "node:util";
+import type { CatalogueLoadResult } from "@fika/server-shared/hospitality-catalogue-client";
 import {
   matchesStudioDishRelease, matchesStudioDishSignatureEvent, sameStudioDishReviewSubject, studioDishReleaseVersion, studioDishReviewKey, studioDishReviewRecords,
   studioDishReviewRequests, studioDishReviewSubject, studioDishSafetyFences, validStudioDishSafetyFence,
   type StudioDishReleaseHeader, type StudioDishReviewRequest, type StudioDishSafetyFence, type StudioDishSafetyStatus,
 } from "../../shared/hospitality-menu-studio-safety";
-import type { Dish, DraftVersion, Menu, Publication, Section } from "./contract";
+import { londonDate, type Dish, type DraftVersion, type Menu, type Publication, type Review, type Section, type StudioActor } from "./contract";
 import { StudioProblem } from "./problem";
+import { canonicalJson, decodeLocalPublicationPackage, publicationHash, publicationImpactScope, reviewPublication, sameReviewToken,
+  type DishSafety, type PublicationImpactTarget, type PublicationRequest, type SeasonWindow } from "./publication";
 import { studioRuntime } from "./runtime";
 import { dishSchema, menuSchema } from "./schema";
-import { assortmentIsComplete } from "./review";
+import { assortmentIsComplete, menuDishIds } from "./review";
 
 const root = "fikaHospitalityMenuStudioV1";
 const pageSize = 50;
@@ -27,6 +30,8 @@ type StoredMenu = Omit<Menu, "sections"> & { sections: StoredSection[] };
 type StoredDraft = Omit<DraftData<Draft>, "item"> & { item: StoredMenu | Dish };
 type DraftCollection = "menus" | "dishes";
 export type Page<T> = { items: T[]; nextCursor: string | null };
+type ReviewInputs = { actor: StudioActor; catalogue?: CatalogueLoadResult; impact: Review["impact"]; impactTarget?: PublicationImpactTarget };
+type PublishCommand = PublicationRequest & { reviewToken: string; confirmed: true };
 
 export class StudioStore {
   constructor(private db: Firestore, private now = () => new Date()) {}
@@ -52,6 +57,141 @@ export class StudioStore {
       items: snapshot.docs.slice(0, pageSize).map(document => document.data() as Publication),
       nextCursor: snapshot.docs.length > pageSize ? snapshot.docs[pageSize - 1].id : null,
     };
+  }
+
+  async reviewPublication(request: PublicationRequest, inputs: ReviewInputs) {
+    return this.db.runTransaction(async transaction => (await this.publicationCandidate(transaction, request, inputs)).review, { readOnly: true });
+  }
+
+  async publicationImpactTarget(request: PublicationRequest) {
+    const head = this.draftHead("menus", request.menuId);
+    return this.db.runTransaction(async transaction => {
+      const [draft, latest] = await transaction.getAll(head, head.collection("publicationState").doc("head"));
+      const stored = draft.data() as StoredDraft | undefined;
+      if (!stored || stored.item.version !== request.version) throw conflict();
+      const menu = archivedMenu(stored, request.menuId, request.version);
+      const previous = latest.data() as Publication | undefined;
+      const previousPackage = previous ? await this.readPublicationPackage(transaction, head, previous) : undefined;
+      return publicationImpactScope(request, menu, previousPackage);
+    }, { readOnly: true });
+  }
+
+  async publishedReceipt(request: PublishCommand, actorId: string): Promise<Publication | undefined> {
+    return this.db.runTransaction(transaction => this.readPublicationReceipt(transaction, request, actorId), { readOnly: true });
+  }
+
+  async publishReviewed(request: PublishCommand, inputs: ReviewInputs): Promise<Publication> {
+    if (!inputs.actor.canPublish || request.confirmed !== true) throw new StudioProblem(403, "STUDIO_WRITE_DENIED", "Publication requires explicit authorisation and confirmation.");
+    const receipt = this.receipt(request, inputs.actor.id);
+    return this.db.runTransaction(async transaction => {
+      const existing = await this.readPublicationReceipt(transaction, request, inputs.actor.id);
+      if (existing) return existing;
+      const candidate = await this.publicationCandidate(transaction, request, inputs);
+      if (!candidate.package || !sameReviewToken(request.reviewToken, candidate.review.reviewToken)) {
+        throw new StudioProblem(409, "PUBLICATION_REVIEW_CHANGED", "The draft or its publication evidence changed. Review the publication again.");
+      }
+      const { payload, body, contentHash } = candidate.package;
+      const publication: Publication = { id: payload.publicationId, menuId: payload.menu.id, menuName: payload.menu.name,
+        revision: payload.publicationRevision, effectiveDate: payload.effectiveDate, publishedAt: this.now().toISOString(),
+        publishedBy: inputs.actor.id, scope: {}, sourceDraftVersion: payload.sourceDraftVersion, contentHash };
+      const menuHead = this.draftHead("menus", request.menuId);
+      transaction.create(menuHead.collection("publications").doc(publication.id), publication);
+      transaction.create(menuHead.collection("publicationPackages").doc(publication.id), { body, contentHash, contract: payload.contract });
+      transaction.set(menuHead.collection("publicationState").doc("head"), publication);
+      if (payload.menu.kind === "seasonal" && !candidate.seasons.some(season => season.menuId === payload.menu.id)) {
+        transaction.set(this.seasonSchedule(), { seasons: [...candidate.seasons, { menuId: payload.menu.id, startDate: payload.menu.startDate, endDate: payload.menu.endDate }] });
+      }
+      const { impact } = candidate.review;
+      transaction.create(menuHead.collection("publicationOutbox").doc(publication.id), {
+        action: "studio-content-published", source: "hospitality-menu-studio", actorId: inputs.actor.id, at: publication.publishedAt,
+        publicationId: publication.id, menuId: publication.menuId, revision: publication.revision, effectiveDate: publication.effectiveDate,
+        sourceDraftVersion: payload.sourceDraftVersion, previousPublicationId: payload.previousPublicationId, contentHash,
+        status: "pending", delivery: "hub-activation", commandId: receipt.id, reviewToken: request.reviewToken,
+        impact: {
+          status: impact.status,
+          hash: publicationHash(canonicalJson(impact)),
+          ...(impact.status === "available" ? { coverage: impact.coverage ?? "partial" } : {}),
+          ...(impact.status === "available" && impact.coverage === "complete" ? { bookingCount: impact.bookings.length } : {}),
+        },
+      });
+      transaction.create(receipt, { actorId: inputs.actor.id, publication });
+      return publication;
+    });
+  }
+
+  private seasonSchedule() { return this.db.collection(`${root}_schedules`).doc("company"); }
+
+  private receipt(request: PublishCommand, actorId: string) {
+    const { menuId, version, effectiveDate, scope, reviewToken, confirmed } = request;
+    const id = publicationHash(canonicalJson([actorId, menuId, version, effectiveDate, scope, reviewToken, confirmed]));
+    return this.draftHead("menus", menuId).collection("publicationReceipts").doc(id);
+  }
+
+  private async readPublicationReceipt(transaction: Transaction, request: PublishCommand, actorId: string) {
+    const existing = (await transaction.get(this.receipt(request, actorId))).data();
+    if (!existing) return undefined;
+    const publication = existing.publication as Publication;
+    if (existing.actorId !== actorId || publication?.menuId !== request.menuId || publication.sourceDraftVersion !== request.version
+      || publication.effectiveDate !== request.effectiveDate || publication.publishedBy !== actorId) throw publicationIntegrity();
+    await this.readPublicationPackage(transaction, this.draftHead("menus", request.menuId), publication);
+    return publication;
+  }
+
+  private async publicationCandidate(transaction: Transaction, request: PublicationRequest, inputs: ReviewInputs) {
+    const head = this.draftHead("menus", request.menuId);
+    const [current, archived, latest, schedule] = await transaction.getAll(head, head.collection("revisions").doc(String(request.version)),
+      head.collection("publicationState").doc("head"), this.seasonSchedule());
+    const stored = current.data() as StoredDraft | undefined;
+    if (!stored || stored.item.version !== request.version) throw conflict();
+    const menu = archivedMenu(archived.data() as StoredDraft | undefined, request.menuId, request.version);
+    if (!isDeepStrictEqual(menu, menuSchema.parse(decodeDraft<Menu>(stored).item))) throw publicationIntegrity();
+    const previous = latest.data() as Publication | undefined;
+    const previousPackage = previous ? await this.readPublicationPackage(transaction, head, previous) : undefined;
+    const target = publicationImpactScope(request, menu, previousPackage);
+    const impact: Review["impact"] = isDeepStrictEqual(target, inputs.impactTarget) ? inputs.impact : { status: "unavailable" };
+    const seasons = schedule.data()?.seasons as SeasonWindow[] | undefined ?? [];
+    if (!Array.isArray(seasons) || seasons.some(season => !season.menuId || !season.startDate || !season.endDate || season.startDate > season.endDate)) {
+      throw publicationIntegrity();
+    }
+    const dishes = await this.readPublicationDishes(transaction, menuDishIds(menu));
+    const safety = new Map<string, DishSafety>();
+    for (let start = 0; start < dishes.length; start += 50) {
+      for (const [id, status] of await this.readDishSafetyBatch(transaction, dishes.slice(start, start + 50))) safety.set(id, status);
+    }
+    return { ...reviewPublication({ request, menu, dishes, today: londonDate(this.now()), actorId: inputs.actor.id, canPublish: inputs.actor.canPublish,
+      catalogue: inputs.catalogue, impact, safety, previous, previousPackage, seasons }), seasons };
+  }
+
+  private async readPublicationDishes(transaction: Transaction, ids: string[]) {
+    const dishes: Dish[] = [];
+    for (let start = 0; start < ids.length; start += 50) {
+      const records = await transaction.getAll(...ids.slice(start, start + 50).map(id => this.draftHead("dishes", id)));
+      const drafts = records.filter(record => record.exists).map(record => {
+        const dish = dishSchema.safeParse(record.data()!.item);
+        if (!dish.success || dish.data.id !== record.id || dish.data.version < 1) throw publicationIntegrity();
+        return { dish: dish.data, revision: record.ref.collection("revisions").doc(String(dish.data.version)) };
+      });
+      if (!drafts.length) continue;
+      const revisions = await transaction.getAll(...drafts.map(draft => draft.revision));
+      for (const [index, { dish }] of drafts.entries()) {
+        const archived = dishSchema.safeParse(revisions[index].data()?.item);
+        if (!archived.success || !isDeepStrictEqual(archived.data, dish)) throw publicationIntegrity();
+        dishes.push(archived.data);
+      }
+    }
+    return dishes;
+  }
+
+  private async readPublicationPackage(transaction: Transaction, head: DocumentReference, publication: Publication) {
+    const snapshot = await transaction.get(head.collection("publicationPackages").doc(publication.id));
+    const data = snapshot.data();
+    if (!data || data.contract !== "hospitality-menu-studio.publication.v1" || typeof data.body !== "string"
+      || data.contentHash !== publication.contentHash || publication.menuId !== head.id) {
+      throw publicationIntegrity();
+    }
+    const payload = decodeLocalPublicationPackage(data.body, publication);
+    if (!payload) throw publicationIntegrity();
+    return payload;
   }
 
   async listVersions(kind: DraftCollection, id: string, cursor?: number): Promise<Page<DraftVersion>> {
@@ -260,6 +400,8 @@ function content({ version: _version, updatedAt: _updatedAt, ...draft }: Draft) 
 function conflict() {
   return new StudioProblem(409, "DRAFT_CONFLICT", "Someone saved a newer version. Your edits are still available locally.");
 }
+
+function publicationIntegrity() { return new StudioProblem(503, "PUBLICATION_INTEGRITY", "The saved publication evidence could not be verified."); }
 
 function archivedMenu(value: StoredDraft | undefined, menuId: string, version: number): Menu {
   if (!value) throw new StudioProblem(404, "DRAFT_REVISION_MISSING", "The requested draft revision could not be found.");

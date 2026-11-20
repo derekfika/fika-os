@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { assertStudioRequestHost, authoriseStudio, requireSameOrigin, studioSessionCookie } from "../../../lib/auth";
+import { readStudioBookingImpact } from "../../../lib/booking-impact";
 import { catalogueUnavailable, readStudioCatalogue } from "../../../lib/catalogue";
 import { studioHandlers } from "../../../lib/http";
 import { assertStudioDraftCommand, localStudioSafetyAvailable, studioRuntime } from "../../../lib/runtime";
@@ -19,7 +20,12 @@ const handlers = studioHandlers(async request => {
   return readStudioCatalogue(config.hub, studioSessionCookie(config, cookie));
 }, command => {
   if (studioRuntime().mode === "staging") assertStudioDraftCommand(command.action);
-}, localStudioSafetyAvailable);
+}, localStudioSafetyAvailable, (request, target) => {
+  const config = studioRuntime();
+  const cookie = (request as NextRequest).cookies.get(config.name)?.value;
+  return cookie && !config.fixture ? readStudioBookingImpact(config.hub, studioSessionCookie(config, cookie), target)
+    : Promise.resolve({ status: "unavailable" });
+});
 
 export const GET = handlers.GET;
 export const POST = handlers.POST;
