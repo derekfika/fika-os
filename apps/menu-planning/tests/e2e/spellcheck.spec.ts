@@ -1,3 +1,4 @@
+import { fixtureMenuAccess, fixtureMenuScopeHeaders } from "./menu-access-fixture";
 import { expect, test, type Page } from "@playwright/test";
 import type { RollingSnapshot, RollingEntry } from "../../lib/rolling-menu-types";
 
@@ -28,6 +29,7 @@ async function mount(page: Page, options: { corruptDictionary?: () => boolean; b
   await page.route("**/api/**", async route => {
     const request = route.request();
     const url = new URL(request.url());
+    if (url.pathname === "/api/access") return route.fulfill({ json: fixtureMenuAccess("fixture-spellcheck") });
     if (url.pathname === "/api/spellcheck/dictionary") {
       dictionaries++;
       if (options.corruptDictionary?.()) return route.fulfill({ status: 200, contentType: "application/octet-stream", body: Buffer.from([1, 2, 3]) });
@@ -43,7 +45,7 @@ async function mount(page: Page, options: { corruptDictionary?: () => boolean; b
       return route.fulfill({ json: { snapshot, weeks: [snapshot.week] } });
     }
     if (url.pathname === "/api/catalogue") return route.fulfill({ json: { entries: original.entries.map(entry => ({ id: entry.itemId, displayName: entry.itemLabel, category: entry.slot === "SOUP" ? "Soup" : "Salads" })), categories: ["Salads", "Soup"] } });
-    if (url.pathname === "/api/rolling-menu") return route.fulfill({ json: { snapshot, weeks: [snapshot.week], publicationState: {} } });
+    if (url.pathname === "/api/rolling-menu") return route.fulfill({ headers: fixtureMenuScopeHeaders("fixture-spellcheck"), json: { snapshot, weeks: [snapshot.week], publicationState: {} } });
     return route.fulfill({ json: {} });
   });
   await page.goto("/?week=2099-01-05", { waitUntil: "domcontentloaded" });

@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { fixtureMenuAccess } from "./menu-access-fixture";
 
 const catalogue = Array.from({ length: 500 }, (_, index) => {
   const name = index < 80 ? `Chicken Salad ${index}` : `Garden Salad ${index}`;
@@ -54,6 +55,7 @@ test("Dish Library filters a loaded 500-item catalogue locally without loader or
 
     if (url.pathname.startsWith("/api/")) {
       apiGets.push({ path: url.pathname, search: url.search });
+      if (url.pathname === "/api/access") return route.fulfill({ json: fixtureMenuAccess("local-catalogue-search-fixture") });
       if (url.pathname === "/api/catalogue") {
         if (url.searchParams.has("manifest")) {
           return route.fulfill({

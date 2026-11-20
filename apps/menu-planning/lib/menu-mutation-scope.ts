@@ -40,8 +40,11 @@ export function assertPublishedMenuDaysScope(days: readonly PublishedMenuDay[], 
       const site = menuSiteIdentity(key);
       assertMenuDestinationScope(actor, "publish", site?.kind === "governed" ? site.id : undefined, aliases);
     }
-    const oneOffIds = new Set(day.entries.flatMap(entry => entry.allocations)
-      .flatMap(allocation => allocation.destination?.kind === "one-off" ? [allocation.destination.id] : allocation.oneOffDestinationId ? [allocation.oneOffDestinationId] : []));
+    const oneOffIds = new Set(day.entries.flatMap(entry => entry.allocations).flatMap(allocation => {
+      if (allocation.destination?.kind === "one-off") return [allocation.destination.id];
+      return "oneOffDestinationId" in allocation && typeof allocation.oneOffDestinationId === "string"
+        ? [allocation.oneOffDestinationId] : [];
+    }));
     for (const id of Object.keys(day.retainedSiteLineage || {})) assertMenuDestinationScope(actor, "publish", oneOffIds.has(id) ? undefined : id, aliases);
   }
 }

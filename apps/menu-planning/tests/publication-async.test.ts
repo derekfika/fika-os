@@ -18,7 +18,13 @@ test.after(async () => {
   process.chdir(originalDirectory);
   assert.equal(dirname(resolve(directory)), resolve(tmpdir()));
   assert.ok(basename(directory).startsWith("menu-async-"));
-  await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  try {
+    await rm(directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (process.platform !== "win32" || !["EBUSY", "EPERM"].includes(code || "")) throw error;
+    console.warn(`Windows retained the isolated publication fixture after cleanup retries (${basename(directory)}).`);
+  }
 });
 const { POST: publish } = await import("../app/api/rolling-menu/route");
 const { GET: status, POST: publicationCommand } = await import("../app/api/rolling-menu/publications/route");

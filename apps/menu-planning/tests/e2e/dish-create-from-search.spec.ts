@@ -1,3 +1,4 @@
+import { fixtureMenuAccess, fixtureMenuScopeHeaders } from "./menu-access-fixture";
 import { expect, test } from "@playwright/test";
 
 test("Week Planner Enter creates an unknown dish and selects exact dishes without duplicates", async ({ page }) => {
@@ -16,6 +17,7 @@ test("Week Planner Enter creates an unknown dish and selects exact dishes withou
   await page.route("**/api/**", async route => {
     const request = route.request();
     const url = new URL(request.url());
+    if (url.pathname === "/api/access") return route.fulfill({ json: fixtureMenuAccess("dish-create-fixture") });
     if (request.method() !== "GET") {
       const body = request.postDataJSON() as Record<string, unknown>;
       writes.push({ path: url.pathname, body });
@@ -37,7 +39,7 @@ test("Week Planner Enter creates an unknown dish and selects exact dishes withou
     }
     if (url.pathname === "/api/rolling-menu") {
       if (url.searchParams.has("summariesOnly")) return route.fulfill({ json: { week: { id: week.id, version: week.version }, weeks: [{ ...week }] } });
-      return route.fulfill({ headers: { "x-fika-menu-identity": "dish-create-fixture" }, json: { ...responseSnapshot(), identity: "dish-create-fixture" } });
+      return route.fulfill({ headers: fixtureMenuScopeHeaders("dish-create-fixture"), json: { ...responseSnapshot(), identity: "dish-create-fixture" } });
     }
     if (url.pathname === "/api/catalogue") {
       return route.fulfill({ headers: { "x-fika-menu-identity": "dish-create-fixture" }, json: url.searchParams.has("manifest") ? { schemaVersion: 1, catalogueVersion: catalogue.length, dishCount: catalogue.length } : { entries: catalogue, categories: ["Salad", "Soup"], identity: "dish-create-fixture", manifest: { schemaVersion: 1, catalogueVersion: catalogue.length, dishCount: catalogue.length } } });

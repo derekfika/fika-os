@@ -1,3 +1,4 @@
+import { fixtureMenuAccess, fixtureMenuScopeHeaders } from "./menu-access-fixture";
 import { test, expect } from "@playwright/test";
 import { ROLLING_SLOTS } from "../../lib/rolling-menu-types";
 import { categoriesForMenuSlot } from "../../lib/dish-categories";
@@ -19,12 +20,13 @@ test("108-entry planner: responsive typing, warm catalogue cache and no keypress
   await page.route(/^https:\/\//,r=>r.abort());
   await page.route("**/api/**",async route=>{
     const r=route.request(),url=new URL(r.url());requests.push({method:r.method(),path:url.pathname});
+    if (url.pathname === "/api/access") return route.fulfill({ json: fixtureMenuAccess("synthetic-perf-actor") });
     if(r.method()!=="GET")return route.fulfill({status:409,json:{error:{message:"No fixture writes permitted"}}});
     if(url.pathname==="/api/spellcheck/dictionary")return route.continue();
     if(url.pathname==="/api/rolling-menu"){
       const selected=url.searchParams.get("weekId")?.includes("2099-01-12")?secondWeek:week;
-      if(url.searchParams.has("summariesOnly"))return route.fulfill({json:{week:{id:selected.id,version:1},weeks:[week,secondWeek]}});
-      return route.fulfill({headers:{"x-fika-menu-identity":"synthetic-perf-actor"},json:{snapshot:{week:selected,days,entries},weeks:[week,secondWeek],publicationState:{},dishReferences:{...dishReferences,weekId:selected.id},identity:"synthetic-perf-actor"}});
+      if(url.searchParams.has("summariesOnly"))return route.fulfill({headers:fixtureMenuScopeHeaders("synthetic-perf-actor"),json:{week:{id:selected.id,version:1},weeks:[week,secondWeek]}});
+      return route.fulfill({headers:fixtureMenuScopeHeaders("synthetic-perf-actor"),json:{snapshot:{week:selected,days,entries},weeks:[week,secondWeek],publicationState:{},dishReferences:{...dishReferences,weekId:selected.id},identity:"synthetic-perf-actor"}});
     }
     if(url.pathname==="/api/catalogue")return route.fulfill({headers:{"x-fika-menu-identity":"synthetic-perf-actor"},json:url.searchParams.has("manifest")?{schemaVersion:1,catalogueVersion:1,dishCount:catalogue.length}:{entries:catalogue,categories:["Salad"],identity:"synthetic-perf-actor",manifest:{schemaVersion:1,catalogueVersion:1,dishCount:catalogue.length}}});
     if(url.pathname==="/api/dish-tags")return route.fulfill({json:{version:1,tags:[],groups:[]}});
@@ -94,6 +96,7 @@ test("repeated Week Planner saves rebase after success and refresh safely after 
   await page.route("**/api/**", async route => {
     const request = route.request();
     const url = new URL(request.url());
+    if (url.pathname === "/api/access") return route.fulfill({ json: fixtureMenuAccess("save-conflict-fixture") });
     if (request.method() !== "GET") {
       const body = request.postDataJSON() as Record<string, unknown>;
       if (url.pathname === "/api/rolling-menu" && body.action === "update-entry") {
@@ -118,8 +121,9 @@ test("repeated Week Planner saves rebase after success and refresh safely after 
       return route.fulfill({ status: 400, json: { error: { message: "Unexpected fixture write." } } });
     }
     if (url.pathname === "/api/rolling-menu") {
-      if (url.searchParams.has("summariesOnly")) return route.fulfill({ json: { week: { id: week.id, version: serverVersion }, weeks: [{ ...week, version: serverVersion }] } });
-      return route.fulfill({ headers: { "x-fika-menu-identity": "save-conflict-fixture" }, json: { snapshot: currentSnapshot(), weeks: [{ ...week, version: serverVersion }], publicationState: {}, identity: "save-conflict-fixture" } });
+      const headers = fixtureMenuScopeHeaders("save-conflict-fixture");
+      if (url.searchParams.has("summariesOnly")) return route.fulfill({ headers, json: { week: { id: week.id, version: serverVersion }, weeks: [{ ...week, version: serverVersion }] } });
+      return route.fulfill({ headers, json: { snapshot: currentSnapshot(), weeks: [{ ...week, version: serverVersion }], publicationState: {}, identity: "save-conflict-fixture" } });
     }
     if (url.pathname === "/api/catalogue") return route.fulfill({ headers: { "x-fika-menu-identity": "save-conflict-fixture" }, json: { entries: dishes, categories: ["Soup"], identity: "save-conflict-fixture", manifest: { schemaVersion: 1, catalogueVersion: 1, dishCount: dishes.length } } });
     if (url.pathname === "/api/dish-tags") return route.fulfill({ json: { schemaVersion: 1, version: 1, total: 0, tags: [] } });

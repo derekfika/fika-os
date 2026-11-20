@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { RollingSnapshot } from "../../lib/rolling-menu-types";
+import { fixtureMenuAccess, fixtureMenuScopeHeaders } from "./menu-access-fixture";
 
 function backend() {
   const slots = ["GARNISH 1", "GARNISH 2", "SOUP", ...Array.from({ length: 22 }, (_, index) => `SAUCE ${index + 1}`)];
@@ -26,6 +27,7 @@ function backend() {
     await page.route(/^https:\/\//, route => route.abort());
     await page.route("**/api/**", async route => {
       const request = route.request(), url = new URL(request.url());
+      if (url.pathname === "/api/access") return route.fulfill({ json: fixtureMenuAccess("person:fixture") });
       if (request.method() !== "GET") {
         const body = request.postDataJSON(); writes.push({ path: url.pathname, body });
         if (url.pathname === "/api/rolling-menu" && body.action === "save-week") {
@@ -53,8 +55,9 @@ function backend() {
       }
       reads.push(url.pathname);
       if (url.pathname === "/api/rolling-menu") {
-        if (url.searchParams.has("summariesOnly")) return route.fulfill({ json: { week: snapshot.week, weeks: [snapshot.week] } });
-        return route.fulfill({ headers: { "x-fika-menu-identity": "person:fixture" }, json: { snapshot, weeks: [snapshot.week], publicationState: {} } });
+        const headers = fixtureMenuScopeHeaders("person:fixture");
+        if (url.searchParams.has("summariesOnly")) return route.fulfill({ headers, json: { week: snapshot.week, weeks: [snapshot.week] } });
+        return route.fulfill({ headers, json: { snapshot, weeks: [snapshot.week], publicationState: {} } });
       }
       if (url.pathname === "/api/catalogue") return route.fulfill({ headers: { "x-fika-menu-identity": "person:fixture" }, json: url.searchParams.has("manifest") ? { schemaVersion: 1, catalogueVersion: dishes.length, dishCount: dishes.length } : { entries: dishes, categories: ["Garnish", "Salad", "Soup", "Sauce"], manifest: { schemaVersion: 1, catalogueVersion: dishes.length, dishCount: dishes.length } } });
       if (url.pathname === "/api/dish-tags") return route.fulfill({ json: { version: 1, tags: [], total: 0 } });
