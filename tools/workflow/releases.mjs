@@ -11,7 +11,7 @@ import { readCreateAuditEvents } from './audit.mjs';
 import { assertCpuAdoptionTarget, observeCpuAdoption, adoptCompletedCpu } from './cpu-prod-adoption.mjs';
 import { configurationDigest, prepareHotfixRelease } from './hotfix-release.mjs';
 import { assertHotfixFilesReconciled, assertMainReconciled, hotfixBranch } from './hotfix.mjs';
-import { studioStagingBuildScope, verifyStudioStagingOverlay } from './studio-staging.mjs';
+import { studioStagingBuildScope, studioStagingIamStatus, verifyStudioStagingOverlay } from './studio-staging.mjs';
 
 export function releaseRecord(branch) {
   const sha = ref(`refs/remotes/origin/${branch}`);
@@ -737,6 +737,8 @@ export async function deploy(app, environment, options, {
       if (app === 'menu-studio') {
         verifyStudioStagingOverlay(git('show', `${plan.sourceSha}:${APPS[app].path}/apphosting.staging.yaml`));
         if (firstRelease) {
+          const iamStatus = await studioStagingIamStatus();
+          if (iamStatus !== 'VERIFIED') throw Error(`Studio direct staging IAM is ${iamStatus}. Verify the reviewed role definitions and bindings before the first release.`);
           const domain = await readStudioReleaseDomain(t, read);
           plan.studioBuildScope = studioStagingBuildScope;
           plan.studioFirstReleaseApprovalHash = digest({ target: t, sourceSha: plan.sourceSha, scopeHash: plan.scopeHash,

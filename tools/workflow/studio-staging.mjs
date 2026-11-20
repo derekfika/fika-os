@@ -1,6 +1,7 @@
 import { backendPath, cloud, command } from './runtime.mjs';
-import { APPS, STUDIO_STAGING, target } from './policy.mjs';
+import { APPS, STUDIO_STAGING, digest, target } from './policy.mjs';
 import { releaseBackend, readStudioReleaseDomain } from './release-prestate.mjs';
+import studioIam from './studio-staging-iam.json' with { type: 'json' };
 
 export const studioStaging = Object.freeze({
   ...target('menu-studio', 'staging'),
@@ -24,13 +25,15 @@ export function verifyStudioStagingOverlay(source) {
 const base = backendPath(studioStaging);
 const database = `projects/${studioStaging.project}/databases/${studioStaging.database}`;
 const artifactRepository = STUDIO_STAGING.artifactRepository;
+const projectResource = `projects/${studioStaging.project}`;
+const repositoryResource = `${projectResource}/locations/${studioStaging.region}/repositories/${artifactRepository}`;
 
 export const studioStagingBuildScope = Object.freeze({
-  managedRole: 'roles/firebaseapphosting.computeRunner',
-  managedRoleScope: `projects/${studioStaging.project}`,
-  managedArtifactRepository: `projects/${studioStaging.project}/locations/${studioStaging.region}/repositories/${artifactRepository}`,
-  accessBoundary: 'shared-staging-project',
-  storageObjectAccess: 'staging-project',
+  iamManifestSha256: digest(studioIam),
+  managedRoleScope: projectResource,
+  managedArtifactRepository: repositoryResource,
+  accessBoundary: 'shared-staging-repository',
+  storageGrant: 'none',
   buildMetadataUpdates: 'staging-project',
 });
 
@@ -46,9 +49,45 @@ async function observe(check) {
   try { return await check() ? 'VERIFIED' : 'MISMATCH'; }
   catch (error) {
     const missing = error?.status === 404 ||
-      /^ERROR: \(gcloud\.(?:iam\.service-accounts|firestore\.databases)\.describe\) NOT_FOUND:/m.test(String(error?.stderr || ''));
+      /^ERROR: \(gcloud\.(?:iam\.service-accounts|iam\.roles|firestore\.databases)\.describe\) NOT_FOUND:/m.test(String(error?.stderr || ''));
     return missing ? 'MISSING' : 'UNVERIFIED';
   }
+}
+
+function matchesDirectStudioBindings(policy, resource) {
+  if (typeof policy?.etag !== 'string' || !policy.etag ||
+      (policy.bindings !== undefined && (!Array.isArray(policy.bindings) ||
+        policy.bindings.some(binding => typeof binding?.role !== 'string' || !Array.isArray(binding.members))))) {
+    throw Error('Could not verify the direct IAM policy');
+  }
+  const actual = (policy.bindings || []).filter(binding => binding.members?.includes(studioIam.principal));
+  const expected = studioIam.bindings.filter(binding => binding.resource === resource);
+  return actual.length === expected.length && expected.every(binding => actual.some(entry =>
+    entry.role === binding.role && (binding.condition
+      ? entry.condition?.title === binding.condition.title && entry.condition?.expression === binding.condition.expression
+      : entry.condition == null)));
+}
+
+export function studioStagingIamStatus(describeResource = describe) {
+  return observe(async () => {
+    const [projectPolicy, repoPolicy] = await Promise.all([
+      describeResource(['projects', 'get-iam-policy', studioStaging.project]),
+      describeResource(['artifacts', 'repositories', 'get-iam-policy', artifactRepository, '--location', studioStaging.region]),
+    ]);
+    if (!matchesDirectStudioBindings(projectPolicy, projectResource) ||
+        !matchesDirectStudioBindings(repoPolicy, repositoryResource)) return false;
+
+    const roles = await Promise.all(studioIam.bindings.map(binding =>
+      describeResource(['iam', 'roles', 'describe', binding.role.split('/').at(-1)])));
+    return roles.every((role, index) => {
+      const expected = studioIam.bindings[index];
+      if (!Array.isArray(role?.includedPermissions) || role.includedPermissions.some(permission => typeof permission !== 'string')) {
+        throw Error('Could not verify the IAM role definition');
+      }
+      return role.name === expected.role && !role.deleted && role.stage !== 'DISABLED' &&
+        [...role.includedPermissions].sort().join('\n') === [...expected.permissions].sort().join('\n');
+    });
+  });
 }
 
 function emptyTraffic(state) {
@@ -84,7 +123,7 @@ async function managedArtifactScope(describeResource) {
 
 export async function studioStagingPreflight({ read = cloud, describeResource = describe } = {}) {
   let backendExists = false;
-  const [appHosting, serviceAccount, firestore, artifactScope] = await Promise.all([
+  const [appHosting, serviceAccount, firestore, artifactScope, directStagingIam] = await Promise.all([
     observe(async () => {
       const backend = await read(base);
       if (backend?.name !== base) return false;
@@ -106,6 +145,7 @@ export async function studioStagingPreflight({ read = cloud, describeResource = 
         store.locationId === studioStaging.region && store.deleteProtectionState === 'DELETE_PROTECTION_ENABLED';
     }),
     managedArtifactScope(describeResource),
+    studioStagingIamStatus(describeResource),
   ]);
 
   const [rolloutPolicy, customDomain, buildHistory] = backendExists ? await Promise.all([
@@ -134,12 +174,12 @@ export async function studioStagingPreflight({ read = cloud, describeResource = 
   return {
     status: 'BLOCKED',
     target: { ...studioStaging, rootDirectory: APPS[studioStaging.app].path },
-    checks: { appHosting, serviceAccount, firestore, rolloutPolicy, buildHistory, customDomain, managedArtifactRepository: artifactScope },
+    checks: { appHosting, serviceAccount, firestore, rolloutPolicy, buildHistory, customDomain, managedArtifactRepository: artifactScope, directStagingIam },
     buildScope: studioStagingBuildScope,
     pending: [
       'Studio-specific staging AUTHMOD registration, capabilities and exact return origin',
-      'Effective IAM for named Studio Firestore access and denial of default Firestore, production resources, secrets and unrelated service accounts',
-      'Owner approval and effective verification of Compute Runner access to shared staging images, Storage objects and build metadata',
+      'Effective IAM for named Studio Firestore access and denial of default Firestore, Cloud Storage, production resources, secrets and unrelated service accounts',
+      'Owner approval of the exact IAM manifest and shared mutable tags, and effective verification of the approved build permissions',
       'Workspace and outbound side-effect isolation',
       'Owner approval of the exact merged first-release plan',
     ],
