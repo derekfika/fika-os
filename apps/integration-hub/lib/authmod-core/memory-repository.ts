@@ -1,5 +1,6 @@
 import type { AccessAuditEvent, AppAssignment, AppOplocScope, ApplicationRegistryEntry, AuditPage, AuthIdentity, AuthorityGrant, CustodianAssignment, DelegationRecord, ImportRecord, ImportRowResolution, LegendReference, ServicePrincipal, SiteAssignment } from "./model";
 import { assertExpectedVersion, type AuthModRepository, type OplocReference } from "./repository";
+import { applicationAssignmentId, planApplicationAccessLevel, type ApplicationAccessLevelCommand } from "./application-access-levels";
 export class MemoryAuthModRepository implements AuthModRepository {
   async listLogisticsDriverGrants() { return [...this.grants.values()].filter(value => value.resource === "logistics.driver" && value.status === "active"); }
   identities = new Map<string, AuthIdentity>(); applications = new Map<string, ApplicationRegistryEntry>(); oplocs = new Map<string, OplocReference>();
@@ -43,11 +44,19 @@ export class MemoryAuthModRepository implements AuthModRepository {
   async saveAuthorityGrantWithAudit(value: AuthorityGrant, audit: AccessAuditEvent, expectedVersion?: number) { assertExpectedVersion(this.grants.get(value.id)?.version, expectedVersion); this.grants.set(value.id, value); this.audits.push(audit); }
   async getDelegation(id: string) { return this.delegations.get(id); } async listDelegations(delegateId?: string) { return [...this.delegations.values()].filter(value => !delegateId || value.delegateId === delegateId); }
   async saveDelegationWithGrant(input: { delegation: DelegationRecord; grant: AuthorityGrant; audit: AccessAuditEvent }) { this.delegations.set(input.delegation.id, input.delegation); this.grants.set(input.grant.id, input.grant); this.audits.push(input.audit); }
-  async saveStandardApplicationBundle(input: { assignment: AppAssignment; grants: AuthorityGrant[]; audit?: AccessAuditEvent; expectedAssignmentVersion?: number }) {
+  async saveStandardApplicationBundle(input: { assignment: AppAssignment; grants: AuthorityGrant[]; audit?: AccessAuditEvent; expectedAssignmentVersion?: number | null }) {
     assertExpectedVersion(this.appAssignments.get(input.assignment.id)?.version, input.expectedAssignmentVersion);
     this.appAssignments.set(input.assignment.id, input.assignment);
     for (const grant of input.grants) this.grants.set(grant.id, grant);
     if (input.audit) this.audits.push(input.audit);
+  }
+  async saveApplicationAccessLevel(input: ApplicationAccessLevelCommand) {
+    const change = planApplicationAccessLevel(input, this.appAssignments.get(applicationAssignmentId(input.identityId, input.appId)),
+      [...this.grants.values()], [...this.appOplocScopes.values()]);
+    this.appAssignments.set(change.assignment.id, change.assignment);
+    for (const grant of [...change.revoked, ...change.issued]) this.grants.set(grant.id, grant);
+    for (const scope of change.revokedScopes) this.appOplocScopes.set(scope.id, scope);
+    this.audits.push(change.audit);
   }
   async revokeStandardApplicationBundle(input: { assignment: AppAssignment; grants: AuthorityGrant[]; appOplocScopes?: AppOplocScope[]; audit?: AccessAuditEvent; additionalAudits?: AccessAuditEvent[]; expectedAssignmentVersion?: number }) {
     assertExpectedVersion(this.appAssignments.get(input.assignment.id)?.version, input.expectedAssignmentVersion);

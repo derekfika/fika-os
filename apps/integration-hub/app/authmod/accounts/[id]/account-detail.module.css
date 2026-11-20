@@ -4,3 +4,17 @@
 .periodFields{display:grid;grid-template-columns:1fr 1fr;gap:8px}.dialog label{display:grid;gap:5px;color:#665d73;font-size:.75rem;font-weight:800}.dialog select,.dialog input{min-height:40px;border:1px solid #ded8ed;border-radius:8px;padding:0 9px;background:#fff;color:#24163b}
 .authorityInfo{min-width:0;flex:1}.authorityGrant{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:7px}.authorityGrant>small{margin-top:0}
 .warning{padding:14px;margin-bottom:16px;border-radius:9px;background:var(--fika-status-warning-surface);color:var(--fika-status-warning);line-height:1.5}
+.accessRow.levelRow { grid-template-columns: minmax(0, 1fr) minmax(0, 18rem); }
+.levelField { display: grid; gap: var(--space-2); color: var(--color-text-primary); font-size: var(--text-sm); font-weight: 600; }
+.levelField select {
+  width: 100%;
+  min-height: var(--control-height);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font: inherit;
+}
+.levelField select:focus-visible { outline: 3px solid var(--color-focus); outline-offset: 3px; }
+@media (max-width: 600px) { .accessRow.levelRow { grid-template-columns: minmax(0, 1fr); } }

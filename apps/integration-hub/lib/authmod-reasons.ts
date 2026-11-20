@@ -15,7 +15,7 @@ const labels = new Map<string, string>(ROUTINE_ACCESS_REASONS.map(reason => [rea
 export function resolveAuthmodReason(input: { action: string; reason?: string; reasonCode?: string; reasonNote?: string }) {
   const note = input.reasonNote?.trim() || "";
   const code = input.reasonCode?.trim() || "";
-  const routine = input.action === "site" || input.action === "app" || input.action === "app-oploc-scope" || input.action === "legend";
+  const routine = input.action === "site" || input.action === "app" || input.action === "app-access-level" || input.action === "app-oploc-scope" || input.action === "legend";
 
   if (code) {
     const label = labels.get(code);

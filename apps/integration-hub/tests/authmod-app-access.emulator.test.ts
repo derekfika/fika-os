@@ -417,3 +417,111 @@ test("emulator: create the hidden Beverage registry and audit atomically without
   await publishStagingRegistryReferences(created.application);
   assert.deepEqual(await repository.listAppAssignments(id), []);
 });
+
+test("emulator: Menu downgrade atomically fences an existing session and revokes all writer grant provenance", { skip: !enabled }, async t => {
+  const root = await mkdtemp(path.join(tmpdir(), "authmod-menu-level-"));
+  const previousRoot = process.env.FIKA_SNAPSHOT_DIR;
+  process.env.FIKA_SNAPSHOT_DIR = root;
+  t.after(async () => {
+    if (previousRoot === undefined) delete process.env.FIKA_SNAPSHOT_DIR; else process.env.FIKA_SNAPSHOT_DIR = previousRoot;
+    assert.equal(path.dirname(path.resolve(root)), path.resolve(tmpdir()));
+    assert.ok(path.basename(root).startsWith("authmod-menu-level-"));
+    await rm(root, { recursive: true, force: true });
+  });
+  const { db } = await import("../lib/firebase-admin");
+  const { canonicalDocumentId } = await import("../lib/canonical-oplocs");
+  const { FirestoreAuthModRepository } = await import("../lib/authmod-core/firestore-repository");
+  const { evaluateAuthority, resolveUserAccess } = await import("../lib/authmod-core/evaluator");
+  const { grantStandardApplicationAccess } = await import("../lib/authmod-core/grants");
+  const { grantAuthority } = await import("../lib/authmod-core/authority");
+  const { V1_APPLICATIONS } = await import("../lib/authmod-core/model");
+  const { readAuthmodAccessHead, bootstrapAuthmodAccessPackage } = await import("../lib/authmod-access-read-package");
+  const { rebuildAuthmodReferenceReadPackage } = await import("../lib/authmod-reference-read-package");
+  const { handleAccountAction } = await import("../app/api/authmod/accounts/[id]/actions/handler");
+  const { rebuildOplocReadPackage } = await import("../lib/oploc-read-package");
+
+  const suffix = randomUUID();
+  const id = `identity:menu-level:${suffix}`;
+  const firstSite = `oploc:menu-level:${suffix}`;
+  const otherSite = `oploc:menu-other:${suffix}`;
+  const appId = "menu-planning";
+  const timestamp = new Date().toISOString();
+  const stamps = { version: 1, createdAt: timestamp, updatedAt: timestamp };
+  const principal: AuthPrincipal = { type: "interactive", id, identityKind: "person", displayName: "Fixture Menu Planning user" };
+  const actor: AuthPrincipal = { type: "interactive", id: `identity:menu-admin:${suffix}`, identityKind: "person", displayName: "Fixture AUTHMOD administrator" };
+  const identityRef = db.collection("authmodIdentities").doc(id);
+  const appRef = db.collection("authmodApplications").doc(appId);
+  const siteRef = db.collection("authmodSiteAssignments").doc(id);
+  const firstOplocRef = db.collection("integrationHubCanonical").doc(canonicalDocumentId(firstSite));
+  const otherOplocRef = db.collection("integrationHubCanonical").doc(canonicalDocumentId(otherSite));
+  const priorApp = (await appRef.get()).data();
+  await db.batch()
+    .set(appRef, V1_APPLICATIONS.find(application => application.appId === appId)!)
+    .create(identityRef, { ...stamps, id, displayName: principal.displayName, identityKind: "person", identityLinkStatus: "matched", status: "active", fullAccess: true, provenance: "system" })
+    .create(siteRef, { ...stamps, id: siteRef.id, identityId: id, oplocId: firstSite, status: "active", source: "system" })
+    .create(firstOplocRef, { canonicalId: firstSite, entityType: "OPLOC", record: { approvedName: "Fixture assigned site" } })
+    .create(otherOplocRef, { canonicalId: otherSite, entityType: "OPLOC", record: { approvedName: "Fixture other site" } })
+    .commit();
+  t.after(async () => {
+    const batch = db.batch().delete(identityRef).delete(siteRef).delete(firstOplocRef).delete(otherOplocRef)
+      .delete(db.collection("authmodAccessHeads").doc(id));
+    if (priorApp) batch.set(appRef, priorApp); else batch.delete(appRef);
+    const matches = await Promise.all([
+      db.collection("authmodAppAssignments").where("identityId", "==", id).get(),
+      db.collection("authmodAuthorityGrants").where("subjectId", "==", id).get(),
+      db.collection("authmodAccessAudit").where("actorPrincipalId", "==", actor.id).get(),
+    ]);
+    for (const rows of matches) for (const row of rows.docs) batch.delete(row.ref);
+    await batch.commit();
+  });
+  await rebuildAuthmodReferenceReadPackage();
+  await rebuildOplocReadPackage();
+  const repository = new FirestoreAuthModRepository(`test:${id}`);
+  const legacy = await grantStandardApplicationAccess(repository, { actor, identityId: id, appId, reason: "Reviewed fixture bundle" });
+  const futureWriter = { ...legacy.grants.find(grant => grant.action === "Manage")!, id: `future-writer:${suffix}`,
+    provenance: "manual-override" as const, effectiveFrom: "2100-01-01T00:00:00.000Z", effectiveTo: "2101-01-01T00:00:00.000Z" };
+  await repository.saveAuthorityGrant(futureWriter);
+  const publisher = await grantAuthority(repository, { actor, subjectId: id, subjectType: "interactive", appId,
+    resource: "menu.publish", action: "Publish", scope: { kind: "organisation", ids: [] }, reason: "Reviewed fixture publisher" });
+
+  const allowed = async (action: "View" | "Manage" | "Publish", oplocId = firstSite) =>
+    (await evaluateAuthority(repository, { principal, appId, resource: action === "Publish" ? "menu.publish" : "menu-planning.normal",
+      action, scope: { kind: "oploc", ids: [oplocId] } })).allowed;
+  assert.equal(await allowed("Manage", otherSite), true);
+  const head = await readAuthmodAccessHead(id);
+  const invoke = (level: string, expectedAssignmentVersion: number, repo = repository) => handleAccountAction(
+    new NextRequest(`http://localhost/api/authmod/accounts/${id}/actions`, { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "app-access-level", appId, level, expectedAssignmentVersion, reasonCode: "access_correction" }) }),
+    { params: Promise.resolve({ id }) }, async () => ({ principal: actor, repository: repo }),
+  );
+  const downgrade = await invoke("view", legacy.assignment.version);
+  const response = await downgrade.json();
+  assert.equal(downgrade.status, 200, JSON.stringify(response));
+  assert.deepEqual(response.account.menuPlanning, {
+    configuredLevel: "view", effectiveLevel: "view", version: 2, allOplocs: false, oplocIds: [firstSite], manageOplocIds: [],
+  });
+  assert.equal(await readAuthmodAccessHead(id), head + 1);
+  assert.equal(await allowed("View"), true);
+  assert.equal(await allowed("View", otherSite), false);
+  assert.equal(await allowed("Manage"), false);
+  assert.equal(await allowed("Publish"), false);
+  assert.equal((await repository.getAuthorityGrant(futureWriter.id))?.status, "revoked");
+  assert.equal((await repository.getAuthorityGrant(publisher.id))?.status, "active");
+  assert.deepEqual((await repository.listAuthorityGrants(id)).filter(grant => grant.resource === "menu-planning.normal" && grant.status === "active").map(grant => grant.action), ["View"]);
+  const audits = (await db.collection("authmodAccessAudit").where("targetId", "==", id).get()).docs
+    .map(document => document.data()).filter(audit => audit.action === "application-access-level-changed");
+  assert.equal(audits.length, 1);
+  assert.equal(audits[0].actorPrincipalId, actor.id);
+  assert.equal(audits[0].beforeState.assignment.version, 1);
+  assert.equal(audits[0].afterState.assignment.version, 2);
+
+  assert.equal((await invoke("manage", 1)).status, 409);
+  assert.equal(await readAuthmodAccessHead(id), head + 1);
+  const publisherOutage = new FirestoreAuthModRepository(`test-outage:${id}`, async () => { throw new Error("Fixture package publication outage"); });
+  const disable = await invoke("none", 2, publisherOutage);
+  assert.equal(disable.status, 200);
+  assert.equal((await disable.json()).committed, true);
+  assert.equal((await resolveUserAccess(repository, { principal, appId })).reasonCode, "store-unavailable");
+  await bootstrapAuthmodAccessPackage(id);
+  assert.equal((await resolveUserAccess(repository, { principal, appId })).reasonCode, "app-not-assigned");
+});

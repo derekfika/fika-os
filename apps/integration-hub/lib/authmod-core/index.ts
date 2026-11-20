@@ -6,6 +6,7 @@ export * from "./audit";
 export * from "./authority";
 export * from "./evaluator";
 export * from "./grants";
+export * from "./application-access-levels";
 export * from "./identity";
 export * from "./import-service";
 export * from "./legend-candidates";

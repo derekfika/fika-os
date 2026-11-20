@@ -1,14 +1,16 @@
 import { getPrimaryCustodian } from "./authmod-core";
 import type { AuthModRepository } from "./authmod-core";
 import { effectiveStatus, isEffective } from "./authmod-core";
+import { readMenuPlanningAccountPermissions } from "./menu-planning-permissions";
 
 const EXPIRING_SOON_DAYS = 14;
 export { EXPIRING_SOON_DAYS };
-export async function buildAuthmodAccounts(repository: AuthModRepository, query: { search?: string; kind?: string; status?: string; siteId?: string; appId?: string; special?: boolean; expiringSoon?: boolean } = {}) {
+export async function buildAuthmodAccounts(repository: AuthModRepository, query: { identityId?: string; search?: string; kind?: string; status?: string; siteId?: string; appId?: string; special?: boolean; expiringSoon?: boolean } = {}) {
   const [identities, applications, oplocs, legends] = await Promise.all([repository.listIdentities(), repository.listApplications(), repository.listActiveOplocs(), repository.listLegendReferences()]);
   const legendNames = new Map(legends.map(value => [value.id, value.label])); const oplocNames = new Map(oplocs.map(value => [value.id, value.label])); const appNames = new Map(applications.map(value => [value.appId, value.displayName])); const needle = query.search?.trim().toLowerCase();
   const rows = [];
   for (const identity of identities) {
+    if (query.identityId && identity.id !== query.identityId) continue;
     const unresolved = identity.identityKind === "person" ? identity.identityLinkStatus !== "matched" : !identity.representedOplocId && !identity.operationalPurpose;
     if (query.kind && identity.identityKind !== query.kind) continue; if (query.status && query.status !== "all" && (query.status === "unresolved" ? !unresolved : identity.status !== query.status)) continue;
     const [sites, apps, appOplocScopes, grants, custodian, delegations] = await Promise.all([repository.listSiteAssignments(identity.id), repository.listAppAssignments(identity.id), repository.listAppOplocScopes(identity.id), repository.listAuthorityGrants(identity.id, "interactive"), getPrimaryCustodian(repository, identity.id), repository.listDelegations(identity.id)]);
@@ -22,4 +24,12 @@ export async function buildAuthmodAccounts(repository: AuthModRepository, query:
   return rows.sort((a, b) => a.identity.displayName.localeCompare(b.identity.displayName));
 }
 
-export async function buildAuthmodAccount(repository: AuthModRepository, id: string) { const rows = await buildAuthmodAccounts(repository); const row = rows.find(value => value.identity.id === id); if (!row) throw Object.assign(new Error("AUTHMOD identity not found."), { status: 404 }); return row; }
+export async function buildAuthmodAccount(repository: AuthModRepository, id: string) {
+  const rows = await buildAuthmodAccounts(repository, { identityId: id });
+  const row = rows.find(value => value.identity.id === id);
+  if (!row) throw Object.assign(new Error("AUTHMOD identity not found."), { status: 404 });
+  const menuPlanning = await readMenuPlanningAccountPermissions(repository, {
+    type: "interactive", id, displayName: row.identity.displayName, identityKind: row.identity.identityKind,
+  });
+  return { ...row, menuPlanning };
+}

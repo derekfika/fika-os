@@ -1,4 +1,5 @@
 import { createAuthModEvaluationContext, resolveUserAccess } from "./authmod-core/evaluator";
+import { configuredApplicationAssignment } from "./authmod-core/application-access-levels";
 import type { AuthModRepository } from "./authmod-core/repository";
 import { isEffective, type AuthPrincipal } from "./authmod-core/model";
 import type { OplocReadPackage } from "./oploc-read-package";
@@ -15,23 +16,25 @@ export type PermittedOplocScope = {
 };
 
 /** Resolve visibility from AUTHMOD only; package contents are never consulted. */
-export async function resolvePermittedOplocIds(input: PermittedOplocInput): Promise<PermittedOplocScope> {
+export async function resolvePermittedOplocIds(input: PermittedOplocInput, context = createAuthModEvaluationContext(input.repository, input.principal)): Promise<PermittedOplocScope> {
   const applications = await input.repository.listApplications();
   const candidates = applications.filter((application) => application.scopeModel !== "none" && (!input.appId || application.appId === input.appId));
-  const context = createAuthModEvaluationContext(input.repository, input.principal);
   const permitted = new Set<string>();
   const identity = await context.identity();
   if (!identity) throw Object.assign(new Error("AUTHMOD identity could not be resolved."), { status: 401, code: "AUTHMOD_IDENTITY_UNRESOLVED" });
   if (identity.status !== "active") throw Object.assign(new Error("AUTHMOD identity is not active."), { status: 403, code: "AUTHMOD_IDENTITY_INACTIVE" });
-  const redirects = await input.repository.listOplocRedirects();
+  const redirects = await context.oplocRedirects();
   const assignedOplocIds = [...new Set((await context.siteAssignments()).filter(value => isEffective(value)).map(value => redirects[value.oplocId] || value.oplocId).filter(Boolean))];
 
   for (const application of candidates) {
     const appAccess = await resolveUserAccess(input.repository, { principal: input.principal, appId: application.appId }, context);
     if (appAccess.reasonCode === "store-unavailable") throw authmodUnavailable();
     if (!appAccess.allowed) continue;
-    if (identity.identityKind === "person" && identity.fullAccess) return { all: true, ids: permitted };
-    const allActiveScope = (await context.appOplocScopes()).find(value => value.appId === application.appId && value.kind === "all-active-oplocs" && isEffective(value));
+    const configured = configuredApplicationAssignment(await context.appAssignments(), identity.id, application.appId);
+    if (identity.identityKind === "person" && identity.fullAccess && !configured) return { all: true, ids: permitted };
+    const allActiveScope = !configured || identity.identityKind === "operational"
+      ? (await context.appOplocScopes()).find(value => value.appId === application.appId && value.kind === "all-active-oplocs" && isEffective(value))
+      : undefined;
     if (allActiveScope && input.appId) return { all: true, ids: permitted };
     const decisions = await Promise.all(assignedOplocIds.map((oplocId) => resolveUserAccess(input.repository, { principal: input.principal, appId: application.appId, oplocId }, context)));
     decisions.forEach((decision, index) => {

@@ -1,4 +1,5 @@
 import { encodeReadPackage, publishReadPackage, retrieveReadPackage, type ReadPackageManifest } from "@fika/server-shared/read-package";
+import { FieldValue } from "firebase-admin/firestore";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import { db } from "./firebase-admin";
 import { oplocPackageStore } from "./oploc-read-package";
@@ -36,22 +37,24 @@ export async function readAuthmodAccessHead(identityId: string, transaction?: Fi
 
 export function bumpAuthmodAccessHead(transaction: FirebaseFirestore.Transaction, identityId: string, now = new Date().toISOString()) {
   const ref = db.collection("authmodAccessHeads").doc(identityId);
-  transaction.set(ref, { version: Date.now(), updatedAt: now }, { merge: true });
+  transaction.set(ref, { version: FieldValue.increment(1), updatedAt: now }, { merge: true });
 }
 
 export async function rebuildAuthmodAccessReadPackage(identityId: string): Promise<ReadPackageManifest> {
-  const [identity, apps, sites, appScopes, grants, delegations, custodians] = await Promise.all([
-    db.collection("authmodIdentities").doc(identityId).get(),
-    db.collection("authmodAppAssignments").where("identityId", "==", identityId).get(),
-    db.collection("authmodSiteAssignments").where("identityId", "==", identityId).get(),
-    db.collection("authmodAppOplocScopes").where("identityId", "==", identityId).get(),
-    db.collection("authmodAuthorityGrants").where("subjectId", "==", identityId).get(),
-    db.collection("authmodDelegations").where("delegateId", "==", identityId).get(),
-    db.collection("authmodCustodianAssignments").where("operationalIdentityId", "==", identityId).get(),
-  ]);
+  // A permission change can commit while a package is rebuilding. Its rows and
+  // security generation must come from the same snapshot.
+  const [identity, apps, sites, appScopes, grants, delegations, custodians, securityVersion] = await db.runTransaction(transaction => Promise.all([
+    transaction.get(db.collection("authmodIdentities").doc(identityId)),
+    transaction.get(db.collection("authmodAppAssignments").where("identityId", "==", identityId)),
+    transaction.get(db.collection("authmodSiteAssignments").where("identityId", "==", identityId)),
+    transaction.get(db.collection("authmodAppOplocScopes").where("identityId", "==", identityId)),
+    transaction.get(db.collection("authmodAuthorityGrants").where("subjectId", "==", identityId)),
+    transaction.get(db.collection("authmodDelegations").where("delegateId", "==", identityId)),
+    transaction.get(db.collection("authmodCustodianAssignments").where("operationalIdentityId", "==", identityId)),
+    readAuthmodAccessHead(identityId, transaction),
+  ]), { readOnly: true });
   if (!identity.exists) throw Object.assign(new Error("AUTHMOD identity is unavailable."), { status: 403, code: "AUTHMOD_IDENTITY_NOT_FOUND" });
   if ((identity.data() as AuthIdentity).status !== "active") throw Object.assign(new Error("Inactive AUTHMOD identities cannot bootstrap an access package."), { status: 403, code: "AUTHMOD_IDENTITY_INACTIVE" });
-  const securityVersion = await readAuthmodAccessHead(identityId);
   const value: AuthmodAccessReadPackage = {
     identity: identity.data() as AuthIdentity,
     appAssignments: apps.docs.map(value => value.data() as AppAssignment),
@@ -102,18 +105,20 @@ export async function getAuthmodAccessReadPackage(identityId: string, transactio
     recordDataAccess({ app: "integration-hub", operation: "authmod.package.cache", source: "APP_CACHE", documents: 0, cacheHit: true, cacheResult: "HIT" });
     return cached.value;
   }
-  const pending = inFlight.get(identityId);
+  const pendingKey = JSON.stringify([identityId, head]);
+  const pending = inFlight.get(pendingKey);
   if (pending) {
     recordDataAccess({ app: "integration-hub", operation: "authmod.package.cache", source: "APP_CACHE", documents: 0, cacheHit: true, cacheResult: "IN_FLIGHT_JOIN" });
     return pending;
   }
   const promise = (async () => {
     const result = await retrieveReadPackage<AuthmodAccessReadPackage>(oplocPackageStore(), authmodAccessManifestKey(identityId));
-    if (!result || result.manifest.sourceVersion !== `authmod-security:${head}`) {
+    if (!result || result.manifest.sourceVersion !== `authmod-security:${head}` || result.value.securityVersion !== head) {
       if (!result) {
         await bootstrapAuthmodAccessPackage(identityId);
         const bootstrapped = await retrieveReadPackage<AuthmodAccessReadPackage>(oplocPackageStore(), authmodAccessManifestKey(identityId));
         if (!bootstrapped) throw Object.assign(new Error("AUTHMOD access package bootstrap did not publish a package."), { status: 503, code: "AUTHMOD_ACCESS_PACKAGE_MISSING" });
+        if (bootstrapped.manifest.sourceVersion !== `authmod-security:${head}` || bootstrapped.value.securityVersion !== head) throw Object.assign(new Error("AUTHMOD access changed while the package was published. Retry the request."), { status: 503, code: "AUTHMOD_ACCESS_PACKAGE_STALE" });
         const value = validateAuthmodAccessReadPackage(bootstrapped.value);
         entries.set(identityId, { version: head, value });
         recordDataAccess({ app: "integration-hub", operation: "authmod.package.bootstrap", source: "FIRESTORE", documents: bootstrapped.manifest.recordCount, cacheHit: false, cacheResult: "MISS" });
@@ -125,8 +130,8 @@ export async function getAuthmodAccessReadPackage(identityId: string, transactio
     recordDataAccess({ app: "integration-hub", operation: "authmod.package.read", source: "SNAPSHOT", documents: result.manifest.recordCount, cacheHit: false, dataset: AUTHMOD_ACCESS_DATASET, packageVersion: result.manifest.packageVersion });
     return validateAuthmodAccessReadPackage(result.value);
   })();
-  inFlight.set(identityId, promise);
-  try { return await promise; } finally { if (inFlight.get(identityId) === promise) inFlight.delete(identityId); }
+  inFlight.set(pendingKey, promise);
+  try { return await promise; } finally { if (inFlight.get(pendingKey) === promise) inFlight.delete(pendingKey); }
 }
 
 export function clearAuthmodAccessReadPackageCacheForTests() { entries.clear(); inFlight.clear(); }
