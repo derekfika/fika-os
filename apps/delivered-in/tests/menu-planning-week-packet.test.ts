@@ -72,6 +72,22 @@ test("Delivered-In consumes the shared Menu Planning packet envelope", () => {
   assert.equal(week.days[0].entries[0].quantity, 10);
 });
 
+test("a same-day amendment retains verified lineage only for its untouched site", () => {
+  const prior = { publicationDayId: "publication-day:mon:v2", version: 2, contentHash: "day-hash-v2" };
+  const day = { ...snapshot.days[0], retainedSiteLineage: { "oploc:haleon": prior } };
+  const packet = decodeMenuPlanningWeekPacket(encodeWeeklyPublicationPacket({ ...snapshot, days: [day] }));
+  const [publication] = packetPublicationsForRange([packet], "2026-09-01", "2026-10-01");
+  const ids = new Set(["oploc:haleon", "oploc:other"]);
+  const [retained] = projectPublishedWeeks([publication], "oploc:haleon", ids, "2026-09-08")[0].days;
+  const [changed] = projectPublishedWeeks([publication], "oploc:other", ids, "2026-09-08")[0].days;
+  assert.deepEqual([retained.publicationDayId, retained.version, retained.contentHash, retained.entries[0].quantity], [prior.publicationDayId, prior.version, prior.contentHash, 10]);
+  assert.deepEqual([changed.publicationDayId, changed.version, changed.contentHash, changed.entries[0].quantity], [day.publicationDayId, day.version, day.contentHash, 15]);
+  for (const retainedSiteLineage of [{ "oploc:other": { ...prior, version: 3 } }, { "oploc:missing": prior }]) {
+    const invalid = encodeWeeklyPublicationPacket({ ...snapshot, days: [{ ...day, retainedSiteLineage }] });
+    assert.throws(() => decodeMenuPlanningWeekPacket(invalid), error => isMenuPlanningWeekPacketIntegrityError(error));
+  }
+});
+
 test("Delivered-In projects new menu slots with their stable dish identity", () => {
   const value = { ...snapshot, days: snapshot.days.map(day => ({ ...day, entries: day.entries.map(entry => ({ ...entry, slot: "GARNISH 1", canonicalDishId: "dish:garnish:herbs" })) })) };
   const packet = decodeMenuPlanningWeekPacket(encodeWeeklyPublicationPacket(value));

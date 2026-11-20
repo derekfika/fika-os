@@ -12,6 +12,7 @@ import { createRollingSnapshot, getMenuPlanningOperationalStore, getMenuTemplate
 import { applyRollingEntryPatch, type RollingEntryPatch, type RollingMutationDelta } from "./rolling-command";
 import { dishCategoryForWrite } from "./dish-categories";
 import { isGovernedMenuSlot, suggestMenuRowSlot } from "./menu-template";
+import { menuSiteIdentity, menuSiteKey } from "./site-pax";
 export interface Stored { version: 1; weeks: RollingWeek[]; days: RollingDay[]; entries: RollingEntry[]; /** Permanent template additions apply only to weeks created after the change. */ menuTemplateSlots?: string[]; }
 const now = () => new Date().toISOString();
 export const operationalDateLondon = (at = new Date()) => { const parts = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(at).filter(part => part.type !== "literal").map(part => [part.type, part.value])); return `${parts.year}-${parts.month}-${parts.day}`; };
@@ -53,6 +54,21 @@ const normaliseDestination = (allocation: RollingAllocation, liveOplocs: readonl
 };
 export const normaliseRollingSnapshotDestinations = (snapshot: RollingSnapshot, liveOplocs: readonly LiveGovernedOploc[] = []): RollingSnapshot => ({
   ...snapshot,
+  days: snapshot.days.map(day => {
+    if (!day.destinationPax) return day;
+    const aliases = new Map(liveOplocs.flatMap(oploc => (oploc.legacyIds || []).map(id => [id, oploc.canonicalId] as const)));
+    const destinationPax = Object.fromEntries(Object.entries(day.destinationPax).flatMap(([key, pax]) => {
+      const site = menuSiteIdentity(key);
+      if (!site) return [];
+      if (site.kind === "one-off") return day.oneOffDestinations?.some(destination => destination.id === site.id) ? [[key, pax]] : [];
+      const canonical = aliases.get(site.id);
+      if (!canonical || canonical === site.id) return [[key, pax]];
+      const canonicalKey = menuSiteKey(site.kind, canonical);
+      return day.destinationPax?.[canonicalKey] === undefined ? [[canonicalKey, pax]] : [];
+    }));
+    const { destinationPax: _stored, ...rest } = day;
+    return Object.keys(destinationPax).length ? { ...rest, destinationPax } : rest;
+  }),
   entries: snapshot.entries.map(entry => ({ ...entry, allocations: entry.allocations.map(allocation => {
     const registered = snapshot.days.find(day => day.id === entry.dayId)?.oneOffDestinations || [];
     const matches = !allocation.destinationId && !allocation.oneOffDestinationId ? registered.filter(item => item.label === allocation.destinationLabel && (item.address || "") === (allocation.destinationAddress || "")) : [];
@@ -402,7 +418,7 @@ export async function resetWeek(weekId: string, expectedWeekVersion: number, act
       throw Object.assign(new Error("This week is published, imported, or otherwise locked. Use its governed amendment or withdrawal workflow; reset is unavailable."), { status: 409 });
     }
     target.entries = [];
-    target.days = target.days.map(day => ({ ...day, entryIds: [], oneOffDestinations: [] }));
+    target.days = target.days.map(({ destinationPax: _pax, ...day }) => ({ ...day, entryIds: [], oneOffDestinations: [] }));
     target.week.entryIds = [];
     target.week.status = "draft";
     target.week.dayStatuses = Object.fromEntries(target.days.map(day => [day.id, "draft"]));

@@ -68,6 +68,21 @@ test("collection identity never joins distinct service orders at the same site/d
   assert.equal(input[0], b);
 });
 
+test("run-sheet headers use authoritative PAX for Menu, Hospitality and Sandwiches", () => {
+  const menu = { ...order("menu-pax", [line("salad", 8)]), guestCount: 60 };
+  const hospitality = { ...order("booking-pax"), origin: "hospitality_booking" as const, guestCount: 55 };
+  const sandwiches = { ...hospitality, serviceType: "Sandwich Lunch", guestCount: 35 };
+  for (const [source, value] of [[menu, 60], [hospitality, 55], [sandwiches, 35]] as const) {
+    assert.equal(collectionDetails(source).pax, String(value));
+    assert.match(collectionPrintHtml(source), new RegExp(`<dt>Order ref</dt><dd>[^<]*PAX ${value}</dd>`));
+  }
+  for (const guestCount of [undefined, 0, -1, 1.5, Infinity]) {
+    const legacyMenu = { ...menu, guestCount };
+    assert.equal(collectionDetails(legacyMenu).pax, undefined);
+    assert.doesNotMatch(collectionPrintHtml(legacyMenu), /PAX \d/);
+  }
+});
+
 test("collection print has every long-list row, empty physical boxes, signatures, A4 and safe pagination", () => {
   const o = order(
     "a",

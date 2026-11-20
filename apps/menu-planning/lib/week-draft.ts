@@ -3,6 +3,7 @@ import type { RollingEntryPatch } from "./rolling-command";
 import { applyRollingEntryPatch } from "./rolling-command";
 import { assertMenuSlotCanBeRemoved, plannerSlotsForWeek } from "./rolling-menu-types";
 import { suggestMenuRowSlot } from "./menu-template";
+import type { SitePaxUpdate } from "./site-pax";
 
 // Browser recovery data is never authority. Only these editable fields cross the save boundary.
 export const DRAFT_ENTRY_FIELDS = ["itemId", "itemLabel", "slot", "portions", "allocations", "isCoreSalad"] as const;
@@ -12,6 +13,7 @@ export type WeekChanges = {
   customSlots?: string[];
   removedSlots?: string[];
   templateAdditions?: string[];
+  destinationPax?: SitePaxUpdate[];
 };
 export type WeekSaveRequest = { weekId: string; expectedWeekVersion: number; requestId: string; changes: WeekChanges; workingDraft?: boolean };
 export const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);

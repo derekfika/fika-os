@@ -66,3 +66,15 @@ export function decodeWeeklyPublicationPacket<T>(packet: WeeklyPublicationPacket
   if (plain.byteLength !== packet.manifest.uncompressedSize) throw new Error("Weekly publication packet size check failed.");
   return JSON.parse(plain.toString("utf8")) as T;
 }
+
+/** A destination can retain its previous publication when another site amends the same day. */
+export type MenuPublicationDayLineage = { publicationDayId: string; version: number; contentHash: string };
+export type RetainedMenuSiteLineage = Record<string, MenuPublicationDayLineage>;
+
+export function isRetainedMenuSiteLineage(value: unknown, currentVersion: number): value is RetainedMenuSiteLineage {
+  return value !== null && typeof value === "object" && !Array.isArray(value) &&
+    Object.entries(value).every(([id, lineage]) => id.length > 0 && lineage !== null && typeof lineage === "object" &&
+      typeof lineage.publicationDayId === "string" && lineage.publicationDayId.length > 0 &&
+      Number.isSafeInteger(lineage.version) && lineage.version > 0 && lineage.version < currentVersion &&
+      typeof lineage.contentHash === "string" && lineage.contentHash.length > 0);
+}

@@ -1,5 +1,24 @@
+import { menuSiteKey, parsePaxInput, type SitePax } from "./site-pax";
+
 export type PortionDraftEntry = { id: string; allocations: Array<{ destinationId?: string; oneOffDestinationId?: string; destination?: { kind: "governed" | "one-off"; id: string }; destinationLabel: string; destinationAddress?: string; quantity: number }> };
 export type PortionDraftDestination = { id: string; label: string; address?: string; oneOff?: boolean };
+
+export function portionPaxIdentity(destination: PortionDraftDestination) {
+  return destination.oneOff
+    ? { kind: "one-off" as const, destinationId: destination.id.replace(/^oneoff:/, "") }
+    : { kind: "governed" as const, destinationId: destination.id };
+}
+
+export function portionPaxKey(destination: PortionDraftDestination) {
+  const { kind, destinationId } = portionPaxIdentity(destination);
+  return menuSiteKey(kind, destinationId);
+}
+
+export const portionPaxDraftPrefix = "pax|";
+export const portionPaxDraftKey = (destination: PortionDraftDestination) => portionPaxDraftPrefix + portionPaxKey(destination);
+export function paxDraftMatchesPersisted(raw: string, persisted: number | undefined) {
+  return parsePaxInput(raw) === (persisted ?? null);
+}
 
 export function allocationMatchesPortionDestination(allocation: PortionDraftEntry["allocations"][number], destination: PortionDraftDestination) {
   const oneOffId = allocation.oneOffDestinationId || (allocation.destination?.kind === "one-off" ? allocation.destination.id : undefined);
@@ -21,14 +40,20 @@ export function draftValueMatchesPersisted(raw: unknown, entry: PortionDraftEntr
   if (text !== "" && (!Number.isFinite(Number(text)) || Number(text) < 0)) return false;
   return numberOrZero(text) === persistedPortionValue(entry, destination);
 }
-export function reconcilePortionDraft(draft: Record<string, string>, entries: PortionDraftEntry[], destinations: PortionDraftDestination[]) {
+export function reconcilePortionDraft(draft: Record<string, string>, entries: PortionDraftEntry[], destinations: PortionDraftDestination[], destinationPax?: SitePax, awaitingOplocs = false) {
   const entriesById = new Map(entries.map(entry => [entry.id, entry]));
   const destinationsById = new Map(destinations.map(destination => [destination.id, destination]));
+  const paxKeys = new Set(destinations.map(portionPaxKey));
   return Object.fromEntries(Object.entries(draft).filter(([key, value]) => {
+    if (typeof value !== "string") return false;
+    if (key.startsWith(portionPaxDraftPrefix)) {
+      const siteKey = key.slice(portionPaxDraftPrefix.length);
+      return (paxKeys.has(siteKey) || awaitingOplocs && siteKey.startsWith("governed:")) && !paxDraftMatchesPersisted(value, destinationPax?.[siteKey]);
+    }
     const separator = key.indexOf("|");
     if (separator < 1) return false;
     const entry = entriesById.get(key.slice(0, separator));
     const destination = destinationsById.get(key.slice(separator + 1));
-    return Boolean(entry && destination && !draftValueMatchesPersisted(value, entry, destination));
+    return Boolean(entry && (destination ? !draftValueMatchesPersisted(value, entry, destination) : awaitingOplocs));
   }));
 }

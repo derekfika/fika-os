@@ -2,6 +2,8 @@ import { expect, test, type Page } from "@playwright/test";
 import { applyRollingEntryPatch } from "../../lib/rolling-command";
 import { emptyWeek } from "../../lib/rolling-menu";
 import type { RollingSnapshot } from "../../lib/rolling-menu-types";
+import type { WeekSaveRequest } from "../../lib/week-draft";
+import { menuSiteKey } from "../../lib/site-pax";
 
 async function fixture(page: Page, portions = false) {
   const weeks = ["2098-11-03", "2098-11-10"].map(date => {
@@ -19,7 +21,7 @@ async function fixture(page: Page, portions = false) {
     snapshot.days.forEach(day => { day.entryIds = snapshot.entries.filter(entry => entry.dayId === day.id).map(entry => entry.id); });
     return snapshot;
   });
-  const writes: Array<{ weekId: string; expectedWeekVersion: number; updates: Array<{ entryId: string; patch: Parameters<typeof applyRollingEntryPatch>[1] }> }> = [];
+  const writes: Array<{ weekId: string; expectedWeekVersion: number; updates: Array<{ entryId: string; patch: Parameters<typeof applyRollingEntryPatch>[1] }>; changes?: WeekSaveRequest["changes"] }> = [];
   const connection = { interruptNextResponse: false, identity: "isolated-browser-reviewer" };
   await page.route(/^https:\/\//, route => route.abort());
   await page.route("**/api/**", async route => {
@@ -34,7 +36,13 @@ async function fixture(page: Page, portions = false) {
     const target = weeks.find(week => week.week.id === body.weekId)!;
     if (body.expectedWeekVersion !== target.week.version) return route.fulfill({ status: 409, json: { error: { message: "Another editor changed this week. Refresh before saving." } } });
     const next = structuredClone(target);
-    for (const update of body.updates) applyRollingEntryPatch(next.entries.find(entry => entry.id === update.entryId)!, update.patch || { allocations: update.allocations, portions: update.allocations.reduce((sum: number, allocation: { quantity: number }) => sum + allocation.quantity, 0) }, { actor: "isolated-browser-reviewer", at: "2098-11-03T10:00:00Z" });
+    for (const update of body.updates || body.changes?.updates || []) applyRollingEntryPatch(next.entries.find(entry => entry.id === update.entryId)!, update.patch || { allocations: update.allocations, portions: update.allocations.reduce((sum: number, allocation: { quantity: number }) => sum + allocation.quantity, 0) }, { actor: "isolated-browser-reviewer", at: "2098-11-03T10:00:00Z" });
+    for (const update of body.changes?.destinationPax || []) {
+      const day = next.days.find(day => day.id === update.dayId)!;
+      day.destinationPax ||= {};
+      if (update.pax === null) delete day.destinationPax[menuSiteKey(update.kind, update.destinationId)];
+      else day.destinationPax[menuSiteKey(update.kind, update.destinationId)] = update.pax;
+    }
     next.week.version += 1;
     Object.assign(target, next);
     if (connection.interruptNextResponse) { connection.interruptNextResponse = false; return route.abort("failed"); }
@@ -182,4 +190,57 @@ test("same-name governed and one-off portion columns preserve distinct allocatio
   expect(allocations).toHaveLength(2);
   expect(allocations.find(row => row.oneOffDestinationId)?.quantity).toBe(9);
   expect(server.writes).toHaveLength(2);
+});
+
+test("PAX saves by day and site, recovers after reload, and keeps conflict and discard explicit", async ({ page }) => {
+  const server = await fixture(page, true);
+  const week = server.weeks[0];
+  const portionsBefore = structuredClone(week.entries);
+  const site = page.getByRole("spinbutton", { name: "PAX for Shared venue", exact: true });
+  const oneOff = page.getByRole("spinbutton", { name: "PAX for Shared venue (one-off)", exact: true });
+  const secondSite = page.getByRole("spinbutton", { name: "PAX for Site B", exact: true });
+  const save = page.getByRole("button", { name: "Save changes", exact: true });
+
+  await expect(site).toHaveValue("");
+  await site.fill("60");
+  await oneOff.fill("1.5");
+  await expect(oneOff).toHaveAttribute("aria-invalid", "true");
+  await expect(save).toBeDisabled();
+  await oneOff.fill("20");
+  await secondSite.fill("35");
+  await page.reload();
+  await expect(site).toHaveValue("60");
+  await expect(oneOff).toHaveValue("20");
+  await expect(secondSite).toHaveValue("35");
+  expect(server.writes).toHaveLength(0);
+  await save.click();
+  await expect(save).toBeDisabled();
+  expect(server.writes[0].changes?.updates).toEqual([]);
+
+  await page.getByRole("button", { name: /^TUE/ }).click();
+  await expect(site).toHaveValue("");
+  await site.fill("42");
+  await save.click();
+  await expect(save).toBeDisabled();
+  await page.getByRole("button", { name: /^MON/ }).click();
+  await expect(site).toHaveValue("60");
+  await site.fill("61");
+  week.days[0].destinationPax!["governed:oploc:synthetic:a"] = 59;
+  week.week.version += 1;
+  await save.click();
+  await expect(page.getByText("The week changed after you started editing.", { exact: false })).toBeVisible();
+  await expect(page.getByText("Shared venue · 59", { exact: true })).toBeVisible();
+  await expect(site).toHaveValue("61");
+  await expect(save).toBeDisabled();
+  await page.getByRole("button", { name: "Discard", exact: true }).click();
+  await expect(site).toHaveValue("59");
+  await site.fill("");
+  await save.click();
+  await expect(save).toBeDisabled();
+  expect(server.writes.at(-1)?.changes?.destinationPax).toEqual([{ dayId: week.days[0].id, kind: "governed", destinationId: "oploc:synthetic:a", pax: null }]);
+  await page.reload();
+  await expect(site).toHaveValue("");
+  await expect(secondSite).toHaveValue("35");
+  expect(week.days[1].destinationPax).toEqual({ "governed:oploc:synthetic:a": 42 });
+  expect(week.entries).toEqual(portionsBefore);
 });

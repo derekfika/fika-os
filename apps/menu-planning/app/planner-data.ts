@@ -151,12 +151,12 @@ export function useRollingData(options: { loadCatalogue?: boolean } = {}) {
     const operation = ++operationRef.current;
     const generation = weekCacheWriter.currentGeneration();
     const payload = { ...extra } as Record<string, any>;
-    const weekMutation = action === "create-entry" || action === "update-entry" || action === "batch-update-entries";
+    const weekMutation = action === "create-entry" || action === "update-entry" || action === "batch-update-entries" || action === "save-week";
     const requestedWeekId = typeof payload.weekId === "string" ? payload.weekId : undefined;
     const currentSnapshot = snapshotRef.current;
     const baseSnapshot = currentSnapshot?.week.id === requestedWeekId ? currentSnapshot : snapshot;
     if (weekMutation && baseSnapshot && baseSnapshot.week.id === requestedWeekId) {
-      payload.expectedWeekVersion = baseSnapshot.week.version;
+      if (action !== "save-week") payload.expectedWeekVersion = baseSnapshot.week.version;
       if (action === "update-entry") {
         const entry = baseSnapshot.entries.find(candidate => candidate.id === payload.entryId);
         payload.dayId ??= entry?.dayId;
