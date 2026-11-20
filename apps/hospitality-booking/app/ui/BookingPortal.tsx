@@ -15,7 +15,8 @@ import { hospitalitySiteThemeStyle, portalSite, type PortalSiteConfig, type Port
 import { isGallagherBooking } from "@/lib/gallagher-rules";
 import { MUNICH_RE_LOCATIONS, munichReLocationDisplay, munichReLocationFields, munichReLocationIdFor } from "@/lib/munich-re-locations";
 import { quantityFromInput, quantityMinimumMessage, stepQuantityDown, stepQuantityUp } from "@/lib/quantity-entry";
-import { loadHospitalityPortalMenu } from "@/lib/hospitality-portal-catalogue";
+import { loadHospitalityPortalMenu, loadStudioPortalMenu } from "@/lib/hospitality-portal-catalogue";
+import { studioDishChoiceId } from "../../../shared/hospitality-menu-studio-selection";
 import { catalogueMinimums, effectiveProductMinimum, validateCatalogueRules, type MinimumContext } from "@fika/server-shared/hospitality-effective-offering";
 import StartAgainButton from "./StartAgainButton";
 import GuestCountInput, { GuestCountNotice } from "./GuestCountInput";
@@ -150,16 +151,19 @@ export default function BookingPortal({
   oplocId,
   siteLabel,
   dashboardMode,
+  studioPilotDates,
 }: {
   siteKey: PortalSiteKey;
   oplocId?: string;
   siteLabel?: string;
   dashboardMode?: boolean;
+  studioPilotDates?: { firstDate: string; lastDate: string };
 }) {
   const site = portalSite(siteKey);
   const currentSiteLabel = siteLabel?.trim() || site.theme.shortLabel;
   const themeStyle = hospitalitySiteThemeStyle(site) as CSSProperties;
   const [menu, setMenu] = useState<PortalMenuItem[]>([]);
+  const [loadedStudioDate, setLoadedStudioDate] = useState("");
   const buffet = useBuffetConfig(site.key === "mnk");
   const [catalogueWarning, setCatalogueWarning] = useState("");
   const [occasion, setOccasion] = useState("");
@@ -294,15 +298,32 @@ export default function BookingPortal({
     }
   }, [draftReady]);
 
+  const studioDate = studioPilotDates && studioPilotDates.firstDate <= details.eventDate &&
+    details.eventDate <= studioPilotDates.lastDate ? details.eventDate : "";
   useEffect(() => {
     let active = true;
+    setLoadedStudioDate("");
+    if (studioPilotDates) setLines(previous => previous.filter(line => !Object.hasOwn(line.choices, studioDishChoiceId)));
+    if (studioDate) {
+      setMenu([]);
+      setCatalogueWarning("Checking the current menu for this event date…");
+      void loadStudioPortalMenu(studioDate).then(nextMenu => {
+        if (!active) return;
+        setMenu(nextMenu);
+        setLoadedStudioDate(studioDate);
+        setCatalogueWarning("");
+      }).catch(() => {
+        if (active) setCatalogueWarning("The current Studio menu is unavailable. Refresh before making a selection.");
+      });
+      return () => { active = false; };
+    }
     void loadHospitalityPortalMenu(site.key, oplocId).then(({ menu: nextMenu, catalogue }) => {
       if (!active) return;
       setMenu(nextMenu);
       setCatalogueWarning(catalogue.source === "cache-unverified" ? "Showing the last saved menu. Its current version could not be verified; check your connection and refresh before submitting." : "");
     }).catch(() => { if (active) setError(`The ${site.label} catalogue could not be loaded. Check your connection and try again.`); });
     return () => { active = false; };
-  }, [site.key, site.label, oplocId]);
+  }, [site.key, site.label, oplocId, studioDate, studioPilotDates]);
   const categories = useMemo(
     () =>
       (allowed[occasion] || []).filter((category) =>
@@ -433,8 +454,18 @@ export default function BookingPortal({
   };
   const checkGovernedRules = () => {
     try {
+      if (studioDate && loadedStudioDate !== studioDate) throw new Error("Wait for the current Studio menu before continuing.");
+      for (const { item, quantity, choices } of selected) {
+        if (!item.studioChoices) continue;
+        const picked = choices[studioDishChoiceId];
+        if (!picked || typeof picked !== "object" || Array.isArray(picked) ||
+            Object.values(picked).reduce((sum, count) => sum + count, 0) !== quantity ||
+            Object.keys(picked).some(id => !item.studioChoices!.dishes.some(dish => dish.id === id))) {
+          throw new Error(`Choose current published dishes for ${item.name}.`);
+        }
+      }
       assertBookingDate(selected.map(x => x.item), details.eventDate, new Date().toISOString(), { site: site.key, occasion, startTime: details.startTime });
-      validateCatalogueRules(selected.map(x => x.item), selected.map(x => ({ itemId: x.item.id, quantity: x.quantity, choices: Object.entries(x.choices).map(([id, value]) => typeof value === "object" && !Array.isArray(value) ? { id, quantities: value } : { id, value }) })), { gallagher, siteId: site.key, guestCount: details.guestCount, eventDate: details.eventDate, startTime: details.startTime, now: new Date().toISOString() });
+      validateCatalogueRules(selected.map(x => x.item), selected.map(x => ({ itemId: x.item.id, quantity: x.quantity, choices: Object.entries(x.choices).filter(([id]) => id !== studioDishChoiceId).map(([id, value]) => typeof value === "object" && !Array.isArray(value) ? { id, quantities: value } : { id, value }) })), { gallagher, siteId: site.key, guestCount: details.guestCount, eventDate: details.eventDate, startTime: details.startTime, now: new Date().toISOString() });
       return true;
     } catch (error) { showValidation({ menu: { field: "menu", step: 2, message: (error as Error).message } }, (error as Error).message, 2); return false; }
   };
@@ -548,7 +579,10 @@ export default function BookingPortal({
           lineTotal: Number(
             (value.item.unitPrice * value.quantity).toFixed(2),
           ),
-          choices: [...Object.entries(value.choices).map(([id, value]) => typeof value === "object" && !Array.isArray(value) ? { id, quantities: value } : { id, value }), ...(value.buffetPreview ? [buffetChoice(value.buffetPreview)] : [])],
+          choices: [...Object.entries(value.choices).map(([id, choice]) => id === studioDishChoiceId
+            ? { id, quantities: choice, publicationHash: value.item.studioChoices?.publicationHash }
+            : typeof choice === "object" && !Array.isArray(choice) ? { id, quantities: choice } : { id, value: choice }),
+            ...(value.buffetPreview ? [buffetChoice(value.buffetPreview)] : [])],
         })),
         netTotal: total,
         vatNote:
@@ -1091,7 +1125,9 @@ function Plan({
                 const saved = line?.choices[group.id];
                 if (group.selectionType === "quantities") {
                   const quantities = saved && typeof saved === "object" && !Array.isArray(saved) ? saved : {};
-                  return <fieldset className="choice-field" key={group.id}><legend>{group.label} — minimum {group.minimumQuantity} per selected variety</legend>{group.options.map(option => <label key={option.id}>{option.label}<input type="number" min="0" step="1" value={quantities[option.id] || ""} onChange={event => { const next: Record<string, number> = { ...quantities, [option.id]: quantityFromInput(event.target.value) }; const quantity = Object.values(next).reduce((sum, n) => sum + n, 0); setQuantity(item, quantity); setChoice(item.id, group.id, next); }} /></label>)}</fieldset>;
+                  return <fieldset className="choice-field" key={group.id}><legend>{group.label} — minimum {group.minimumQuantity} per selected variety</legend>{group.options.map(option => <label key={option.id}>{option.label}
+                    {group.id === studioDishChoiceId && <span>{item.studioChoices?.dishes.find(dish => dish.id === option.id)?.description}</span>}
+                    <input type="number" min="0" step="1" value={quantities[option.id] || ""} onChange={event => { const next: Record<string, number> = { ...quantities, [option.id]: quantityFromInput(event.target.value) }; const quantity = Object.values(next).reduce((sum, n) => sum + n, 0); setQuantity(item, quantity); setChoice(item.id, group.id, next); }} /></label>)}</fieldset>;
                 }
                 if (isMulti) {
                   const selectedOptions = Array.isArray(saved) ? saved : [];

@@ -77,6 +77,7 @@ export type PortalMenuItem = {
   suggestionType?: string | null;
   suggestionLabel?: string;
   suggestionUnit?: string;
+  studioChoices?: import("../../shared/hospitality-menu-studio-selection").StudioPortalChoices;
   optionGroups?: Array<{
     id: string;
     label: string;
