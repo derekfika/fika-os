@@ -261,6 +261,7 @@ export default function Studio({
     setPage(next);
     setCreateKind(null);
     setSectionId("");
+    setDishBackToSection(false);
     setActionError("");
     if (next === "menus" || next === "collections") menuDraft.open(null);
     if (next === "dishes") dishDraft.open(null);
@@ -639,8 +640,9 @@ export default function Studio({
       : menus.filter((item) => item.kind === "seasonal");
   const menuBack = () =>
     navigate(menu?.kind === "collection" ? "collections" : "menus");
+  const contextualDish = dishBackToSection && Boolean(menu && section);
   const dishBack = () =>
-    dishBackToSection ? setPage("menus") : dishDraft.open(null);
+    contextualDish ? setPage("menus") : dishDraft.open(null);
   const showActivation =
     menu?.kind === "collection"
       ? () => {
@@ -820,7 +822,11 @@ export default function Studio({
             {menu &&
               section &&
               (page === "menus" ||
-                (page === "dishes" && dishBackToSection)) && (
+                (contextualDish &&
+                  (page === "dishes" ||
+                    page === "assortment" ||
+                    (page === "kitchen" &&
+                      kitchenReturn !== "activation")))) && (
                 <div hidden={page !== "menus"}>
                   <SectionEditor
                     key={section.id}
@@ -870,10 +876,10 @@ export default function Studio({
                 dishes={dishes}
                 menus={menus}
                 canManage={actor.canManage}
-                create={() => newDish(dishBackToSection)}
-                edit={(item) => openDish(item, dishBackToSection)}
+                create={() => newDish(contextualDish)}
+                edit={(item) => openDish(item, contextualDish)}
                 backToSection={
-                  dishBackToSection ? () => setPage("menus") : undefined
+                  contextualDish ? () => setPage("menus") : undefined
                 }
                 busy={actionBusy}
                 error={actionError}
@@ -887,7 +893,7 @@ export default function Studio({
                 {...dishProps}
                 back={dishBack}
                 backLabel={
-                  dishBackToSection ? "Section editor" : "Dish collection"
+                  contextualDish ? "Section editor" : "Dish collection"
                 }
                 kitchen={() => showKitchen("dishes")}
                 assortment={() => {

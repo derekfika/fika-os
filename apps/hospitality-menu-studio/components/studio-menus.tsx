@@ -261,13 +261,15 @@ export function SectionEditor({
   const [adding, setAdding] = useState(false);
   const [showName] = useState(focusName);
   const sectionName = useRef<HTMLInputElement>(null);
+  const focusedName = useRef(false);
   const dishSearch = useRef<HTMLInputElement>(null);
   useEffect(() => {
-    if (active && showName && sectionName.current && !adding) {
+    if (active && showName && sectionName.current && !focusedName.current) {
       sectionName.current.focus();
       sectionName.current.select();
+      focusedName.current = true;
     }
-  }, [active, showName, adding]);
+  }, [active, showName]);
   useEffect(() => {
     if (active && adding) dishSearch.current?.focus();
   }, [active, adding]);
