@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { DraftVersion, Menu, Publication } from "../lib/contract";
 import { Breadcrumb, Button, formatDate, PageHeading, Pill } from "./studio-ui";
 import styles from "./studio.module.css";
+import PublishedKitchenPreview from "./published-kitchen-preview";
 
 const savedDate = new Intl.DateTimeFormat("en-GB", {
   dateStyle: "medium",
@@ -26,6 +27,7 @@ export function VersionHistory({
   busy,
   saved,
   notice,
+  canPreviewPublishedKitchen,
 }: {
   menu: Menu;
   versions: DraftVersion[];
@@ -42,6 +44,7 @@ export function VersionHistory({
   busy: boolean;
   saved: boolean;
   notice: string;
+  canPreviewPublishedKitchen: boolean;
 }) {
   const [selected, setSelected] = useState("");
   const [confirmed, setConfirmed] = useState(false);
@@ -226,6 +229,9 @@ export function VersionHistory({
           </Button>
         </div>
       ))}
+      {canPreviewPublishedKitchen && (
+        <PublishedKitchenPreview menuId={menu.id} publications={history} historyLoaded={historyLoaded} />
+      )}
       {notice && <p role="status">{notice}</p>}
     </>
   );
