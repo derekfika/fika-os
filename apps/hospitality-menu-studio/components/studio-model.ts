@@ -104,3 +104,27 @@ export function retainedDraftText(
     ]),
   ].join("\n");
 }
+
+/** Responses from another editing context cannot update this draft. */
+export function canApplyDraftResponse(
+  responseContext: number,
+  currentContext: number,
+  responseId: string,
+  currentId: string | undefined,
+): boolean {
+  return responseContext === currentContext && responseId === currentId;
+}
+
+/** Reuse only an exact, still-present retained payload. */
+export function retainedCopyKey(
+  value: string,
+  recovered: { key: string; value: string } | null,
+  preserved: { key: string; value: string } | null,
+  editorKey: string,
+  read: (key: string) => string | null,
+): string {
+  for (const copy of [recovered, preserved]) {
+    if (copy?.value === value && read(copy.key) === value) return copy.key;
+  }
+  return editorKey;
+}

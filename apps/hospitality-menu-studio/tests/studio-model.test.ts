@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   assortmentTotal,
+  canApplyDraftResponse,
   localDraftKey,
   moveDish,
+  retainedCopyKey,
   retainedDraftMatchesRequest,
   retainedTimestamp,
   retainedDraftText,
@@ -102,4 +104,36 @@ test("recovery text is readable and retention time uses London", () => {
   };
   assert.match(retainedDraftText(menu, [dish]), /Dishes: Soup/);
   assert.doesNotMatch(retainedDraftText(menu, [dish]), /private-id|section-id/);
+});
+
+test("a reply applies only to the same draft and editor context", () => {
+  assert.equal(canApplyDraftResponse(1, 1, "menu-a", "menu-a"), true);
+  assert.equal(canApplyDraftResponse(1, 2, "menu-a", "menu-a"), false);
+  assert.equal(canApplyDraftResponse(1, 1, "menu-a", "menu-b"), false);
+  assert.equal(canApplyDraftResponse(1, 1, "menu-a", undefined), false);
+});
+
+test("open latest reuses only a still-intact recovered payload", () => {
+  const values = new Map([
+    ["recovered", "copy"],
+    ["preserved", "copy"],
+    ["editor", "different"],
+  ]);
+  const read = (key: string) => values.get(key) ?? null;
+  const recovered = { key: "recovered", value: "copy" };
+  const preserved = { key: "preserved", value: "copy" };
+  assert.equal(
+    retainedCopyKey("copy", recovered, preserved, "editor", read),
+    "recovered",
+  );
+  values.set("recovered", "changed");
+  assert.equal(
+    retainedCopyKey("copy", recovered, preserved, "editor", read),
+    "preserved",
+  );
+  values.delete("preserved");
+  assert.equal(
+    retainedCopyKey("copy", recovered, preserved, "editor", read),
+    "editor",
+  );
 });
