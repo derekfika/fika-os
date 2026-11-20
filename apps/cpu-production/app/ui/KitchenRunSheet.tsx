@@ -12,6 +12,7 @@ import {
 } from "../../../shared/allergen-contract";
 import { collectionOrders, collectionQuantity, collectionQuantityHeading, collectionDate, collectionDetails, isCoreSaladLine } from "./run-sheet-presentation";
 import { RunSheetPrintDialog } from "./RunSheetPrintDialog";
+import { GastroLabelPrintDialog } from "./GastroLabelPrintDialog";
 import { runSheetMenuSections } from "../../lib/menu-run-sheet-order";
 import { orderHasInvalidStudioKitchenSpec, studioKitchenSpecError, studioKitchenSpecForLine } from "../../lib/studio-kitchen-spec";
 import { StudioKitchenSpecification } from "./StudioKitchenSpecification";
@@ -374,6 +375,7 @@ export default function KitchenRunSheet({
     <>
       <div className="kitchen-print-toolbar">
         <RunSheetPrintDialog productionDate={productionDate} selectedSiteIds={selectedSiteIds} />
+        <GastroLabelPrintDialog productionDate={productionDate} selectedSiteIds={selectedSiteIds} />
         <p>Choose today, tomorrow, or a custom date range; select destinations for separate A4 paper handover sheets. Current screen filter: {siteFilterLabel}.</p>
       </div>
       <section
