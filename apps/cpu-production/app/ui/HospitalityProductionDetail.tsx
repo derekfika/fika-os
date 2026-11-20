@@ -5,6 +5,7 @@ import "./hospitality-production-detail.css";
 import BookingContext from "./BookingContext";
 import SignedAllergenPdfAction from "./SignedAllergenPdfAction";
 import { ProductionOrderChoices } from "./BuffetOrderChoice";
+import { StudioKitchenSpecification } from "./StudioKitchenSpecification";
 
 function dateLabel(order: ProductionOrder) {
   const date = order.serviceDate || order.requiredBy.slice(0, 10);
@@ -47,7 +48,10 @@ export default function HospitalityProductionDetail({
           {order.lines.map((line) => (
             <div key={line.canonicalId}>
               <strong>{orderedQuantityLabel(line)}</strong>
-              <span>{line.itemName}<small>Customer ordered</small><ProductionOrderChoices choices={line.choices} /></span>
+              <div>
+                <span>{line.itemName}<small>Customer ordered</small><ProductionOrderChoices choices={line.choices} /></span>
+                <StudioKitchenSpecification order={order} line={line} />
+              </div>
             </div>
           ))}
         </div>

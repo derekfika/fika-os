@@ -60,6 +60,60 @@ const hospitality = (id: number): ProductionOrder => ({
   serviceType: "Working lunch",
   lines: collection(`hospitality-${id}`, 2, true).lines.map(line => ({ ...line, customerUnit: "tray" })),
 });
+
+test("Chromium A4 preserves frozen Studio instructions and box totals across continuation pages", async () => {
+  const source = hospitality(3);
+  source.kitchenNotes = "Booking kitchen notes are separate.";
+  const line = source.lines[0];
+  line.sourceBookingLineId = "line:studio";
+  const description = "Pack each variety separately. Keep all labels visible.\n".repeat(210).trimEnd();
+  line.studioKitchenSpec = {
+    version: 1,
+    bookingId: source.sourceBookingId,
+    bookingLineId: line.sourceBookingLineId,
+    selections: [{
+      selectionId: "selection:pastries",
+      subject: { dishId: "dish:pastries", revision: 1, sourceHash: "a".repeat(64) },
+      publication: { publicationId: "publication:autumn", publicationRevision: 1, contentHash: "b".repeat(64) },
+      release: { releaseId: "release:pastries", matrixHash: "c".repeat(64) },
+      name: "Mini Pastries",
+      kitchenDescription: description,
+      assortment: {
+        boxCount: 4, unit: "pieces", expectedTotal: 24,
+        components: [{ id: "pastries", name: "Mini pastries", quantity: 24 }],
+      },
+    }],
+  };
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.emulateMedia({ media: "screen" });
+    await preparePrint(page, collectionPrintHtml(source));
+    const result = await page.evaluate(() => {
+      const output = document.getElementById("day-pages")!;
+      const cards = [...output.querySelectorAll(".collection")];
+      return {
+        ready: output.dataset.layoutReady,
+        pages: output.children.length,
+        description: [...output.querySelectorAll(".studio-kitchen-description")].map(node => node.textContent).join(""),
+        summary: [...output.querySelectorAll(".studio-kitchen-total")].map(node => node.textContent),
+        components: [...output.querySelectorAll(".studio-kitchen-spec-component")].map(node => node.textContent),
+        overflow: cards.some(card => card.getBoundingClientRect().bottom > card.closest(".page-cards")!.getBoundingClientRect().bottom + 0.5),
+      };
+    });
+    assert.equal(result.ready, "true");
+    assert.ok(result.pages > 1);
+    assert.equal(result.description, description);
+    assert.deepEqual(result.summary, ["4 boxes · 24 pieces per box · 96 pieces total"]);
+    assert.deepEqual(result.components, ["Mini Pastries · Mini pastries · 24 pieces per box · 96 pieces total"]);
+    assert.equal(result.overflow, false);
+    await page.emulateMedia({ media: "print" });
+    assert.ok((await page.pdf(pdfOptions)).byteLength > 1000);
+  } finally {
+    await browser.close();
+  }
+});
+
 const cases = [
   { name: "hospitality-same-site", orders: [hospitality(1), hospitality(2)], pages: 1 },
   { name: "grab-and-go", orders: [{ ...collection("grab", 2), origin: "grab_and_go" as const, serviceType: "Grab & Go", requiresDelivery: false }], pages: 1 },
