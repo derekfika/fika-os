@@ -763,7 +763,9 @@ export async function ingestMnkBooking(
       if (existing.studioKitchenEvidenceVersion) {
         if (!authoriseStudioPilotBooking) throw conflict("This Studio booking requires its authorised operator.");
         await authoriseStudioPilotBooking(transaction);
-        if (!isDeepStrictEqual(existing.source.originalPayload, payload)) throw conflict("This Studio booking ID was already accepted for a different submission.");
+        const { submittedAt: _originalTime, ...original } = existing.source.originalPayload;
+        const { submittedAt: _retryTime, ...retry } = payload;
+        if (!isDeepStrictEqual(original, retry)) throw conflict("This Studio booking ID was already accepted for a different submission.");
       }
       return ingestMnkBookingFromExisting(existing, payload, []);
     }
@@ -841,6 +843,10 @@ export async function ingestMnkBooking(
     await assertHospitalityBookingDate(transaction, result.booking, now, canonicalRecords);
     const studioPilot = isStudioBookingPilot(result.booking);
     if (studioPilot && !authoriseStudioPilotBooking) throw conflict("This Studio booking requires its authorised operator.");
+    if (studioPilot && (!result.booking.client.email.endsWith("@example.test") ||
+        (result.booking.client.requester?.email && !result.booking.client.requester.email.endsWith("@example.test")))) {
+      throw conflict("Use fictional contact details for the Studio rehearsal.");
+    }
     const stageStudioEvidence = await prepareStudioBooking(transaction, bookingRef, result.booking, {
       allowed: studioPilot,
       actorId: studioPilot ? await authoriseStudioPilotBooking!(transaction) : undefined,

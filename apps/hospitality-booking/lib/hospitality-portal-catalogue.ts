@@ -2,12 +2,13 @@ import { browserCatalogueDeps, loadHospitalityCatalogue, type CatalogueLoadResul
 import { resolveSiteCatalogue, type EffectiveOffering } from "@fika/server-shared/hospitality-effective-offering";
 import type { PortalMenuItem } from "./mnk-contract";
 import type { PortalSiteKey } from "./portal-sites";
+import { studioDishChoiceId, type StudioPortalChoices } from "../../shared/hospitality-menu-studio-selection";
 import { rcoaVisibilityFromCatalogue, RCOA_SERVICE_SETTINGS_UNAVAILABLE, type RcoaServiceVisibility } from "./rcoa-service-visibility";
 
 const UK_DATE = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" });
 export function hospitalityCatalogueServiceDate(now = new Date()) { return UK_DATE.format(now); }
 
-function portalMenuItem(offering: EffectiveOffering): PortalMenuItem | undefined {
+function portalMenuItem(offering: Omit<EffectiveOffering, "source"> & { studioChoices?: StudioPortalChoices }): PortalMenuItem | undefined {
   // Quote-only work remains an enquiry path and must never be coerced into a
   // zero-priced line in the existing price-based public booking forms.
   if (offering.offeringMode !== "quote_only" && (!offering.price || !Number.isFinite(offering.price.amount) || offering.price.amount < 0)) return undefined;
@@ -23,6 +24,11 @@ function portalMenuItem(offering: EffectiveOffering): PortalMenuItem | undefined
     return [{ id: group.id, label: group.label, ...(typeof group.minimumQuantity === "number" ? { minimumQuantity: group.minimumQuantity } : {}), selectionType: typeof group.controlType === "string" ? group.controlType : "select", required: group.required === true, options }];
   });
   const serves = typeof configuration.serves === "number" || configuration.serves === null ? configuration.serves : undefined;
+  const studio = offering.studioChoices;
+  if (studio?.dishes.length && !offering.quoteRequired) {
+    optionGroups.push({ id: studioDishChoiceId, label: "Choose published dishes", minimumQuantity: 1, selectionType: "quantities",
+      required: true, options: studio.dishes.map(dish => ({ id: dish.id, label: dish.name })) });
+  }
   return {
     id: offering.itemId, canonicalId: offering.itemId, name: offering.name, description: offering.description,
     category: offering.category, unitPrice: offering.price?.amount ?? 0, vatRate: offering.price?.vatRate ?? null,
@@ -37,7 +43,19 @@ function portalMenuItem(offering: EffectiveOffering): PortalMenuItem | undefined
     ...(typeof configuration.suggestionLabel === "string" ? { suggestionLabel: configuration.suggestionLabel } : {}),
     ...(typeof configuration.suggestionUnit === "string" ? { suggestionUnit: configuration.suggestionUnit } : {}),
     ...(optionGroups.length ? { optionGroups } : {}),
+    ...(studio ? { studioChoices: studio } : {}),
   };
+}
+
+export async function loadStudioPortalMenu(eventDate: string) {
+  const response = await fetch(`/api/hospitality-catalogue/studio?eventDate=${encodeURIComponent(eventDate)}`, { cache: "no-store" });
+  if (!response.ok) throw new Error("The current Studio menu could not be verified for this date.");
+  const result = await response.json() as { offerings?: Array<Omit<EffectiveOffering, "source"> & { studioChoices?: StudioPortalChoices }> };
+  if (!Array.isArray(result.offerings)) throw new Error("The current Studio menu could not be verified for this date.");
+  return result.offerings.flatMap(offering => {
+    const item = portalMenuItem(offering);
+    return item && !item.quoteRequired ? [item] : [];
+  });
 }
 
 export async function loadHospitalityPortalMenu(site: PortalSiteKey, requestedOplocId?: string, init: RequestInit = {}): Promise<{ menu: PortalMenuItem[]; catalogue: CatalogueLoadResult; visibility?: RcoaServiceVisibility }> {
