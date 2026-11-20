@@ -4,6 +4,7 @@ import { studioDishReviewSubject } from "../../shared/hospitality-menu-studio-sa
 import { catalogueUnavailable, siteOfferings, studioCatalogueOptions } from "./catalogue";
 import type { Dish, Menu, Review, StudioActor } from "./contract";
 import type { cpuDishReview } from "./cpu-dish-review";
+import type { deliverStudioPublication } from "./hub-publication";
 import { StudioProblem } from "./problem";
 import type { PublicationImpactTarget, PublicationRequest } from "./publication";
 import { draftCustomerChoices, draftReadiness, menuDishIds } from "./review";
@@ -40,6 +41,7 @@ export function studioHandlers(
   safetyAvailable: () => boolean = () => false,
   readImpact?: (request: Request, target: PublicationImpactTarget) => Promise<Review["impact"]>,
   stagedReview?: () => ReturnType<typeof cpuDishReview> | undefined,
+  stagedDelivery?: typeof deliverStudioPublication,
 ) {
   const publicationInputs = async (request: Request, actor: StudioActor, command: PublicationRequest, db: StudioStore) => {
     const catalogue = readCatalogue?.(request).catch(() => undefined);
@@ -52,6 +54,18 @@ export function studioHandlers(
       }
     }
     return { actor, catalogue: await catalogue, impact, impactTarget };
+  };
+  const stagedInputs = async (actor: StudioActor, command: PublicationRequest, db: StudioStore, createKey: boolean) => {
+    const pilot = actor.publicationPilot;
+    if (!pilot?.publish || !stagedDelivery || command.menuId !== pilot.menuId || command.effectiveDate < pilot.firstDate || command.effectiveDate > pilot.lastDate) {
+      throw denied("This menu is outside the approved Studio publication scope.");
+    }
+    const checker = stagedReview?.();
+    if (!checker) throw blocked("CPU verification is unavailable.");
+    const menu = await db.read<Menu>("menus", command.menuId);
+    if (menu.version !== command.version) throw new StudioProblem(409, "DRAFT_CONFLICT", "The draft changed. Review the latest saved version.");
+    if (menu.startDate < pilot.firstDate || menu.endDate > pilot.lastDate) throw denied("The menu dates are outside the approved publication scope.");
+    return { cpuSafety: (dish: Dish) => checker.evidence(studioDishReviewSubject(dish)), reviewSigningKey: await db.publicationSigningKey(createKey) };
   };
   const respond = async (operation: () => Promise<unknown>) => {
     try {
@@ -145,6 +159,9 @@ export function studioHandlers(
       if (command.action === "review") {
         const db = store();
         if (safetyAvailable()) return db.reviewPublication(command, await publicationInputs(request, actor, command, db));
+        if (actor.publicationPilot?.publish && command.menuId === actor.publicationPilot.menuId) {
+          return db.reviewPublication(command, { ...await stagedInputs(actor, command, db, true), ...await publicationInputs(request, actor, command, db) });
+        }
         const menu = await db.read<Menu>("menus", command.menuId);
         if (menu.version !== command.version) {
           throw new StudioProblem(409, "DRAFT_CONFLICT", "The draft changed. Review the latest saved version.");
@@ -153,6 +170,20 @@ export function studioHandlers(
       }
       if (command.action === "publish") {
         if (!actor.canPublish) throw denied("You do not have Studio publication access.");
+        if (actor.publicationPilot && stagedDelivery) {
+          const db = store();
+          const pilot = actor.publicationPilot;
+          if (!pilot.publish || command.menuId !== pilot.menuId) throw denied("This menu is outside the approved Studio publication scope.");
+          const existing = await db.publishedReceipt(command, actor.id);
+          const publication = existing ?? await db.publishReviewed(command, {
+            ...await stagedInputs(actor, command, db, false), ...await publicationInputs(request, actor, command, db),
+          });
+          if (publication.effectiveDate < pilot.firstDate || publication.effectiveDate > pilot.lastDate) throw denied("This publication is outside the approved date window.");
+          const { manifest, body } = await db.publicationForDelivery(publication.menuId, publication.id);
+          await stagedDelivery(manifest, body);
+          await db.recordPublicationDelivery(manifest.menuId, manifest.id, manifest.contentHash);
+          return { publication };
+        }
         if (!safetyAvailable()) throw blocked("Publication is unavailable in this environment.");
         const db = store();
         const existing = await db.publishedReceipt(command, actor.id);

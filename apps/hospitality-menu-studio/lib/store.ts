@@ -1,4 +1,5 @@
 import { getApps, initializeApp } from "firebase-admin/app";
+import { randomBytes } from "node:crypto";
 import { FieldPath, getFirestore, type DocumentReference, type DocumentSnapshot, type Firestore, type Transaction } from "firebase-admin/firestore";
 import { isDeepStrictEqual } from "node:util";
 import type { CatalogueLoadResult } from "@fika/server-shared/hospitality-catalogue-client";
@@ -9,8 +10,9 @@ import {
 } from "../../shared/hospitality-menu-studio-safety";
 import { londonDate, type Dish, type DraftVersion, type Menu, type Publication, type Review, type Section, type StudioActor } from "./contract";
 import { StudioProblem } from "./problem";
-import { canonicalJson, decodeLocalPublicationPackage, publicationHash, publicationImpactScope, reviewPublication, sameReviewToken,
-  type DishSafety, type PublicationImpactTarget, type PublicationRequest, type SeasonWindow } from "./publication";
+import { canonicalJson, publicationHash, publicationImpactScope, reviewPublication, sameReviewToken,
+  type DishSafety, type PublicationImpactTarget, type PublicationPackage, type PublicationRequest, type SeasonWindow } from "./publication";
+import { decodeStudioPublication, studioPublicationDescriptor } from "../../shared/hospitality-menu-studio-publication";
 import { studioRuntime } from "./runtime";
 import { dishSchema, menuSchema } from "./schema";
 import { publicationContent } from "./scoped-publication";
@@ -31,11 +33,12 @@ type StoredMenu = Omit<Menu, "sections"> & { sections: StoredSection[] };
 type StoredDraft = Omit<DraftData<Draft>, "item"> & { item: StoredMenu | Dish };
 type DraftCollection = "menus" | "dishes";
 export type Page<T> = { items: T[]; nextCursor: string | null };
-type ReviewInputs = { actor: StudioActor; catalogue?: CatalogueLoadResult; impact: Review["impact"]; impactTarget?: PublicationImpactTarget };
+type ReviewInputs = { actor: StudioActor; catalogue?: CatalogueLoadResult; impact: Review["impact"]; impactTarget?: PublicationImpactTarget;
+  cpuSafety?: (dish: Dish) => Promise<DishSafety>; reviewSigningKey?: string };
 type PublishCommand = PublicationRequest & { reviewToken: string; confirmed: true };
 
 export class StudioStore {
-  constructor(private db: Firestore, private now = () => new Date()) {}
+  constructor(private db: Firestore, private now = () => new Date(), private projectId: PublicationPackage["projectId"] = "demo-fika-os") {}
 
   async list<T extends Draft>(kind: DraftCollection, cursor?: string): Promise<Page<T>> {
     const snapshot = await this.page(this.db.collection(`${root}_${kind}`), cursor);
@@ -62,6 +65,40 @@ export class StudioStore {
 
   async reviewPublication(request: PublicationRequest, inputs: ReviewInputs) {
     return this.db.runTransaction(async transaction => (await this.publicationCandidate(transaction, request, inputs)).review, { readOnly: true });
+  }
+
+  async publicationSigningKey(create: boolean) {
+    const ref = this.db.collection(`${root}_schedules`).doc("publication-signing-key-v1");
+    return this.db.runTransaction(async transaction => {
+      const record = await transaction.get(ref);
+      if (record.exists) {
+        const value = record.data()?.key;
+        if (typeof value === "string" && /^[a-f0-9]{64}$/.test(value)) return value;
+        throw publicationIntegrity();
+      }
+      if (!create) throw new StudioProblem(409, "PUBLICATION_REVIEW_CHANGED", "Review the publication again.");
+      const key = randomBytes(32).toString("hex");
+      transaction.create(ref, { key });
+      return key;
+    });
+  }
+
+  async publicationForDelivery(menuId: string, publicationId: string) {
+    const head = this.draftHead("menus", menuId);
+    return this.db.runTransaction(async transaction => {
+      const { publication, payload } = await this.readPublication(transaction, head, publicationId);
+      return { manifest: studioPublicationDescriptor.parse(publication), body: canonicalJson(payload) };
+    }, { readOnly: true });
+  }
+
+  async recordPublicationDelivery(menuId: string, publicationId: string, contentHash: string) {
+    const ref = this.draftHead("menus", menuId).collection("publicationOutbox").doc(publicationId);
+    await this.db.runTransaction(async transaction => {
+      const pending = (await transaction.get(ref)).data();
+      if (!pending || pending.contentHash !== contentHash || pending.publicationId !== publicationId) throw publicationIntegrity();
+      if (pending.status === "pending") transaction.update(ref, { status: "delivered", deliveredAt: this.now().toISOString() });
+      else if (pending.status !== "delivered") throw publicationIntegrity();
+    });
   }
 
   async previewPublishedKitchen(menuId: string, publicationId: string, dishId: string, boxes?: number) {
@@ -199,8 +236,17 @@ export class StudioStore {
     }
     const dishes = [...content.preserved.map(({ dish }) => dish), ...await this.readPublicationDishes(transaction, content.refreshDishIds)];
     const safety = new Map<string, DishSafety>();
-    for (let start = 0; start < dishes.length; start += 50) {
-      for (const [id, status] of await this.readDishSafetyBatch(transaction, dishes.slice(start, start + 50))) safety.set(id, status);
+    if (this.projectId === "fika-os-dev") {
+      if (!inputs.cpuSafety || !inputs.reviewSigningKey) throw publicationIntegrity();
+      const verify = inputs.cpuSafety;
+      for (let start = 0; start < dishes.length; start += 20) {
+        const evidence = await Promise.all(dishes.slice(start, start + 20).map(async dish => [dish.id, await verify(dish)] as const));
+        for (const [id, status] of evidence) safety.set(id, status);
+      }
+    } else {
+      for (let start = 0; start < dishes.length; start += 50) {
+        for (const [id, status] of await this.readDishSafetyBatch(transaction, dishes.slice(start, start + 50))) safety.set(id, status);
+      }
     }
     const scopeIssues = [...content.issues];
     for (const { dish, safety: frozen } of content.preserved) {
@@ -212,6 +258,7 @@ export class StudioStore {
     }
     return { ...reviewPublication({ request, menu: content.menu, dishes, today: londonDate(this.now()), actorId: inputs.actor.id,
       canPublish: inputs.actor.canPublish, catalogue: inputs.catalogue, impact, safety, previous, previousPackage, seasons,
+      projectId: this.projectId, reviewSigningKey: inputs.reviewSigningKey,
       scopeResult: { issues: scopeIssues, changes: content.changes } }), seasons };
   }
 
@@ -242,7 +289,7 @@ export class StudioStore {
       || data.contentHash !== publication.contentHash || publication.menuId !== head.id) {
       throw publicationIntegrity();
     }
-    const payload = decodeLocalPublicationPackage(data.body, publication);
+    const payload = decodeStudioPublication(data.body, publication, this.projectId);
     if (!payload) throw publicationIntegrity();
     return payload;
   }
@@ -480,5 +527,6 @@ export function studioStore(runtime = studioRuntime()) {
   if (runtime.mode === "local") process.env.FIRESTORE_EMULATOR_HOST = runtime.firestoreHost;
   const name = `hospitality-menu-studio-${runtime.projectId}`;
   const app = getApps().find(app => app.name === name) || initializeApp({ projectId: runtime.projectId }, name);
-  return new StudioStore(runtime.mode === "staging" ? getFirestore(app, runtime.databaseId) : getFirestore(app));
+  return new StudioStore(runtime.mode === "staging" ? getFirestore(app, runtime.databaseId) : getFirestore(app),
+    undefined, runtime.mode === "staging" ? "fika-os-dev" : "demo-fika-os");
 }

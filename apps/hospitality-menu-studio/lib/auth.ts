@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { StudioActor } from "./contract";
 import { StudioProblem } from "./problem";
 import { studioRuntime } from "./runtime";
+import { readStudioPublicationPilot } from "./hub-publication";
 
 const authResponse = z.object({
   permissions: z.object({ View: z.boolean(), Manage: z.boolean(), Publish: z.boolean() }),
@@ -43,7 +44,11 @@ export async function authoriseStudio(
     const parsed = previewAccess.safeParse(value);
     if (!response.ok || !parsed.success) throw unavailable();
     const { id, displayName } = parsed.data.principal;
-    return { id, name: displayName || "Studio reviewer", canManage: runtime.writes && parsed.data.permissions.Manage === true, canPublish: false };
+    const canManage = runtime.writes && parsed.data.permissions.Manage === true;
+    const pilot = canManage && runtime.publicationPilot
+      ? await readStudioPublicationPilot(studioSessionCookie(runtime, cookie), requestHub) : undefined;
+    return { id, name: displayName || "Studio reviewer", canManage, canPublish: pilot?.publish === true,
+      ...(pilot ? { publicationPilot: pilot } : {}) };
   }
   const parsed = authResponse.safeParse(value);
   if (!response.ok || !parsed.success) throw unavailable();

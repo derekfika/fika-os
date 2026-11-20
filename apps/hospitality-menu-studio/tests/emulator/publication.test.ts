@@ -5,7 +5,7 @@ import { deleteApp, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { CATALOGUE_PACKAGE_CONTRACT } from "@fika/server-shared/hospitality-effective-offering";
 import {
-  studioDishReviewKey, studioDishReviewRecords, studioDishSafetyFences, studioDishSignatureRoles, type StudioDishSafetyFence,
+  studioDishReviewKey, studioDishReviewRecords, studioDishReviewSubject, studioDishSafetyFences, studioDishSignatureRoles, type StudioDishSafetyFence,
 } from "../../../shared/hospitality-menu-studio-safety";
 import type { Dish, Menu, Review } from "../../lib/contract";
 import { studioHandlers } from "../../lib/http";
@@ -238,4 +238,50 @@ test("content publication freezes current menu, dish and signed evidence with an
     if (createdSchedule) await schedule.delete();
     await deleteApp(app);
   }
+});
+
+test("staging-shaped publication retries preserve the same package and delivery receipt in the isolated emulator", async () => {
+  assert.match(process.env.FIRESTORE_EMULATOR_HOST || "", /^(127\.0\.0\.1|localhost):\d+$/);
+  const app = initializeApp({ projectId: "demo-fika-os" }, randomUUID());
+  const db = getFirestore(app);
+  const now = new Date("2026-11-20T12:00:00.000Z");
+  const actor = { id: "fixture-publisher", name: "Fixture publisher", canManage: true, canPublish: true };
+  const store = new StudioStore(db, () => now, "fika-os-dev");
+  const anotherInstance = new StudioStore(db, () => now, "fika-os-dev");
+  try {
+    const dish = await store.save<Dish>("dishes", actor.id, { id: randomUUID(), name: "Fictional dessert", version: 0,
+      category: "dessert", temperature: "cold", customerDescription: "Test customer copy", kitchenDescription: "Test kitchen copy",
+      assortment: null, updatedAt: "" });
+    const itemId = "hospitality-menu-item:fixture";
+    const menu = await store.save<Menu>("menus", actor.id, {
+      id: randomUUID(), version: 0, name: "Fictional collection", kind: "collection", startDate: "2026-12-01",
+      endDate: "2026-12-07", anchorMonday: "", updatedAt: "", sections: [
+        { id: "section:fixture", name: "Desserts", catalogueItemId: itemId, mode: "static", staticDishIds: [dish.id], weeks: [[], [], [], [], [], []] },
+      ],
+    });
+    const subject = studioDishReviewSubject(dish);
+    const fence: StudioDishSafetyFence = { contract: "cpu-production.studio-dish-safety.v1", subject, status: "current",
+      releaseId: "cpu-studio-dish-release:" + studioDishReviewKey(dish.id, dish.version) + ":v1",
+      matrixHash: "a".repeat(64), changedAt: now.toISOString() };
+    const key = await store.publicationSigningKey(true);
+    assert.equal(await anotherInstance.publicationSigningKey(false), key);
+    const inputs = { actor, reviewSigningKey: key, impact: { status: "unavailable" as const },
+      cpuSafety: async () => ({ status: "verified" as const, fence }),
+      catalogue: { source: "network" as const, contentHash: "b".repeat(64), generatedAt: now.toISOString(), downloaded: true, notes: [],
+        catalogue: { contract: CATALOGUE_PACKAGE_CONTRACT, schemaVersion: 2, exceptions: [], oplocs: [],
+          items: [{ id: itemId, name: "Synthetic item", category: "Desserts", defaultPrices: [], dietaryInformation: [], allergenInformation: [] }] } } };
+    const request = { menuId: menu.id, version: menu.version, effectiveDate: menu.startDate, scope: {} };
+    const review = await store.reviewPublication(request, inputs);
+    assert.equal(review.canPublish, true);
+    const command = { ...request, reviewToken: review.reviewToken!, confirmed: true as const };
+    const published = await anotherInstance.publishReviewed(command, inputs);
+    assert.deepEqual(await store.publishReviewed(command, inputs), published);
+    const outgoing = await store.publicationForDelivery(menu.id, published.id);
+    assert.equal(JSON.parse(outgoing.body).projectId, "fika-os-dev");
+    assert.equal(publicationHash(outgoing.body), outgoing.manifest.contentHash);
+    await store.recordPublicationDelivery(menu.id, published.id, outgoing.manifest.contentHash);
+    await anotherInstance.recordPublicationDelivery(menu.id, published.id, outgoing.manifest.contentHash);
+    const outbox = db.collection("fikaHospitalityMenuStudioV1_menus").doc(menu.id).collection("publicationOutbox").doc(published.id);
+    assert.equal((await outbox.get()).get("status"), "delivered");
+  } finally { await deleteApp(app); }
 });
