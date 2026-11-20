@@ -1003,6 +1003,7 @@ export default function Studio({
                 versions={draftVersions}
                 history={history}
                 historyLoaded={historyLoaded}
+                canPreviewPublishedKitchen={false}
                 loadVersions={() => void loadHistory("versions")}
                 loadHistory={() => void loadHistory("history")}
                 compare={compareDrafts}
