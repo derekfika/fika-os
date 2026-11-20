@@ -185,7 +185,8 @@ export default function DuplicatePlanningModal({ origin, weeks, currentWeek, day
 
       <fieldset className="duplicate-step">
         <legend>2 · To</legend>
-        <div className="duplicate-segment duplicate-segment--weeks" role="group" aria-label="Destination weeks">{destinationWeeks.map(([weekCommencing, offset]) => <label key={weekCommencing}><input type="checkbox" checked={destinationOffsets.includes(offset)} disabled={saving} onChange={() => toggleDestination(offset)} /> WC {formatWeek(weekCommencing)}{offset === 0 ? " · current" : ""}</label>)}</div>
+        <p className="duplicate-selection-help" id="duplicate-destinations-help">Choose one or more weeks. The list is scrollable when there are many weeks.</p>
+        <div className="duplicate-segment duplicate-segment--weeks" role="group" aria-label={`Destination weeks, ${destinationOffsets.length} selected`} aria-describedby="duplicate-destinations-help">{destinationWeeks.map(([weekCommencing, offset]) => <label key={weekCommencing}><input type="checkbox" checked={destinationOffsets.includes(offset)} disabled={saving} onChange={() => toggleDestination(offset)} /> WC {formatWeek(weekCommencing)}{offset === 0 ? " · current" : ""}</label>)}</div>
         {singleDaySource && <div className="duplicate-segment" role="radiogroup" aria-label="Destination weekday">
           <label><input type="radio" name="dup-placement" checked={placement === "corresponding"} onChange={() => setPlacement("corresponding")} disabled={saving} /> Same weekday</label>
           <label><input type="radio" name="dup-placement" checked={placement === "day"} onChange={() => setPlacement("day")} disabled={saving} /> Another weekday <select value={placementDay} onChange={event => { setPlacement("day"); setPlacementDay(Number(event.target.value)); }} disabled={saving} aria-label="Destination day">{dayNames.map((name, index) => <option key={name} value={index}>{name}</option>)}</select></label>
