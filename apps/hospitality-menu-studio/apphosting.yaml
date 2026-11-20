@@ -1,5 +1,0 @@
-# Keep App Hosting closed until the isolated staging runtime is verified.
-env:
-  - variable: FIKA_RUNTIME_MODE
-    value: unconfigured
-    availability: [RUNTIME]

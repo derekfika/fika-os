@@ -1,7 +1,0 @@
-{
-  "apphosting": {
-    "backendId": "fika-delivered-in-staging",
-    "rootDir": ".",
-    "ignore": ["node_modules/**", ".next/**"]
-  }
-}

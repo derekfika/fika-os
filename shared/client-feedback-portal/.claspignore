@@ -1,5 +1,0 @@
-**/.git/**
-**/node_modules/**
-README.md
-*.log
-.deployment-id

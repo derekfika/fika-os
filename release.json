@@ -1,0 +1,30 @@
+{
+  "schema": "fika.release.v1",
+  "app": "menu-studio",
+  "environment": "staging",
+  "project": "fika-os-dev",
+  "backend": "fika-menu-studio-staging",
+  "region": "europe-west4",
+  "branch": "release/staging/menu-studio",
+  "sourceSha": null,
+  "rollout": null,
+  "state": "EMPTY",
+  "percent": 0,
+  "builds": [],
+  "rollouts": [],
+  "operations": [],
+  "domainOperations": [],
+  "traffic": {
+    "current": [],
+    "target": [],
+    "reconciling": false,
+    "autoDisabled": true
+  },
+  "kind": "empty-baseline",
+  "scopeHash": "fd560872b369c19d50368b46935f22ec8245714b1be94f9fc18579477da4ad1d",
+  "observedAt": "2026-11-20T09:27:17.443Z",
+  "recovery": {
+    "firstRelease": true,
+    "noPreviousRelease": true
+  }
+}
