@@ -91,3 +91,23 @@ test("assortment progress handles missing, remaining, excess and exact totals", 
     "Enter the expected total per box.",
   );
 });
+
+test("publication date and scope checks stay on the review screen", () => {
+  const issues = [
+    "Choose an effective date within the menu dates and on or after today.",
+    "Select a section included in this draft.",
+    "Choose a rotating section for a week amendment.",
+    "The selected dish is unavailable in this scope.",
+    "Enter a valid menu date range.",
+    "Choose a Monday to anchor the six-week cycle.",
+  ];
+  const presented = presentReviewIssues({ ...review, issues }, menu, [dish]);
+  assert.deepEqual(
+    presented.editable.slice(0, 4),
+    issues.slice(0, 4).map((text) => ({ text })),
+  );
+  assert.deepEqual(
+    presented.editable.slice(4).map((issue) => issue.target),
+    [{ kind: "menu" }, { kind: "menu" }],
+  );
+});

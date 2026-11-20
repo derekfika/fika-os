@@ -26,16 +26,23 @@ export function presentReviewIssues(
   const menuChecks = new Set([
     "Enter a menu name.",
     "Enter a valid menu date range.",
-    "Choose an effective date within the menu dates and on or after today.",
     "Add at least one section.",
     "Choose a Monday to anchor the six-week cycle.",
     "Give each section a name.",
+  ]);
+
+  const reviewScreenChecks = new Set([
+    "Choose an effective date within the menu dates and on or after today.",
     "Select a section included in this draft.",
     "Choose a rotating section for a week amendment.",
     "The selected dish is unavailable in this scope.",
   ]);
 
   for (const issue of result.issues) {
+    if (reviewScreenChecks.has(issue)) {
+      editable.push({ text: issue });
+      continue;
+    }
     if (issue === unavailableAuthorities) {
       authoritiesUnavailable = true;
       continue;
