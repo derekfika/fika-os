@@ -200,7 +200,7 @@ export function Temperature({ value }: { value: Dish["temperature"] }) {
 
 export function SaveNotice({ state, error, retry }: DraftStatus) {
   const wording = {
-    saved: "Saved",
+    saved: "Draft saved",
     saving: "Saving…",
     unsaved: "Unsaved changes",
     conflict: "Conflict — edits retained",

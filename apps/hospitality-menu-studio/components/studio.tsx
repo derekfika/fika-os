@@ -872,6 +872,18 @@ export default function Studio({
                 back={() => setPage("menus")}
                 check={() => void checkReview()}
                 impact={() => setPage("impact")}
+                editIssue={(target) => {
+                  if (target.kind === "dish") {
+                    const targetDish = dishes.find(
+                      (item) => item.id === target.id,
+                    );
+                    if (targetDish) openDish(targetDish);
+                    return;
+                  }
+                  if (target.kind === "section") openSection(target.id);
+                  else setSectionId("");
+                  setPage("menus");
+                }}
                 publish={() => void publish()}
               />
             )}
