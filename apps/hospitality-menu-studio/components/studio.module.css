@@ -626,7 +626,7 @@
 }
 .sectionControls {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: var(--space-3);
   align-items: end;
   margin-block: var(--space-4);
@@ -1051,4 +1051,34 @@
   .textAction {
     min-height: 44px;
   }
+}
+
+/* Secondary section tools stay compact until needed. */
+.sectionTools { margin-block: var(--space-2); }
+.sectionTools summary {
+  min-height: 40px;
+  align-content: center;
+  color: var(--fika-action-secondary);
+  font-weight: 700;
+  cursor: pointer;
+}
+@media (pointer: coarse) {
+  .sectionTools summary,
+  .sectionControls .disclosure summary { min-height: 44px; }
+  .tableActions :global(.fika-button) { min-width: 44px; }
+}
+
+.sectionScrollHelp { display: none; }
+@media (max-width: 760px) {
+  .sectionScrollHelp {
+    display: block;
+    margin: var(--space-2) 0;
+    color: var(--fika-text-secondary);
+    font-size: var(--text-xs);
+  }
+}
+
+.tableScroll:focus-visible {
+  outline: 3px solid var(--fika-focus-ring);
+  outline-offset: 2px;
 }
