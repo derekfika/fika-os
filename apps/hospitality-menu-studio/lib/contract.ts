@@ -1,46 +1,11 @@
 import { hospitalityCalendarDay, hospitalityMenuDate, hospitalityRotationWeek } from "../../shared/hospitality-menu-date";
 
-export const categories = ["meat", "fish", "vegetarian", "vegan", "salad", "dessert", "other"] as const;
+export { categories } from "../../shared/hospitality-menu-studio-content";
+export type { Dish, Menu, Section, PublicationScope } from "../../shared/hospitality-menu-studio-content";
+import type { PublicationScope } from "../../shared/hospitality-menu-studio-content";
 
 export type StudioActor = { id: string; name: string; canManage: boolean; canPublish: boolean };
-export type Dish = {
-  id: string;
-  version: number;
-  name: string;
-  category: (typeof categories)[number];
-  temperature: "hot" | "cold" | null;
-  customerDescription: string;
-  kitchenDescription: string;
-  assortment: {
-    expectedTotal: number;
-    unit: string;
-    components: { id: string; name: string; quantity: number }[];
-  } | null;
-  updatedAt: string;
-};
 
-export type Section = {
-  id: string;
-  name: string;
-  catalogueItemId: string;
-  mode: "static" | "rotation";
-  staticDishIds: string[];
-  weeks: string[][];
-};
-
-export type Menu = {
-  id: string;
-  version: number;
-  name: string;
-  kind: "seasonal" | "collection";
-  startDate: string;
-  endDate: string;
-  anchorMonday: string;
-  sections: Section[];
-  updatedAt: string;
-};
-
-export type PublicationScope = { sectionId?: string; week?: number; dishId?: string };
 export type DraftVersion = {
   version: number;
   savedAt: string;
