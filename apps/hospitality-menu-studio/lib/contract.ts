@@ -3,8 +3,9 @@ import { hospitalityCalendarDay, hospitalityMenuDate, hospitalityRotationWeek } 
 export { categories } from "../../shared/hospitality-menu-studio-content";
 export type { Dish, Menu, Section, PublicationScope } from "../../shared/hospitality-menu-studio-content";
 import type { PublicationScope } from "../../shared/hospitality-menu-studio-content";
+import type { StudioPublicationPilot } from "./hub-publication";
 
-export type StudioActor = { id: string; name: string; canManage: boolean; canPublish: boolean };
+export type StudioActor = { id: string; name: string; canManage: boolean; canPublish: boolean; publicationPilot?: StudioPublicationPilot };
 
 export type DraftVersion = {
   version: number;
