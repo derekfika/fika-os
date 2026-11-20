@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Dish, Menu } from "../lib/contract";
+import { formatRetainedTime, retainedDraftText } from "./studio-model";
 import { Button } from "./studio-ui";
 import styles from "./studio.module.css";
 
@@ -7,14 +8,16 @@ export function StudioRecovery({
   item,
   retainedAt,
   openLatest,
+  dishes,
 }: {
   item: Menu | Dish;
   retainedAt: string | null;
   openLatest: () => Promise<void>;
+  dishes: Dish[];
 }) {
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
-  const text = JSON.stringify(item, null, 2);
+  const text = retainedDraftText(item, dishes);
   return (
     <section className={styles.panelBody} aria-label="Recover your edits">
       <h2>Your edits need attention</h2>
@@ -26,7 +29,7 @@ export function StudioRecovery({
       <p>
         These edits started from version {item.version}.
         {retainedAt
-          ? ` Last retained on this device: ${new Date(retainedAt).toLocaleString("en-GB")}.`
+          ? ` Last retained on this device: ${formatRetainedTime(retainedAt)}.`
           : " The time of the retained copy is not available."}
       </p>
       <p>

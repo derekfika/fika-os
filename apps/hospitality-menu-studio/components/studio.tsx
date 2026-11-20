@@ -44,7 +44,11 @@ import {
 } from "./studio-ui";
 import { request, useDraft } from "./use-studio-draft";
 import { StudioRecovery } from "./studio-recovery";
-import { retainedMetadataKey, retainedTimestamp } from "./studio-model";
+import {
+  formatRetainedTime,
+  retainedMetadataKey,
+  retainedTimestamp,
+} from "./studio-model";
 import styles from "./studio.module.css";
 
 type Entity = Menu | Dish;
@@ -191,6 +195,17 @@ export default function Studio({
     window.scrollTo(0, 0);
   }, [page, sectionId, createKind, menu?.id, dish?.id]);
 
+  function readRetainedTime(key: string, raw: string): string | null {
+    try {
+      return retainedTimestamp(
+        raw,
+        localStorage.getItem(retainedMetadataKey(key)),
+      );
+    } catch {
+      return null;
+    }
+  }
+
   useEffect(() => {
     if (page !== "home") return;
     const copies: Recovery[] = [];
@@ -209,10 +224,7 @@ export default function Studio({
                 key,
                 kind,
                 item,
-                retainedAt: retainedTimestamp(
-                  raw,
-                  localStorage.getItem(retainedMetadataKey(key)),
-                ),
+                retainedAt: readRetainedTime(key, raw),
               });
           } catch {
             /* Preserve unreadable entries. */
@@ -362,6 +374,13 @@ export default function Studio({
       let savedVersion: number;
       try {
         const latest = await request(undefined, `?${query}`);
+        if (
+          !latest.item ||
+          latest.item.id !== item.id ||
+          !Number.isInteger(latest.item.version) ||
+          latest.item.version < 1
+        )
+          throw new Error("Invalid saved draft");
         savedVersion = latest.item.version;
       } catch (failure) {
         if (
@@ -637,6 +656,7 @@ export default function Studio({
             item={menu}
             retainedAt={menuDraft.retainedAt}
             openLatest={menuDraft.openLatest}
+            dishes={dishes}
           />
         )}
       {(page === "dishes" || page === "assortment") &&
@@ -646,6 +666,7 @@ export default function Studio({
             item={dish}
             retainedAt={dishDraft.retainedAt}
             openLatest={dishDraft.openLatest}
+            dishes={dishes}
           />
         )}
       {loading && <p role="status">Loading menus and dishes…</p>}
@@ -696,7 +717,7 @@ export default function Studio({
                           {title(copy.kind)} · Started from version{" "}
                           {copy.item.version} ·
                           {copy.retainedAt
-                            ? ` Retained ${new Date(copy.retainedAt).toLocaleString("en-GB")} ·`
+                            ? ` Retained ${formatRetainedTime(copy.retainedAt)} ·`
                             : " Time unavailable ·"}
                           Copy {copy.key.slice(-8)} <Icon name="forward" />
                         </span>

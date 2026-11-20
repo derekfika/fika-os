@@ -6,6 +6,8 @@ import {
   moveDish,
   retainedDraftMatchesRequest,
   retainedTimestamp,
+  retainedDraftText,
+  formatRetainedTime,
 } from "../components/studio-model";
 
 test("section ordering preserves all IDs and leaves the source unchanged", () => {
@@ -59,4 +61,45 @@ test("retained timestamps belong only to the exact payload; legacy copies remain
     retainedTimestamp(raw, JSON.stringify({ value: raw, at: "invalid" })),
     null,
   );
+});
+
+test("recovery text is readable and retention time uses London", () => {
+  const dish = {
+    id: "private-id",
+    version: 2,
+    name: "Soup",
+    category: "other" as const,
+    temperature: "hot" as const,
+    customerDescription: "Tomato",
+    kitchenDescription: "Warm gently",
+    assortment: null,
+    updatedAt: "",
+  };
+  const text = retainedDraftText(dish, []);
+  assert.match(text, /Dish: Soup/);
+  assert.match(text, /Kitchen description: Warm gently/);
+  assert.doesNotMatch(text, /private-id|customerDescription/);
+  assert.match(formatRetainedTime("2026-07-01T12:00:00Z"), /13:00/);
+  const menu = {
+    id: "menu-id",
+    version: 1,
+    name: "Lunch",
+    kind: "seasonal" as const,
+    startDate: "2026-07-01",
+    endDate: "2026-07-31",
+    anchorMonday: "",
+    updatedAt: "",
+    sections: [
+      {
+        id: "section-id",
+        name: "Main",
+        catalogueItemId: "",
+        mode: "static" as const,
+        staticDishIds: [dish.id],
+        weeks: [],
+      },
+    ],
+  };
+  assert.match(retainedDraftText(menu, [dish]), /Dishes: Soup/);
+  assert.doesNotMatch(retainedDraftText(menu, [dish]), /private-id|section-id/);
 });
