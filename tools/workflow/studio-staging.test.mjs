@@ -7,7 +7,8 @@ import { supportedTargets, target, validateRecord } from './policy.mjs';
 import { inspectEmptyFirstReleaseState, emptyFirstReleaseBaselineRecord, releaseHealthProbe } from './releases.mjs';
 import { readStudioReleaseDomain } from './release-prestate.mjs';
 import { backendPath } from './runtime.mjs';
-import { studioStaging, studioStagingPreflight, verifyStudioStagingOverlay } from './studio-staging.mjs';
+import { studioStaging, studioStagingIamStatus, studioStagingPreflight, verifyStudioStagingOverlay } from './studio-staging.mjs';
+import studioIam from './studio-staging-iam.json' with { type: 'json' };
 
 const backend = backendPath(studioStaging);
 const traffic = `${backend}/traffic`;
@@ -17,6 +18,9 @@ const rollouts = `${backend}/rollouts?pageSize=1`;
 const toolAccount = ['iam', 'service-accounts', 'describe', studioStaging.serviceAccount];
 const toolDatabase = ['firestore', 'databases', 'describe', '--database', 'hospitality-menu-studio'];
 const toolArtifacts = ['artifacts', 'packages', 'list', '--repository', 'firebaseapphosting-images', '--location', 'europe-west4', '--limit', '2'];
+const toolProjectPolicy = ['projects', 'get-iam-policy', 'fika-os-dev'];
+const toolRepoPolicy = ['artifacts', 'repositories', 'get-iam-policy', 'firebaseapphosting-images', '--location', 'europe-west4'];
+const toolRoles = studioIam.bindings.map(binding => ['iam', 'roles', 'describe', binding.role.split('/').at(-1)]);
 
 function evidence() {
   const resources = {
@@ -42,6 +46,12 @@ function evidence() {
   const database = { name: 'projects/fika-os-dev/databases/hospitality-menu-studio', type: 'FIRESTORE_NATIVE',
     locationId: studioStaging.region, deleteProtectionState: 'DELETE_PROTECTION_ENABLED' };
   const packages = [{ name: studioStaging.backend }];
+  const bindings = resource => studioIam.bindings.filter(binding => binding.resource === resource).map(binding => ({
+    role: binding.role, members: [studioIam.principal], ...(binding.condition ? { condition: { ...binding.condition } } : {}),
+  }));
+  const projectPolicy = { etag: 'example-project-policy', bindings: bindings('projects/fika-os-dev') };
+  const repoPolicy = { etag: 'example-repository-policy', bindings: bindings('projects/fika-os-dev/locations/europe-west4/repositories/firebaseapphosting-images') };
+  const roles = studioIam.bindings.map(binding => ({ name: binding.role, stage: 'GA', includedPermissions: [...binding.permissions] }));
   const cloudReads = [];
   const descriptions = [];
   const read = async resource => {
@@ -51,6 +61,19 @@ function evidence() {
   };
   const describeResource = async args => {
     descriptions.push(args);
+    if (args[0] === 'projects') {
+      assert.deepEqual(args, toolProjectPolicy);
+      return projectPolicy;
+    }
+    if (args[1] === 'repositories') {
+      assert.deepEqual(args, toolRepoPolicy);
+      return repoPolicy;
+    }
+    if (args[1] === 'roles') {
+      const index = toolRoles.findIndex(command => command[3] === args[3]);
+      assert.deepEqual(args, toolRoles[index]);
+      return roles[index];
+    }
     if (args[0] === 'iam') {
       assert.deepEqual(args, toolAccount);
       return account;
@@ -62,7 +85,7 @@ function evidence() {
     assert.deepEqual(args, toolDatabase);
     return database;
   };
-  return { resources, account, database, packages, read, describeResource, cloudReads, descriptions };
+  return { resources, account, database, packages, projectPolicy, repoPolicy, roles, read, describeResource, cloudReads, descriptions };
 }
 
 test('Studio maps to exactly one governed backend in the existing staging project', () => {
@@ -109,23 +132,23 @@ test('preflight observes only scoped metadata and leaves release blocked even wh
   const fixture = evidence();
   const result = await studioStagingPreflight(fixture);
   assert.deepEqual(fixture.cloudReads, [backend, traffic, domain, builds, rollouts]);
-  assert.deepEqual(fixture.descriptions, [toolAccount, toolDatabase, toolArtifacts]);
+  assert.deepEqual(fixture.descriptions, [toolAccount, toolDatabase, toolArtifacts, toolProjectPolicy, toolRepoPolicy, ...toolRoles]);
   assert.equal(result.target.rootDirectory, 'apps/hospitality-menu-studio');
   assert.equal(result.target.sourceBranch, 'main');
   assert.deepEqual(result.checks, {
     appHosting: 'VERIFIED', serviceAccount: 'VERIFIED', firestore: 'VERIFIED', rolloutPolicy: 'VERIFIED',
-    buildHistory: 'VERIFIED', customDomain: 'VERIFIED', managedArtifactRepository: 'UNVERIFIED',
+    buildHistory: 'VERIFIED', customDomain: 'VERIFIED', managedArtifactRepository: 'UNVERIFIED', directStagingIam: 'VERIFIED',
   });
   assert.equal(result.status, 'BLOCKED');
   assert.deepEqual(result.buildScope, {
-    managedRole: 'roles/firebaseapphosting.computeRunner',
+    iamManifestSha256: 'aa4c8bbc116d145a86768cc204c7513fe1272b29ed9d706a114aa56dee485f01',
     managedRoleScope: 'projects/fika-os-dev',
     managedArtifactRepository: 'projects/fika-os-dev/locations/europe-west4/repositories/firebaseapphosting-images',
-    accessBoundary: 'shared-staging-project',
-    storageObjectAccess: 'staging-project',
+    accessBoundary: 'shared-staging-repository',
+    storageGrant: 'none',
     buildMetadataUpdates: 'staging-project',
   });
-  assert.match(result.pending.join(' '), /AUTHMOD.*IAM.*default Firestore, production resources.*Storage.*first-release plan/);
+  assert.match(result.pending.join(' '), /AUTHMOD.*IAM.*default Firestore, Cloud Storage, production resources.*mutable tags.*first-release plan/);
 });
 
 test('mismatched identity, active traffic, overrides and unfinished domain certificate block the preflight', async () => {
@@ -137,6 +160,7 @@ test('mismatched identity, active traffic, overrides and unfinished domain certi
   fixture.database.name = 'projects/fika-os-dev/databases/(default)';
   fixture.resources[builds] = { builds: [{ name: 'existing-build' }] };
   fixture.packages.push({ name: 'fika-other-staging' });
+  fixture.projectPolicy.bindings.push({ role: 'roles/firebaseapphosting.computeRunner', members: [studioIam.principal] });
   const result = await studioStagingPreflight(fixture);
   assert.equal(result.status, 'BLOCKED');
   const { managedArtifactRepository, ...otherChecks } = result.checks;
@@ -166,7 +190,7 @@ test('foreign backend skips associated reads and errors yield missing or unverif
   });
   assert.deepEqual(missing.checks, {
     appHosting: 'MISSING', serviceAccount: 'UNVERIFIED', firestore: 'UNVERIFIED', rolloutPolicy: 'UNVERIFIED',
-    buildHistory: 'UNVERIFIED', customDomain: 'UNVERIFIED', managedArtifactRepository: 'UNVERIFIED',
+    buildHistory: 'UNVERIFIED', customDomain: 'UNVERIFIED', managedArtifactRepository: 'UNVERIFIED', directStagingIam: 'UNVERIFIED',
   });
   assert.equal(missing.status, 'BLOCKED');
 });
@@ -176,7 +200,7 @@ test('a partially provisioned target reports its independent evidence and wrong 
   delete fixture.resources[backend].environment;
   fixture.resources[backend].serviceAccount = 'default-compute@fika-os-dev.iam.gserviceaccount.com';
   const describeResource = async args => {
-    if (args[0] === 'artifacts') return fixture.describeResource(args);
+    if (args[0] === 'artifacts' || args[0] === 'projects' || args[1] === 'roles') return fixture.describeResource(args);
     const operation = args[0] === 'iam' ? 'iam.service-accounts' : 'firestore.databases';
     throw Object.assign(Error('describe failed'), { stderr: `ERROR: (gcloud.${operation}.describe) NOT_FOUND: Fixture` });
   };
@@ -184,10 +208,32 @@ test('a partially provisioned target reports its independent evidence and wrong 
   assert.deepEqual(fixture.cloudReads, [backend, traffic, domain, builds, rollouts]);
   assert.deepEqual(result.checks, {
     appHosting: 'MISMATCH', serviceAccount: 'MISSING', firestore: 'MISSING', rolloutPolicy: 'VERIFIED',
-    buildHistory: 'VERIFIED', customDomain: 'VERIFIED', managedArtifactRepository: 'UNVERIFIED',
+    buildHistory: 'VERIFIED', customDomain: 'VERIFIED', managedArtifactRepository: 'UNVERIFIED', directStagingIam: 'VERIFIED',
   });
   fixture.resources[traffic].rolloutPolicy.codebaseBranch = 'other-branch';
   assert.equal((await studioStagingPreflight({ ...fixture, describeResource })).checks.rolloutPolicy, 'MISMATCH');
+});
+
+test('direct Studio IAM holds on missing, broader or wrongly scoped access and retains unknown reads', async () => {
+  const baseline = evidence();
+  baseline.projectPolicy.bindings = [];
+  assert.equal(await studioStagingIamStatus(baseline.describeResource), 'MISMATCH');
+
+  const actorGrant = evidence();
+  actorGrant.projectPolicy.bindings[1].condition.expression = 'resource.name == "projects/fika-os-dev/databases/(default)"';
+  assert.equal(await studioStagingIamStatus(actorGrant.describeResource), 'MISMATCH');
+
+  const broadRole = evidence();
+  broadRole.roles[0].includedPermissions.push('storage.objects.get');
+  assert.equal(await studioStagingIamStatus(broadRole.describeResource), 'MISMATCH');
+
+  const broadRepo = evidence();
+  broadRepo.roles[1].includedPermissions.push('artifactregistry.tags.update');
+  assert.equal(await studioStagingIamStatus(broadRepo.describeResource), 'MISMATCH');
+
+  const unverified = evidence();
+  delete unverified.repoPolicy.etag;
+  assert.equal(await studioStagingIamStatus(unverified.describeResource), 'UNVERIFIED');
 });
 
 test('empty history needs complete pages even if traffic is empty', async () => {

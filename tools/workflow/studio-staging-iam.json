@@ -1,0 +1,66 @@
+{
+  "principal": "serviceAccount:fika-menu-studio-staging@fika-os-dev.iam.gserviceaccount.com",
+  "bindings": [
+    {
+      "role": "projects/fika-os-dev/roles/StudioManagedHosting",
+      "resource": "projects/fika-os-dev",
+      "permissions": [
+        "cloudtrace.traces.patch",
+        "developerconnect.connections.get",
+        "developerconnect.gitRepositoryLinks.fetchReadToken",
+        "developerconnect.gitRepositoryLinks.get",
+        "firebaseapphosting.backends.get",
+        "firebaseapphosting.backends.list",
+        "firebaseapphosting.backends.listEffectiveTags",
+        "firebaseapphosting.backends.listTagBindings",
+        "firebaseapphosting.builds.get",
+        "firebaseapphosting.builds.list",
+        "firebaseapphosting.builds.update",
+        "firebaseapphosting.domains.get",
+        "firebaseapphosting.domains.list",
+        "firebaseapphosting.locations.get",
+        "firebaseapphosting.locations.list",
+        "firebaseapphosting.operations.get",
+        "firebaseapphosting.operations.list",
+        "firebaseapphosting.rollouts.get",
+        "firebaseapphosting.rollouts.list",
+        "firebaseapphosting.traffic.get",
+        "logging.logEntries.create",
+        "logging.logEntries.route",
+        "monitoring.metricDescriptors.create",
+        "monitoring.metricDescriptors.get",
+        "monitoring.metricDescriptors.list",
+        "monitoring.monitoredResourceDescriptors.get",
+        "monitoring.monitoredResourceDescriptors.list",
+        "monitoring.timeSeries.create",
+        "orgpolicy.policy.get",
+        "resourcemanager.projects.get",
+        "resourcemanager.projects.list",
+        "telemetry.traces.write"
+      ]
+    },
+    {
+      "role": "projects/fika-os-dev/roles/StudioManagedImages",
+      "resource": "projects/fika-os-dev/locations/europe-west4/repositories/firebaseapphosting-images",
+      "permissions": [
+        "artifactregistry.repositories.downloadArtifacts",
+        "artifactregistry.repositories.uploadArtifacts"
+      ]
+    },
+    {
+      "role": "projects/fika-os-dev/roles/StudioDraftAuthor",
+      "resource": "projects/fika-os-dev",
+      "condition": {
+        "title": "StudioNamedDatabaseOnly",
+        "expression": "resource.name == \"projects/fika-os-dev/databases/hospitality-menu-studio\""
+      },
+      "permissions": [
+        "datastore.databases.get",
+        "datastore.entities.get",
+        "datastore.entities.list",
+        "datastore.entities.create",
+        "datastore.entities.update"
+      ]
+    }
+  ]
+}

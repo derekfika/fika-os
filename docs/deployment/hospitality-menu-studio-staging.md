@@ -35,7 +35,7 @@ After the owner approves the exact plan, add `--execute` to register the hidden 
 
 ## 2. Verify the managed App Hosting and Studio database boundaries
 
-Follow the [permission plan](hospitality-menu-studio-isolation.md) for the standard staging App Hosting role and the conditional Studio draft-author role. Obtain explicit approval for the staging project scope, including shared image repositories, Storage objects and build metadata. Verify effective named-database draft access and denial on default Firestore, production resources, secrets and unrelated service-account credentials. The named database's reviewed deny-all client release was published and verified on 19 November 2026.
+Follow the [permission plan](hospitality-menu-studio-isolation.md) for the exact IAM manifest. Obtain explicit approval of the manifest and shared mutable-tag risk. The initial grants include no Cloud Storage permissions. Verify effective named-database draft access and denial on default Firestore, Cloud Storage, production resources, secrets and unrelated service-account credentials. The named database's reviewed deny-all client release was published and verified on 19 November 2026.
 
 With owner approval, set the existing backend environment to `staging` and attach its dedicated account. Update only `environment` and `serviceAccount`, using the current backend ETag. Leave overrides empty, preserve the Git connection, and keep automatic rollouts disabled. Verify the returned backend, branch, traffic, builds and rollouts. [App Hosting backend update](https://firebase.google.com/docs/reference/apphosting/rest/v1beta/projects.locations.backends/patch)
 
@@ -48,7 +48,7 @@ npm run fika -- studio-preflight --staging
 npm run fika -- deploy menu-studio --staging --sha $studioMergeSha
 ```
 
-Provide the owner the exact merge SHA, `studioFirstReleaseApprovalHash`, shared staging project exposure, verified data and cross-environment boundaries, and Hub admission evidence. After approval, run:
+Provide the owner the exact merge SHA, `studioFirstReleaseApprovalHash`, approved IAM manifest, shared registry scope, verified Storage and cross-environment boundaries, and Hub admission evidence. After approval, run:
 
 ```powershell
 npm run fika -- deploy menu-studio --staging --sha $studioMergeSha --execute --approve-hash $approvedStudioHash --reason $ownerApprovalReference
