@@ -40,3 +40,14 @@ test("booking impact preserves partial parent matches and refuses invalid or una
     assert.fail("oversized target reached the Hub");
   }), { status: "unavailable" });
 });
+
+test("rotation impact filters booking dates by the published Monday without sending extra query fields", async () => {
+  const scoped = { ...target, rotation: { anchorMonday: "2026-11-30", week: 2 } };
+  const base = { eventDate: "2026-12-03", site: "Example site", selectionIds: target.catalogueItemIds, selections: ["Synthetic"] };
+  const result = await readStudioBookingImpact("http://127.0.0.1:3100", "test_session=opaque", scoped, async (_url, init) => {
+    assert.deepEqual(JSON.parse(init?.body as string), target);
+    return Response.json({ ...complete, bookings: [{ ...base, id: "first" }, { ...base, id: "second", eventDate: "2026-12-10" }] });
+  });
+  assert.equal(result.status, "available");
+  if (result.status === "available") assert.deepEqual(result.bookings.map(booking => booking.id), ["second"]);
+});

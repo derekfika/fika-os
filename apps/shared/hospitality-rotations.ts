@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { hospitalityCalendarDay, hospitalityMenuDate, hospitalityRotationWeek } from "./hospitality-menu-date";
 
 /** Hub-owned configuration. Dish Library and catalogue identities remain provider-owned. */
 export const ROTATIONS_SCHEMA = "hospitality-rotations.v1" as const;
@@ -39,14 +40,11 @@ export function hospitalityDishIdForItem(itemId: string): string {
 export const ROTATIONS_AUTHORITY = { appId: "hospitality-booking", resource: "hospitality.rotations" } as const;
 const Id = z.string().min(1).max(160).regex(/^[A-Za-z0-9:_-]+$/);
 const Positive = z.number().finite().positive();
-export const BusinessDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => {
-  const time = Date.parse(`${value}T00:00:00Z`);
-  return Number.isFinite(time) && new Date(time).toISOString().slice(0, 10) === value;
-}, "Use a real calendar date");
+export const BusinessDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine(value => Number.isFinite(hospitalityCalendarDay(value)), "Use a real calendar date");
 export function londonDate(instant: Date): string {
   if (!Number.isFinite(instant.getTime())) throw new Error("Invalid instant");
-  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(instant);
-  return ["year", "month", "day"].map(key => parts.find(part => part.type === key)!.value).join("-");
+  return hospitalityMenuDate(instant);
 }
 export const RotationCalendar = z.object({
   anchorMonday: BusinessDate.refine(value => new Date(`${value}T00:00:00Z`).getUTCDay() === 1, "Anchor must be Monday"),
@@ -55,8 +53,7 @@ export const RotationCalendar = z.object({
 }).strict();
 export function rotationWeek(calendar: z.infer<typeof RotationCalendar>, date: string): number {
   RotationCalendar.parse(calendar); BusinessDate.parse(date);
-  const weeks = Math.floor((Date.parse(`${date}T00:00:00Z`) - Date.parse(`${calendar.anchorMonday}T00:00:00Z`)) / 604800000);
-  return ((weeks % calendar.cycleWeeks) + calendar.cycleWeeks) % calendar.cycleWeeks + 1;
+  return hospitalityRotationWeek(calendar.anchorMonday, date, calendar.cycleWeeks);
 }
 const Range = z.object({ minimum: Positive, maximum: Positive, increment: Positive }).strict().refine(value => value.maximum >= value.minimum, "Maximum must be at least minimum");
 export const RotationRules = z.object({

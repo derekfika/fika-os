@@ -1,5 +1,6 @@
 import { assertOneOffMenuDestination, oneOffAddressPending, type MenuDestination, type OneOffMenuDestination } from "@fika/server-shared/menu-destination";
 import crypto from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { catalogueProductionConversion } from "@fika/server-shared/hospitality-effective-offering";
 import { bookingNotificationRecord, buffetNotificationRecord } from "./booking-notifications";
 import { isHotForkBuffetBooking } from "../../shared/hot-fork-buffet";
@@ -20,6 +21,8 @@ import { adaptCpuProductionWorkstreams } from "../../shared/production-workstrea
 import { recordDeliveredInReadBudget } from "./delivered-in-read-budget";
 import { parseExternalProductionMaterialisation, type ExternalProductionMaterialisation, type MenuOrderMetadata } from "@fika/server-shared/external-production";
 import { deliverKitchenNotesPropagation, kitchenNotesEventId, stageKitchenNotesPropagation } from "./hospitality-kitchen-notes-outbox";
+import type { StudioKitchenSpec } from "../../shared/hospitality-menu-studio-kitchen";
+import { acceptedStudioKitchenSpecs, hospitalityBookingLineId, invalidStudioKitchenEvidence } from "./hospitality-studio-kitchen-handoff";
 export type { ExternalProductionMaterialisation } from "@fika/server-shared/external-production";
 
 
@@ -28,7 +31,7 @@ export type ProductionStatus = "received" | "draft" | "needs_review" | "accepted
 export type ProductionException = { canonicalId: string; severity: "info" | "warning" | "blocking"; status: "open" | "resolved"; description: string; createdAt: string; createdBy: string; resolvedAt?: string; resolvedBy?: string; resolutionNotes?: string; audit: ProductionAuditEvent[] };
 export type ProductionAuditEvent = { action: string; at: string; by: string; previousState?: string; newState?: string; reason?: string; correlationId?: string; causationId?: string; idempotencyKey?: string };
 export type ProductionWorkstream = "sandwiches" | "hospitality" | "delivered_in" | "grab_and_go" | "unassigned";
-export type ProductionLine = { canonicalId: string; sourceBookingLineId: string; sourceMenuItemId?: string; sourceOfferingId?: string; itemName: string; description?: string; customerQuantity: number; customerUnit: string; productionQuantity?: number; productionUnit?: string; actualQuantity?: number; shortfallQuantity?: number; substitution?: string; wasteQuantity?: number; conversionSnapshot?: { quantity: number; unit: string; rule: string }; choices?: unknown[]; servingGuidance?: string; productionInstructions?: string; dietaries: Record<string, unknown>; allergenEvidenceStatus?: "confirmed" | "unreviewed" | "missing" | "conflicting"; approvedAllergenSnapshot?: import("@fika/server-shared/external-production").SourceAllergenSnapshot; isCoreSalad?: boolean; status: "pending" | "ready" | "complete" | "exception"; sortOrder: number; exceptions?: string[]; workstream?: ProductionWorkstream } & MenuOrderMetadata;
+export type ProductionLine = { studioKitchenSpec?: StudioKitchenSpec; canonicalId: string; sourceBookingLineId: string; sourceMenuItemId?: string; sourceOfferingId?: string; itemName: string; description?: string; customerQuantity: number; customerUnit: string; productionQuantity?: number; productionUnit?: string; actualQuantity?: number; shortfallQuantity?: number; substitution?: string; wasteQuantity?: number; conversionSnapshot?: { quantity: number; unit: string; rule: string }; choices?: unknown[]; servingGuidance?: string; productionInstructions?: string; dietaries: Record<string, unknown>; allergenEvidenceStatus?: "confirmed" | "unreviewed" | "missing" | "conflicting"; approvedAllergenSnapshot?: import("@fika/server-shared/external-production").SourceAllergenSnapshot; isCoreSalad?: boolean; status: "pending" | "ready" | "complete" | "exception"; sortOrder: number; exceptions?: string[]; workstream?: ProductionWorkstream } & MenuOrderMetadata;
 export type ProductionRequirement = { canonicalId: string; entityType: "Production Requirement"; schemaVersion: string; version: number; sourceBookingId: string; sourceBookingRevision: number; sourceQuoteRevisionId: string; productionLocationId?: string; requestedServiceDate: string; serviceWindow: { startTime: string; endTime?: string }; requiredBy: string; status: "draft" | "needs_review" | "accepted" | "cancelled"; sourceSnapshot: { booking: CanonicalBooking; quote: unknown }; createdAt: string; createdBy: string; updatedAt: string; updatedBy: string; audit: ProductionAuditEvent[] };
 export type ProductionOrigin = "hospitality_booking" | "cpu_created" | "legacy_import" | "menu_planning" | "grab_and_go";
 export type ProductionCategory = "delivered_in" | "fine_dining" | "hospitality" | "events" | "grab_and_go" | "other";
@@ -111,6 +114,14 @@ export async function createProductionFromApprovedBookingTransaction(actor: Acto
     const quote = booking.quoteState?.revisions.find(item => item.id === booking.quoteState?.currentRevisionId);
     if (!quote || quote.stale || quote.id !== booking.quoteState?.currentRevisionId) throw conflict("A current Quote Revision is required.");
     if (quote.pdfStatus !== "saved" || !quote.driveFileId) throw conflict("The current quote PDF must be saved to Drive before sending this Booking to CPU.");
+    const acceptedKitchenSpecs = await acceptedStudioKitchenSpecs(transaction, bookingSnapshot.ref, booking, quote);
+    const rcoaRouted = new Map(rcoaPlan?.status === "cpu_required" ? rcoaPlan.cpuLines.map(line => [line.index, line.workstream] as const) : []);
+    const kitchenSpecs = new Map(booking.order.items.flatMap((_, index) => {
+      if (rcoaPlan && !rcoaRouted.has(index)) return [];
+      const lineId = hospitalityBookingLineId(bookingId, index);
+      const spec = acceptedKitchenSpecs.get(lineId);
+      return spec ? [[lineId, spec] as const] : [];
+    }));
     const baseOrderRef = orders().doc(stableDocumentId(productionOrderV1Id(bookingId)));
     const baseOrderSnapshot = await transaction.get(baseOrderRef);
     const existingBase = baseOrderSnapshot.exists ? baseOrderSnapshot.data() as ProductionOrder : undefined;
@@ -160,13 +171,20 @@ export async function createProductionFromApprovedBookingTransaction(actor: Acto
     const orderRef = orders().doc(stableDocumentId(orderId));
     const existing = orderId === productionOrderV1Id(bookingId) ? baseOrderSnapshot : await transaction.get(orderRef);
     if (existing.exists && (existing.data() as ProductionOrder).status !== "amended") {
+      const previous = existing.data() as ProductionOrder;
+      const existingKitchenSpecs = new Map((previous.lines || []).flatMap(line =>
+        line.studioKitchenSpec === undefined ? [] : [[line.sourceBookingLineId, line.studioKitchenSpec] as const],
+      ));
+      if ((kitchenSpecs.size || existingKitchenSpecs.size) &&
+          (previous.sourceQuoteRevisionId !== quote.id || !isDeepStrictEqual(existingKitchenSpecs, kitchenSpecs))) {
+        throw invalidStudioKitchenEvidence();
+      }
       markBookingSentToCpu();
-      return { created: false, status: "already_exists" as const, requirement: undefined, order: existing.data() as ProductionOrder };
+      return { created: false, status: "already_exists" as const, requirement: undefined, order: previous };
     }
     const requirementId = productionRequirementId(bookingId, quote.id);
     const requirement: ProductionRequirement = { canonicalId: requirementId, entityType: "Production Requirement", schemaVersion: PRODUCTION_SCHEMA_VERSION, version: 1, sourceBookingId: bookingId, sourceBookingRevision: booking.version, sourceQuoteRevisionId: quote.id, productionLocationId: booking.service.oplocId, requestedServiceDate: booking.service.eventDate, serviceWindow: { startTime: booking.service.startTime, ...(booking.service.endTime ? { endTime: booking.service.endTime } : {}) }, requiredBy: `${booking.service.eventDate}T${booking.service.startTime}`, status: "needs_review", sourceSnapshot: { booking: structuredClone(booking), quote: structuredClone(quote.snapshot) }, createdAt: now, createdBy: actor.uid, updatedAt: now, updatedBy: actor.uid, audit: [{ action: "production-requirement-created", at: now, by: actor.uid, newState: "needs_review", reason: "Created from Booking and current Quote Revision.", idempotencyKey }] };
     const exceptions: ProductionException[] = [];
-    const rcoaRouted = new Map(rcoaPlan?.status === "cpu_required" ? rcoaPlan.cpuLines.map(line => [line.index, line.workstream] as const) : []);
     const lines: ProductionLine[] = booking.order.items.flatMap((item, index) => {
       if (rcoaPlan && !rcoaRouted.has(index)) return []; // In house: stays on the Hospitality booking only
       return [(() => {
@@ -176,7 +194,9 @@ export async function createProductionFromApprovedBookingTransaction(actor: Acto
       const conversion = savedConversion || (configured ? { quantity: configured.quantity, unit: configured.unit, rule: "Explicit production conversion configuration." } : explicitRule ? { quantity: item.quantity * explicitRule.multiplier, unit: explicitRule.unit, rule: explicitRule.rule } : undefined);
       const assignments = [item.menuItemId, item.itemId].filter((value): value is string => Boolean(value)).flatMap(value => routing[value] || []);
       const workstream: ProductionWorkstream = rcoaRouted.get(index) || adaptCpuProductionWorkstreams(assignments).workstreams[0] || "unassigned";
-      const line: ProductionLine = { canonicalId: `production-line:${bookingId}:${index + 1}`, sourceBookingLineId: `${bookingId}:line:${index + 1}`, ...(item.menuItemId ? { sourceMenuItemId: item.menuItemId } : {}), itemName: item.itemName || item.itemId, ...(item.description ? { description: item.description } : {}), customerQuantity: item.quantity, customerUnit: item.servingInfo || "ordered unit", ...(conversion ? { productionQuantity: conversion.quantity, productionUnit: conversion.unit, conversionSnapshot: { ...conversion, rule: "Explicit configured production conversion." } } : {}), ...(item.choices ? { choices: structuredClone(item.choices) } : {}), ...(item.servingInfo ? { servingGuidance: item.servingInfo } : {}), ...(item.comments ? { productionInstructions: item.comments } : {}), dietaries: structuredClone(booking.dietaries), status: conversion ? "ready" : "exception", sortOrder: index, workstream };
+      const sourceBookingLineId = hospitalityBookingLineId(bookingId, index);
+      const studioKitchenSpec = kitchenSpecs.get(sourceBookingLineId);
+      const line: ProductionLine = { canonicalId: `production-line:${bookingId}:${index + 1}`, sourceBookingLineId, ...(studioKitchenSpec ? { studioKitchenSpec } : {}), ...(item.menuItemId ? { sourceMenuItemId: item.menuItemId } : {}), itemName: item.itemName || item.itemId, ...(item.description ? { description: item.description } : {}), customerQuantity: item.quantity, customerUnit: item.servingInfo || "ordered unit", ...(conversion ? { productionQuantity: conversion.quantity, productionUnit: conversion.unit, conversionSnapshot: { ...conversion, rule: "Explicit configured production conversion." } } : {}), ...(item.choices ? { choices: structuredClone(item.choices) } : {}), ...(item.servingInfo ? { servingGuidance: item.servingInfo } : {}), ...(item.comments ? { productionInstructions: item.comments } : {}), dietaries: structuredClone(booking.dietaries), status: conversion ? "ready" : "exception", sortOrder: index, workstream };
       return { ...line, status: conversion ? "ready" : "pending" } as ProductionLine;
       })()];
     });

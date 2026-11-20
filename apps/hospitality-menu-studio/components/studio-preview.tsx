@@ -642,6 +642,7 @@ export function BookingImpact({
   const impact = result?.impact.status === "available" ? result.impact : null;
   const available = impact?.bookings ?? [];
   const complete = impact?.coverage === "complete";
+  const parentMatches = impact?.reasons?.includes("DISH_SELECTION_EVIDENCE_UNAVAILABLE");
   return (
     <>
       <PageHeading
@@ -674,7 +675,9 @@ export function BookingImpact({
           {complete
             ? "The current impact check is advisory."
             : impact
-              ? "The total number of affected bookings is unknown. The table shows any matches the check could confirm."
+              ? parentMatches
+                ? "The total number of affected bookings is unknown. The table shows possible matches for the parent menu item."
+                : "The total number of affected bookings is unknown. The table shows the matches the check could confirm."
               : "The number of affected bookings is unknown. The booking check is not available yet. Continue editing your draft and return to this check when it becomes available."}
         </p>
       </div>
