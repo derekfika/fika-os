@@ -15,6 +15,7 @@ import {
   type DraftStatus,
 } from "./studio-ui";
 import styles from "./studio.module.css";
+import { DishSafety } from "./studio-dish-safety";
 
 export function DishCollection({
   dishes,
@@ -198,11 +199,15 @@ export function DishEditor({
   backLabel,
   assortment,
   kitchen,
+  safetyAvailable,
+  checkerOrigin,
 }: DishForm & {
   back: () => void;
   backLabel: string;
   assortment: () => void;
   kitchen: () => void;
+  safetyAvailable: boolean;
+  checkerOrigin?: string;
 }) {
   return (
     <>
@@ -319,10 +324,15 @@ export function DishEditor({
           </label>
         </section>
       </div>
-      <div className="fika-notice">
-        Food-safety verification is unavailable. Signing uses the existing FIKA
-        allergen process.
-      </div>
+      {safetyAvailable ? (
+        <DishSafety key={`${dish.id}:${dish.version}:${save.state}`} dish={dish} saved={save.state === "saved"}
+          canManage={canManage} checkerOrigin={checkerOrigin} />
+      ) : (
+        <div className="fika-notice">
+          Food-safety verification is unavailable. Signing uses the existing FIKA
+          allergen process.
+        </div>
+      )}
       <div className={styles.footerActions}>
         <Button onClick={back}>Back to {backLabel.toLowerCase()}</Button>
         <Button onClick={kitchen}>Kitchen preview</Button>
