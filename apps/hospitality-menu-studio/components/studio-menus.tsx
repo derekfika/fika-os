@@ -766,4 +766,3 @@ export function SectionEditor({
     </>
   );
 }
-
