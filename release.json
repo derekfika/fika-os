@@ -62,9 +62,10 @@
     "authorisedAt": "2026-11-20T13:46:52.908Z",
     "configurationHash": "e0e33784952a5ec86b2674159df8ac3a3ade7076f805232a6d8a4be22d8206aa"
   },
-  "kind": "intent",
-  "state": "PENDING",
-  "releaseId": "28575347-6b55-4ad7-a7c0-e29f6a546fba",
+  "rollout": "build-2026-11-20-003",
+  "state": "SUCCEEDED",
+  "percent": 100,
+  "kind": "deploy",
   "previousGood": {
     "sourceSha": "3a2914214dee50bc879c0139774098b8c5f9c8fa",
     "rollout": "build-2026-11-20-002",
@@ -72,5 +73,22 @@
     "percent": 100
   },
   "previousGoodRecord": "48a4644a5ed2b233923d05222aa3e2117e5a1da5",
-  "createdAt": "2026-11-20T13:46:55.417Z"
+  "releaseId": "28575347-6b55-4ad7-a7c0-e29f6a546fba",
+  "completedAt": "2026-11-20T13:52:00.644Z",
+  "smoke": {
+    "ok": true,
+    "status": 200,
+    "url": "https://fika-os-prod-hub--fika-os.europe-west4.hosted.app/"
+  },
+  "configurationOnly": true,
+  "configuration": {
+    "variable": "FIKA_CPUX_HOSPITALITY_CATCH_UP_APPROVAL_HASH",
+    "action": "clear",
+    "previousOverride": "cacb4ce34c6eb94658fc9a4e7daf0ccf9bc031fa64b7931966cb195d9602d6de",
+    "nextOverride": null,
+    "approvalHash": "e0e33784952a5ec86b2674159df8ac3a3ade7076f805232a6d8a4be22d8206aa",
+    "effectiveRevisionVerified": true,
+    "backendEtagBefore": "hdcoVVtTdO_Z3xSgboPuy7vYsnbK_DTocZAeXl0sCZQ",
+    "backendEtagAfter": "aN6xh0ro6G0ulIX33xD0ZRI1DKGamW37l23MpJRl_ro"
+  }
 }
