@@ -1,10 +1,12 @@
-import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { z } from "zod";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import {
+  canonicalJson, decodeStudioPublication, maximumStudioPublicationBytes, publicationDigest, publicationHash, publicationIdFor,
+  type PublicationPackage,
+} from "../../shared/hospitality-menu-studio-publication";
 import type { CatalogueLoadResult } from "@fika/server-shared/hospitality-catalogue-client";
-import { sameStudioDishReviewSubject, studioDishReviewKey, studioDishReviewSubject, type StudioDishSafetyFence, type StudioDishSafetyStatus } from "../../shared/hospitality-menu-studio-safety";
+import type { StudioDishSafetyFence, StudioDishSafetyStatus } from "../../shared/hospitality-menu-studio-safety";
 import type { Dish, Menu, Publication, PublicationScope, Review } from "./contract";
 import { draftContentReview, menuDishIds } from "./review";
-import { dateSchema, dishSchema, idSchema, menuSchema, revisionSchema, scopeSchema } from "./schema";
 import { hasPublicationScope, type ScopedPublicationContent } from "./scoped-publication";
 import { compareMenuDrafts } from "./versions";
 
@@ -13,35 +15,10 @@ export type DishSafety = { status: StudioDishSafetyStatus; fence?: StudioDishSaf
 export type SeasonWindow = { menuId: string; startDate: string; endDate: string };
 export type PublicationImpactTarget = { firstEventDate: string; lastEventDate: string; catalogueItemIds: string[];
   scope: ScopedPublicationContent["impactScope"]; rotation?: ScopedPublicationContent["rotation"] };
-export type PublicationPackage = {
-  contract: "hospitality-menu-studio.publication.v1";
-  publicationId: string;
-  publicationRevision: number;
-  sourceApp: "hospitality-menu-studio";
-  projectId: "demo-fika-os";
-  menu: Menu;
-  effectiveDate: string;
-  sourceDraftVersion: number;
-  previousPublicationId: string | null;
-  scope?: PublicationScope;
-  catalogueHash: string;
-  dishes: { dish: Dish; safety: Pick<StudioDishSafetyFence, "subject" | "releaseId" | "matrixHash"> }[];
-};
-
-const hash = z.string().regex(/^[a-f0-9]{64}$/);
-const packageSchema = z.object({
-  contract: z.literal("hospitality-menu-studio.publication.v1"), publicationId: idSchema, publicationRevision: revisionSchema,
-  sourceApp: z.literal("hospitality-menu-studio"), projectId: z.literal("demo-fika-os"), menu: menuSchema.strict(),
-  effectiveDate: dateSchema, sourceDraftVersion: revisionSchema, previousPublicationId: idSchema.nullable(), catalogueHash: hash, scope: scopeSchema.optional(),
-  dishes: z.array(z.object({ dish: dishSchema.strict(), safety: z.object({
-    subject: z.object({ dishId: idSchema, revision: revisionSchema, sourceHash: hash }).strict(),
-    releaseId: z.string().regex(/^cpu-studio-dish-release:[a-f0-9]{64}:v[1-9][0-9]*$/), matrixHash: hash,
-  }).strict() }).strict()),
-}).strict() satisfies z.ZodType<PublicationPackage>;
+export { canonicalJson, publicationHash, type PublicationPackage };
 
 // Local authoring runs in one server process. Restarting requires a fresh review for unconfirmed requests.
 const reviewKey = randomBytes(32);
-const maxPackageBytes = 650_000;
 
 export function reviewPublication(input: {
   request: PublicationRequest; menu: Menu; dishes: Dish[]; today: string; actorId: string; canPublish: boolean;
@@ -105,16 +82,11 @@ export function reviewPublication(input: {
   };
   const body = canonicalJson(payload);
   const contentHash = publicationHash(body);
-  if (Buffer.byteLength(body) > maxPackageBytes) return {
+  if (Buffer.byteLength(body) > maximumStudioPublicationBytes) return {
     review: { ...review, canPublish: false, issues: ["The full publication exceeds the storage limit."] },
   };
   const reviewToken = createHmac("sha256", reviewKey).update(canonicalJson(["studio-publication-review-v1", actorId, contentHash, impact])).digest("hex");
   return { review: { ...review, reviewToken }, package: { payload, body, contentHash } };
-}
-
-export function canonicalJson(value: unknown) {
-  return JSON.stringify(value, (_key, item) => item && typeof item === "object" && !Array.isArray(item)
-    ? Object.fromEntries(Object.keys(item).sort().map(key => [key, item[key]])) : item);
 }
 
 export function publicationImpactScope(request: PublicationRequest, content: ScopedPublicationContent): PublicationImpactTarget {
@@ -122,34 +94,10 @@ export function publicationImpactScope(request: PublicationRequest, content: Sco
     scope: content.impactScope, ...(content.rotation ? { rotation: content.rotation } : {}) };
 }
 
-export function publicationHash(value: string) { return createHash("sha256").update(value).digest("hex"); }
-
 export function sameReviewToken(supplied: string, issued: string | null) {
-  return issued !== null && hash.safeParse(supplied).success && timingSafeEqual(Buffer.from(supplied, "hex"), Buffer.from(issued, "hex"));
+  return issued !== null && publicationDigest.safeParse(supplied).success && timingSafeEqual(Buffer.from(supplied, "hex"), Buffer.from(issued, "hex"));
 }
 
 export function decodeLocalPublicationPackage(body: string, publication: Publication): PublicationPackage | undefined {
-  if (Buffer.byteLength(body) > maxPackageBytes || publicationHash(body) !== publication.contentHash) return undefined;
-  let value: unknown;
-  try { value = JSON.parse(body); }
-  catch { return undefined; }
-  const parsed = packageSchema.safeParse(value);
-  if (!parsed.success || canonicalJson(parsed.data) !== body) return undefined;
-  const payload = parsed.data;
-  if (payload.publicationId !== publication.id || payload.publicationRevision !== publication.revision
-    || payload.publicationId !== publicationIdFor(payload.menu.id, payload.publicationRevision)
-    || payload.previousPublicationId !== (payload.publicationRevision === 1 ? null : publicationIdFor(payload.menu.id, payload.publicationRevision - 1))
-    || canonicalJson(payload.scope || {}) !== canonicalJson(publication.scope)
-    || (payload.scope && (!hasPublicationScope(payload.scope) || payload.publicationRevision === 1))
-    || payload.effectiveDate !== publication.effectiveDate || payload.menu.id !== publication.menuId || payload.menu.name !== publication.menuName
-    || payload.sourceDraftVersion !== publication.sourceDraftVersion || payload.menu.version !== payload.sourceDraftVersion) return undefined;
-  const dishIds = menuDishIds(payload.menu);
-  if (dishIds.length !== payload.dishes.length || payload.dishes.some(({ dish, safety }, index) => {
-    const subject = studioDishReviewSubject(dish);
-    return dish.id !== dishIds[index] || dish.version < 1 || !sameStudioDishReviewSubject(safety.subject, subject)
-      || !safety.releaseId.startsWith(`cpu-studio-dish-release:${studioDishReviewKey(dish.id, dish.version)}:v`);
-  })) return undefined;
-  return payload;
+  return decodeStudioPublication(body, publication, "demo-fika-os");
 }
-
-function publicationIdFor(menuId: string, revision: number) { return `publication-${publicationHash(menuId).slice(0, 32)}-v${revision}`; }

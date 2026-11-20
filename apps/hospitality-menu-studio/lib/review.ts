@@ -1,15 +1,8 @@
+import { assortmentIsComplete } from "../../shared/hospitality-menu-studio-content";
 import { calendarDay, londonDate, rotationWeek, type Dish, type Menu, type PublicationScope, type Review } from "./contract";
 import { StudioProblem } from "./problem";
 
-export function assortmentIsComplete(dish: Dish): boolean {
-  const assortment = dish.assortment;
-  if (!assortment) return true;
-  const { expectedTotal, unit, components } = assortment;
-  return Boolean(unit.trim()) && Number.isSafeInteger(expectedTotal) && expectedTotal > 0
-    && components.length > 0 && components.every(component => Boolean(component.name.trim())
-      && Number.isSafeInteger(component.quantity) && component.quantity > 0)
-    && components.reduce((sum, component) => sum + component.quantity, 0) === expectedTotal;
-}
+export { assortmentIsComplete };
 
 export function menuDishIds(menu: Menu, eventDate?: string): string[] {
   if (eventDate && (eventDate < menu.startDate || eventDate > menu.endDate)) return [];

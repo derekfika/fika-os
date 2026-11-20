@@ -11,3 +11,4 @@ export const studioReviewStaging = {
 } as const;
 
 export const studioReviewAudience = studioReviewStaging.cpuOrigin + studioReviewStaging.intakePath;
+export const studioPublicationAudience = studioReviewStaging.hubOrigin + "/api/hospitality-studio-publications";
