@@ -48,3 +48,15 @@ export function localStudioSafetyAvailable(env = process.env) {
   return config.mode === "local" && config.projectId === "demo-fika-os" && !config.fixture &&
     /^(?:localhost|127\.0\.0\.1):[1-9][0-9]{0,4}$/.test(env.FIRESTORE_EMULATOR_HOST ?? "");
 }
+
+export function localStudioCheckerOrigin(env = process.env): string | undefined {
+  if (!localStudioSafetyAvailable(env)) return undefined;
+  const value = env.FIKA_STUDIO_CPU_BASE_URL;
+  if (!value || !/^http:\/\/(?:localhost|127\.0\.0\.1):[1-9][0-9]{0,4}$/.test(value)) return undefined;
+  try {
+    const url = new URL(value);
+    return url.port ? url.origin : undefined;
+  } catch {
+    return undefined;
+  }
+}
