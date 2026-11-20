@@ -210,6 +210,7 @@ export function selectedRunSheetPrintManifestKey(
         slot: line.canonicalSlotId || line.slot,
         order: line.canonicalOrderIndex ?? line.sortOrder,
         isCoreSalad: line.isCoreSalad,
+        studioKitchenSpec: line.studioKitchenSpec,
       })).sort((a, b) => a.id.localeCompare(b.id)),
     }));
   }).sort((a, b) => a.day.localeCompare(b.day) || a.id.localeCompare(b.id)));

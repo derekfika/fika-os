@@ -13,6 +13,8 @@ import {
 import { collectionOrders, collectionQuantity, collectionQuantityHeading, collectionDate, collectionDetails, isCoreSaladLine } from "./run-sheet-presentation";
 import { RunSheetPrintDialog } from "./RunSheetPrintDialog";
 import { runSheetMenuSections } from "../../lib/menu-run-sheet-order";
+import { orderHasInvalidStudioKitchenSpec, studioKitchenSpecError, studioKitchenSpecForLine } from "../../lib/studio-kitchen-spec";
+import { StudioKitchenSpecification } from "./StudioKitchenSpecification";
 export type PackingView = {
   revision: number;
   orderVersion: number;
@@ -50,6 +52,8 @@ export function CollectionCard({
   }, [selected]);
   const inactive =
     !!order.supersededBy || ["cancelled", "rejected"].includes(order.status);
+  const specInvalid = orderHasInvalidStudioKitchenSpec(order);
+  const selectedKitchenSpec = selected && studioKitchenSpecForLine(order, selected);
   const snapshot = selected?.approvedAllergenSnapshot;
   const verified =
     selected?.allergenEvidenceStatus === "confirmed" &&
@@ -83,7 +87,9 @@ export function CollectionCard({
       <p className="kitchen-progress" role="status">
         {inactive
           ? "Cancelled or superseded — packing unavailable"
-          : packing?.view
+          : specInvalid
+            ? studioKitchenSpecError
+            : packing?.view
             ? packing.view.packedCount +
               "/" +
               order.lines.length +
@@ -124,7 +130,7 @@ export function CollectionCard({
                 <input
                   type="checkbox"
                   checked={saved?.packed || false}
-                  disabled={!saved || packing?.busy || inactive}
+                  disabled={!saved || packing?.busy || inactive || specInvalid}
                   onChange={(e) =>
                     packing?.toggle(line.canonicalId, e.target.checked)
                   }
@@ -184,13 +190,16 @@ export function CollectionCard({
             <p>
               <strong>{collectionQuantity(selected)}</strong>
             </p>
-            <h3>Description / preparation</h3>
-            <p>{selected.description || "No description recorded."}</p>
-            <p>
-              {selected.productionInstructions ||
-                selected.servingGuidance ||
-                "No preparation instructions recorded."}
-            </p>
+            {selectedKitchenSpec === undefined && <>
+              <h3>Description / preparation</h3>
+              <p>{selected.description || "No description recorded."}</p>
+              <p>
+                {selected.productionInstructions ||
+                  selected.servingGuidance ||
+                  "No preparation instructions recorded."}
+              </p>
+            </>}
+            <StudioKitchenSpecification order={order} line={selected} />
             <h3>Dietary requirements</h3>
             <p>
               {Object.entries(selected.dietaries || {})

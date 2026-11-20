@@ -1,0 +1,208 @@
+{
+  "rows": 29,
+  "slots": [
+    "Leaf Salad",
+    "Slaw",
+    "Starch",
+    "Veg",
+    "Grain/Pulse",
+    "FIKA Seasonal",
+    "Meat",
+    "Fish",
+    "Vegan",
+    "Hot Main",
+    "Fish",
+    "Vegan/Veggie",
+    "Soup",
+    "Starch/Side 1",
+    "Starch/Side 2",
+    "Starch/Side 3",
+    "Starch/Side 4",
+    "Garnish 1",
+    "Garnish 2",
+    "Garnish 3",
+    "Garnish 4",
+    "Sauce 1",
+    "Sauce 2",
+    "Sauce 3",
+    "Sauce 4",
+    "Dessert 1",
+    "Dessert 2",
+    "Dessert 3",
+    "Dessert 4"
+  ],
+  "coreSaladLabels": 1,
+  "sections": [
+    {
+      "label": "SALADS",
+      "borders": [
+        {
+          "width": 1,
+          "style": "solid"
+        },
+        {
+          "width": 1,
+          "style": "solid"
+        },
+        {
+          "width": 1,
+          "style": "solid"
+        },
+        {
+          "width": 1,
+          "style": "solid"
+        }
+      ]
+    },
+    {
+      "label": "COLD PROTEINS",
+      "borders": [
+        {
+          "width": 1,
+          "style": "solid"
+        },
+        {
+          "width": 1,
+          "style": "solid"
+        },
+        {
+          "width": 1,
+          "style": "solid"
+        },
+        {
+          "width": 1,
+          "style": "solid"
+        }
+      ]
+    },
+    {
+      "label": "HOT MAINS",
+      "borders": [
+        {
+          "width": 1,
+          "style": "solid"
+        },
+        {
+          "width": 1,
+          "style": "solid"
+        },
+        {
+          "width": 1,
+          "style": "solid"
+        },
+        {
+          "width": 1,
+          "style": "solid"
+        }
+      ]
+    },
+    {
+      "label": "STARCH/SIDES",
+      "borders": [
+        {
+          "width": 1,
+          "style": "solid"
+        },
+        {
+          "width": 1,
+          "style": "solid"
+        },
+        {
+          "width": 1,
+          "style": "solid"
+        },
+        {
+          "width": 1,
+          "style": "solid"
+        }
+      ]
+    },
+    {
+      "label": "STARCH/SIDES",
+      "borders": [
+        {
+          "width": 1,
+          "style": "solid"
+        },
+        {
+          "width": 1,
+          "style": "solid"
+        },
+        {
+          "width": 1,
+          "style": "solid"
+        },
+        {
+          "width": 1,
+          "style": "solid"
+        }
+      ]
+    },
+    {
+      "label": "GARNISHES",
+      "borders": [
+        {
+          "width": 1,
+          "style": "solid"
+        },
+        {
+          "width": 1,
+          "style": "solid"
+        },
+        {
+          "width": 1,
+          "style": "solid"
+        },
+        {
+          "width": 1,
+          "style": "solid"
+        }
+      ]
+    },
+    {
+      "label": "SAUCES",
+      "borders": [
+        {
+          "width": 1,
+          "style": "solid"
+        },
+        {
+          "width": 1,
+          "style": "solid"
+        },
+        {
+          "width": 1,
+          "style": "solid"
+        },
+        {
+          "width": 1,
+          "style": "solid"
+        }
+      ]
+    },
+    {
+      "label": "DESSERTS",
+      "borders": [
+        {
+          "width": 1,
+          "style": "solid"
+        },
+        {
+          "width": 1,
+          "style": "solid"
+        },
+        {
+          "width": 1,
+          "style": "solid"
+        },
+        {
+          "width": 1,
+          "style": "solid"
+        }
+      ]
+    }
+  ],
+  "pageCount": 2,
+  "scope": "SYNTHETIC - NOT FOR SERVICE",
+  "siteTitle": "SYNTHETIC - NOT FOR SERVICE"
+}

@@ -1,0 +1,20 @@
+{
+  "pages": 1,
+  "starts": [
+    "hospitality-1",
+    "hospitality-2"
+  ],
+  "lines": [
+    "hospitality-1:line:0",
+    "hospitality-1:line:1",
+    "hospitality-2:line:0",
+    "hospitality-2:line:1"
+  ],
+  "overflow": [],
+  "overlaps": false,
+  "empty": false,
+  "continuations": 0,
+  "handovers": 2,
+  "headingsKeepRows": true,
+  "text": "FIKA\n\nFIKA · CPU PRODUCTION RUN SHEET\n\nFIKA Xchange · Synthetic\n\nFriday, 23 October 2026\n\nPrinted 20 Nov 2026, 14:32 · 2 collections\n\nPaper-only checkboxes · Reprint after changes · Not electronic delivery or allergen confirmation.\n\nCancelled or amended work may make this paper stale.\n\nFIKA Xchange · Synthetic\n\nTest Client 1 · Team briefing 1\n\nService type\nWorking lunch\nReady By\n12:00\nCollection Time\nTBC\nOrder ref\nBK-1001\nService / delivery window\n12:00\nPack\tCategory\tDish name\tCustomer ordered quantity\nPRODUCTION ITEMS\n\n\t—\thospitality-1 dish 1 · Roasted seasonal vegetables with heritage tomatoes, toasted seeds and a separately packed herb dressing\t1 tray\n\n\t—\thospitality-1 dish 2 · Roasted seasonal vegetables with heritage tomatoes, toasted seeds and a separately packed herb dressing\t2 trays\nPacked by:\nChecked by:\nDriver / collected by:\nDeparture time:\nDelivered time:\nReceived by / signature:\nNotes / issues:\nFIKA Xchange · Synthetic\n\nTest Client 2 · Team briefing 2\n\nService type\nWorking lunch\nReady By\n12:00\nCollection Time\nTBC\nOrder ref\nBK-1002\nService / delivery window\n12:00\nPack\tCategory\tDish name\tCustomer ordered quantity\nPRODUCTION ITEMS\n\n\t—\thospitality-2 dish 1 · Roasted seasonal vegetables with heritage tomatoes, toasted seeds and a separately packed herb dressing\t1 tray\n\n\t—\thospitality-2 dish 2 · Roasted seasonal vegetables with heritage tomatoes, toasted seeds and a separately packed herb dressing\t2 trays\nPacked by:\nChecked by:\nDriver / collected by:\nDeparture time:\nDelivered time:\nReceived by / signature:\nNotes / issues:\n\nPage 1 of 1"
+}

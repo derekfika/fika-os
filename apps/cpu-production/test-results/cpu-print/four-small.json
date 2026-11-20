@@ -1,0 +1,30 @@
+{
+  "pages": 4,
+  "starts": [
+    "small1",
+    "small2",
+    "small3",
+    "small4"
+  ],
+  "lines": [
+    "small1:line:0",
+    "small1:line:1",
+    "small1:line:2",
+    "small2:line:0",
+    "small2:line:1",
+    "small2:line:2",
+    "small3:line:0",
+    "small3:line:1",
+    "small3:line:2",
+    "small4:line:0",
+    "small4:line:1",
+    "small4:line:2"
+  ],
+  "overflow": [],
+  "overlaps": false,
+  "empty": false,
+  "continuations": 0,
+  "handovers": 4,
+  "headingsKeepRows": true,
+  "text": "FIKA\n\nFIKA · CPU PRODUCTION RUN SHEET\n\nSite small1\n\nFriday, 23 October 2026\n\nPrinted 20 Nov 2026, 14:32 · 1 collection\n\nPaper-only checkboxes · Reprint after changes · Not electronic delivery or allergen confirmation.\n\nCancelled or amended work may make this paper stale.\n\nSite small1\nService type\nImported production\nReady By\n12:00\nCollection Time\nTBC\nOrder ref\nCPU-1X3PJEV\nService / delivery window\n12:00\nPack\tCategory\tDish name\tCustomer ordered quantity\nPRODUCTION ITEMS\n\n\t—\tsmall1 dish 1\t1 portion\n\n\t—\tsmall1 dish 2\t2 portions\n\n\t—\tsmall1 dish 3\t3 portions\nPacked by:\nChecked by:\nDriver / collected by:\nDeparture time:\nDelivered time:\nReceived by / signature:\nNotes / issues:\n\nPage 1 of 4\n\nFIKA\n\nFIKA · CPU PRODUCTION RUN SHEET\n\nSite small2\n\nFriday, 23 October 2026\n\nPrinted 20 Nov 2026, 14:32 · 1 collection\n\nPaper-only checkboxes · Reprint after changes · Not electronic delivery or allergen confirmation.\n\nCancelled or amended work may make this paper stale.\n\nSite small2\nService type\nImported production\nReady By\n12:00\nCollection Time\nTBC\nOrder ref\nCPU-1XDP53U\nService / delivery window\n12:00\nPack\tCategory\tDish name\tCustomer ordered quantity\nPRODUCTION ITEMS\n\n\t—\tsmall2 dish 1\t1 portion\n\n\t—\tsmall2 dish 2\t2 portions\n\n\t—\tsmall2 dish 3\t3 portions\nPacked by:\nChecked by:\nDriver / collected by:\nDeparture time:\nDelivered time:\nReceived by / signature:\nNotes / issues:\n\nPage 2 of 4\n\nFIKA\n\nFIKA · CPU PRODUCTION RUN SHEET\n\nSite small3\n\nFriday, 23 October 2026\n\nPrinted 20 Nov 2026, 14:32 · 1 collection\n\nPaper-only checkboxes · Reprint after changes · Not electronic delivery or allergen confirmation.\n\nCancelled or amended work may make this paper stale.\n\nSite small3\nService type\nImported production\nReady By\n12:00\nCollection Time\nTBC\nOrder ref\nCPU-1XNOQST\nService / delivery window\n12:00\nPack\tCategory\tDish name\tCustomer ordered quantity\nPRODUCTION ITEMS\n\n\t—\tsmall3 dish 1\t1 portion\n\n\t—\tsmall3 dish 2\t2 portions\n\n\t—\tsmall3 dish 3\t3 portions\nPacked by:\nChecked by:\nDriver / collected by:\nDeparture time:\nDelivered time:\nReceived by / signature:\nNotes / issues:\n\nPage 3 of 4\n\nFIKA\n\nFIKA · CPU PRODUCTION RUN SHEET\n\nSite small4\n\nFriday, 23 October 2026\n\nPrinted 20 Nov 2026, 14:32 · 1 collection\n\nPaper-only checkboxes · Reprint after changes · Not electronic delivery or allergen confirmation.\n\nCancelled or amended work may make this paper stale.\n\nSite small4\nService type\nImported production\nReady By\n12:00\nCollection Time\nTBC\nOrder ref\nCPU-1VPRIY0\nService / delivery window\n12:00\nPack\tCategory\tDish name\tCustomer ordered quantity\nPRODUCTION ITEMS\n\n\t—\tsmall4 dish 1\t1 portion\n\n\t—\tsmall4 dish 2\t2 portions\n\n\t—\tsmall4 dish 3\t3 portions\nPacked by:\nChecked by:\nDriver / collected by:\nDeparture time:\nDelivered time:\nReceived by / signature:\nNotes / issues:\n\nPage 4 of 4"
+}
