@@ -6,11 +6,11 @@ Use the existing `fika-os-dev` backend and the dedicated Studio service account 
 
 ## Approve the exact role manifest
 
-The [IAM manifest](../../tools/workflow/studio-staging-iam.json) specifies every permission, binding resource, condition and principal. Its preflight digest is the SHA-256 of its compact JSON representation. The initial digest is `aa4c8bbc116d145a86768cc204c7513fe1272b29ed9d706a114aa56dee485f01`.
+The [IAM manifest](../../tools/workflow/studio-staging-iam.json) specifies every permission, binding resource, condition and principal. Its preflight digest is the SHA-256 of its compact JSON representation. The initial digest is `e86965af555ad12e38700da499a68583dab8fbbc1f6e2156ae03f1a3344f1d55`.
 
 | Role | Binding and reach |
 | --- | --- |
-| `StudioManagedHosting` | Project `fika-os-dev`. The 32 managed-hosting permissions from the live Compute Runner role after removing `storage.*` and `artifactregistry.*`. Includes staging build metadata updates and Developer Connect Git read-token access. |
+| `StudioManagedHosting` | Project `fika-os-dev`. The 31 project-supported managed-hosting permissions from the live Compute Runner role. Excludes `storage.*`, `artifactregistry.*` and `resourcemanager.projects.list`, which Google Cloud rejected in a project-level custom role. Includes staging build metadata updates and Developer Connect Git read-token access. |
 | `StudioManagedImages` | Only `projects/fika-os-dev/locations/europe-west4/repositories/firebaseapphosting-images`. Includes `artifactregistry.repositories.downloadArtifacts` and `artifactregistry.repositories.uploadArtifacts`. Docker manifest uploads can move mutable tags across every package in this shared repository. The owner must explicitly accept repository-wide pull and push, including this tag risk. |
 | `StudioDraftAuthor` | Project binding conditioned on `resource.name == "projects/fika-os-dev/databases/hospitality-menu-studio"`. Includes `datastore.databases.get` for transactions and `datastore.entities.get`, `list`, `create` and `update`. |
 

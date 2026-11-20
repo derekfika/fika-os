@@ -141,7 +141,7 @@ test('preflight observes only scoped metadata and leaves release blocked even wh
   });
   assert.equal(result.status, 'BLOCKED');
   assert.deepEqual(result.buildScope, {
-    iamManifestSha256: 'aa4c8bbc116d145a86768cc204c7513fe1272b29ed9d706a114aa56dee485f01',
+    iamManifestSha256: 'e86965af555ad12e38700da499a68583dab8fbbc1f6e2156ae03f1a3344f1d55',
     managedRoleScope: 'projects/fika-os-dev',
     managedArtifactRepository: 'projects/fika-os-dev/locations/europe-west4/repositories/firebaseapphosting-images',
     accessBoundary: 'shared-staging-repository',
