@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   londonDate,
   rotationWeek,
@@ -17,6 +17,10 @@ import {
   title,
 } from "./studio-ui";
 import styles from "./studio.module.css";
+import {
+  presentReviewIssues,
+  type ReviewIssueTarget,
+} from "./studio-review-model";
 
 type Site = { id: string; name: string };
 export type SitePreview = {
@@ -298,6 +302,7 @@ type ReviewProps = {
   check: () => void;
   publish: () => void;
   impact: () => void;
+  editIssue: (target: ReviewIssueTarget) => void;
 };
 
 export function PublicationReview({
@@ -318,8 +323,14 @@ export function PublicationReview({
   check,
   publish,
   impact,
+  editIssue,
 }: ReviewProps) {
   const today = londonDate();
+  const issueDetails = useRef<HTMLDetailsElement>(null);
+  const presented = result ? presentReviewIssues(result, menu, dishes) : null;
+  const hasDraftIssues = Boolean(
+    presented && (presented.editable.length || presented.other.length),
+  );
   const [schedule, setSchedule] = useState(!date || date !== today);
   const approved = Boolean(
     result?.canPublish &&
@@ -360,29 +371,54 @@ export function PublicationReview({
           />
           <strong>Allergen verification</strong>
           <span>
-            {result?.safety.status === "verified"
-              ? "Verified by the existing safety process"
-              : "Signed verification is unavailable"}
+            {!result
+              ? "Run checks for this draft"
+              : result.safety.status === "verified"
+                ? "Verified by the existing safety process"
+                : result.safety.status === "unverified"
+                  ? "Signed verification has not been confirmed"
+                  : "Signed verification is unavailable"}
           </span>
           <Pill
             tone={result?.safety.status === "verified" ? "success" : "warning"}
           >
-            {result?.safety.status === "verified" ? "Verified" : "Blocked"}
+            {!result
+              ? "Pending"
+              : result.safety.status === "verified"
+                ? "Verified"
+                : "Blocked"}
           </Pill>
         </div>
         <div className={styles.checkRow}>
-          <Icon name={result && !result.issues.length ? "check" : "warning"} />
-          <strong>Menu completeness</strong>
+          <Icon name={result && !hasDraftIssues ? "check" : "warning"} />
+          <strong>Draft details</strong>
           <span>
-            {result
-              ? result.issues.length
-                ? result.issues.length + " checks need attention"
-                : "Required draft details present"
-              : "Run checks for this draft"}
+            {!presented
+              ? "Run checks for this draft"
+              : hasDraftIssues
+                ? presented.editable.length +
+                  presented.other.length +
+                  " items need attention"
+                : "No draft detail issues reported"}
           </span>
-          <Pill tone={result && !result.issues.length ? "success" : "neutral"}>
-            {result && !result.issues.length ? "Complete" : "Pending"}
-          </Pill>
+          {hasDraftIssues ? (
+            <button
+              type="button"
+              className={styles.textAction}
+              onClick={() => {
+                if (issueDetails.current) {
+                  issueDetails.current.open = true;
+                  issueDetails.current.querySelector("summary")?.focus();
+                }
+              }}
+            >
+              View details <Icon name="forward" />
+            </button>
+          ) : (
+            <Pill tone={result ? "success" : "neutral"}>
+              {result ? "Checked" : "Pending"}
+            </Pill>
+          )}
         </div>
         <div className={styles.checkRow}>
           <Icon name="calendar" />
@@ -509,14 +545,55 @@ export function PublicationReview({
           <p>Existing bookings keep their original specifications.</p>
         </section>
       </div>
-      {result?.issues.length ? (
-        <details className={styles.disclosure}>
-          <summary>Review issues ({result.issues.length})</summary>
-          <ul>
-            {result.issues.map((issue, index) => (
-              <li key={index}>{issue}</li>
-            ))}
-          </ul>
+      {presented && (hasDraftIssues || presented.authoritiesUnavailable) ? (
+        <details className={styles.disclosure} ref={issueDetails}>
+          <summary>Review details</summary>
+          {presented.editable.length > 0 && (
+            <>
+              <h2>Draft details to check</h2>
+              <ul>
+                {presented.editable.map((issue, index) => (
+                  <li key={index}>
+                    {issue.text}{" "}
+                    {issue.target && (
+                      <button
+                        type="button"
+                        className={styles.textAction}
+                        onClick={() => editIssue(issue.target!)}
+                      >
+                        {issue.target.kind === "dish"
+                          ? "Edit dish"
+                          : issue.target.kind === "section"
+                            ? "Edit section"
+                            : "Open menu"}
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          {presented.other.length > 0 && (
+            <>
+              <h2>Other checks</h2>
+              <ul>
+                {presented.other.map((issue, index) => (
+                  <li key={index}>{issue}</li>
+                ))}
+              </ul>
+            </>
+          )}
+          {presented.authoritiesUnavailable && (
+            <>
+              <h2>Checks not available yet</h2>
+              <p>
+                Food-safety sign-off, customer availability and the booking
+                impact check are not available here yet. Your menu is still a
+                draft. Continue editing and return to these checks when they
+                become available.
+              </p>
+            </>
+          )}
         </details>
       ) : null}
       {notice && <p role="status">{notice}</p>}
@@ -573,7 +650,7 @@ export function BookingImpact({
         <p>
           {available
             ? "The current impact check is advisory."
-            : "The number of affected bookings is unknown. An authoritative impact check is required."}
+            : "The number of affected bookings is unknown. The booking check is not available yet. Continue editing your draft and return to this check when it becomes available."}
         </p>
       </div>
       {available && available.length > 0 && (
