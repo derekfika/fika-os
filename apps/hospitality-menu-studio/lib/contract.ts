@@ -1,3 +1,5 @@
+import { hospitalityCalendarDay, hospitalityMenuDate, hospitalityRotationWeek } from "../../shared/hospitality-menu-date";
+
 export const categories = ["meat", "fish", "vegetarian", "vegan", "salad", "dessert", "other"] as const;
 
 export type StudioActor = { id: string; name: string; canManage: boolean; canPublish: boolean };
@@ -71,23 +73,9 @@ export type Review = {
   safety: { status: "unavailable" | "unverified" | "verified" };
 };
 
-const dayMs = 86_400_000;
-const londonCalendar = new Intl.DateTimeFormat("en-GB", {
-  timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit",
-});
-
-export function londonDate(now = new Date()): string {
-  const parts = Object.fromEntries(londonCalendar.formatToParts(now).map(part => [part.type, part.value]));
-  return `${parts.year}-${parts.month}-${parts.day}`;
-}
-
-export function calendarDay(date: string): number {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return NaN;
-  const time = Date.parse(date + "T00:00:00Z");
-  return Number.isFinite(time) && new Date(time).toISOString().slice(0, 10) === date ? time : NaN;
-}
+export const londonDate = hospitalityMenuDate;
+export const calendarDay = hospitalityCalendarDay;
 
 export function rotationWeek(anchorMonday: string, eventDate: string): number {
-  const week = Math.floor((calendarDay(eventDate) - calendarDay(anchorMonday)) / (7 * dayMs));
-  return ((week % 6 + 6) % 6) + 1;
+  return hospitalityRotationWeek(anchorMonday, eventDate, 6);
 }
