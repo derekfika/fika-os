@@ -42,3 +42,9 @@ export function assertStudioDraftCommand(action: string) {
     throw new StudioProblem(403, "STUDIO_WRITE_DENIED", "Studio staging only permits draft authoring.");
   }
 }
+
+export function localStudioSafetyAvailable(env = process.env) {
+  const config = studioRuntime(env);
+  return config.mode === "local" && config.projectId === "demo-fika-os" && !config.fixture &&
+    /^(?:localhost|127\.0\.0\.1):[1-9][0-9]{0,4}$/.test(env.FIRESTORE_EMULATOR_HOST ?? "");
+}
