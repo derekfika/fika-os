@@ -13,6 +13,7 @@ import {
   type DraftStatus,
 } from "./studio-ui";
 import styles from "./studio.module.css";
+import { copyRotationChoices, rotationSource } from "./rotation-copy";
 
 const weeks = [1, 2, 3, 4, 5, 6];
 const groups = [
@@ -254,8 +255,16 @@ export function SectionEditor({
     "all",
   );
   const [search, setSearch] = useState("");
-  const [copyWeek, setCopyWeek] = useState(0);
-  const [confirmCopy, setConfirmCopy] = useState(false);
+  const [copyWeek, setCopyWeek] = useState(1);
+  const [copyConfirmation, setCopyConfirmation] = useState<{
+    sectionId: string;
+    week: number;
+    choices: string;
+  } | null>(null);
+  const confirmCopy =
+    copyConfirmation?.sectionId === section.id &&
+    copyConfirmation.week === week &&
+    copyConfirmation.choices === JSON.stringify(selected);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [view, setView] = useState<"overview" | "week">("week");
   const [adding, setAdding] = useState(false);
@@ -307,16 +316,23 @@ export function SectionEditor({
         .toLocaleLowerCase("en-GB")
     ];
   const isRotation = section.mode === "rotation";
+  const sourceWeek = rotationSource(copyWeek, week);
   function chooseWeek(value: number) {
-    setConfirmCopy(false);
+    setCopyConfirmation(null);
     setWeek(value);
     setView("week");
   }
   function copyFrom(source: number) {
-    if (!canManage || source === week || (selected.length > 0 && !confirmCopy))
-      return;
-    updateSelected([...(section.weeks[source] || [])]);
-    setConfirmCopy(false);
+    if (!canManage) return;
+    const choices = copyRotationChoices(
+      section.weeks,
+      source,
+      week,
+      confirmCopy,
+    );
+    if (!choices) return;
+    updateSelected(choices);
+    setCopyConfirmation(null);
   }
   function shift(id: string, neighbour: string) {
     updateSelected(
@@ -358,31 +374,6 @@ export function SectionEditor({
         </label>
       )}
       <div className={styles.sectionControls}>
-        <div className={styles.fieldGroup}>
-          <span id="menu-availability">Menu availability</span>
-          <div
-            className={styles.segmented}
-            aria-labelledby="menu-availability"
-            role="group"
-          >
-            <button
-              type="button"
-              disabled={!canManage}
-              aria-pressed={!isRotation}
-              onClick={() => update({ mode: "static" })}
-            >
-              All season
-            </button>
-            <button
-              type="button"
-              disabled={!canManage}
-              aria-pressed={isRotation}
-              onClick={() => update({ mode: "rotation" })}
-            >
-              Six-week rotation
-            </button>
-          </div>
-        </div>
         {isRotation && (
           <div className={styles.fieldGroup}>
             <span id="rotation-week">Rotation week</span>
@@ -407,6 +398,31 @@ export function SectionEditor({
         )}
         <details className={styles.disclosure} open={openSettings || undefined}>
           <summary>Section settings</summary>
+          <div className={styles.fieldGroup}>
+            <span id="menu-availability">Menu availability</span>
+            <div
+              className={styles.segmented}
+              aria-labelledby="menu-availability"
+              role="group"
+            >
+              <button
+                type="button"
+                disabled={!canManage}
+                aria-pressed={!isRotation}
+                onClick={() => update({ mode: "static" })}
+              >
+                All season
+              </button>
+              <button
+                type="button"
+                disabled={!canManage}
+                aria-pressed={isRotation}
+                onClick={() => update({ mode: "rotation" })}
+              >
+                Six-week rotation
+              </button>
+            </div>
+          </div>
           {!showName && (
             <label className="fika-field">
               Section name
@@ -504,47 +520,55 @@ export function SectionEditor({
         </section>
       ) : (
         <>
-          <div className={styles.filterBar}>
-            <div
-              className={styles.chips}
-              role="group"
-              aria-label="Filter by category"
-            >
-              <button
-                type="button"
-                aria-pressed={group === "all"}
-                onClick={() => setGroup("all")}
+          <details className={styles.sectionTools}>
+            <summary>
+              Filter dishes
+              {group !== "all" || temperature !== "all"
+                ? " (filters active)"
+                : ""}
+            </summary>
+            <div className={styles.filterBar}>
+              <div
+                className={styles.chips}
+                role="group"
+                aria-label="Filter by category"
               >
-                All ({selected.length})
-              </button>
-              {grouped.map(({ id, name, ids }) => (
                 <button
                   type="button"
-                  key={id}
-                  aria-pressed={group === id}
-                  onClick={() => setGroup(id)}
+                  aria-pressed={group === "all"}
+                  onClick={() => setGroup("all")}
                 >
-                  {name} ({ids.length})
+                  All ({selected.length})
                 </button>
-              ))}
+                {grouped.map(({ id, name, ids }) => (
+                  <button
+                    type="button"
+                    key={id}
+                    aria-pressed={group === id}
+                    onClick={() => setGroup(id)}
+                  >
+                    {name} ({ids.length})
+                  </button>
+                ))}
+              </div>
+              <div
+                className={styles.chips}
+                role="group"
+                aria-label="Filter by temperature"
+              >
+                {(["all", "hot", "cold"] as const).map((value) => (
+                  <button
+                    type="button"
+                    key={value}
+                    aria-pressed={temperature === value}
+                    onClick={() => setTemperature(value)}
+                  >
+                    {value === "all" ? "Any temp." : title(value)}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div
-              className={styles.chips}
-              role="group"
-              aria-label="Filter by temperature"
-            >
-              {(["all", "hot", "cold"] as const).map((value) => (
-                <button
-                  type="button"
-                  key={value}
-                  aria-pressed={temperature === value}
-                  onClick={() => setTemperature(value)}
-                >
-                  {value === "all" ? "Any temp." : title(value)}
-                </button>
-              ))}
-            </div>
-          </div>
+          </details>
           <div className={styles.sectionHeading}>
             <div>
               <h2>
@@ -558,61 +582,86 @@ export function SectionEditor({
                 </p>
               )}
             </div>
-            {isRotation && canManage && (
+            <Button disabled={!canManage} onClick={() => setAdding(!adding)}>
+              <Icon name="plus" /> {adding ? "Close dish picker" : "Add dish"}
+            </Button>
+          </div>
+          {isRotation && canManage && (
+            <details className={styles.sectionTools}>
+              <summary>Copy choices to week {week + 1}</summary>
               <div className={styles.copyControls}>
                 <label className="fika-field">
-                  Copy from
+                  Copy from week
                   <select
                     className="fika-select"
-                    value={copyWeek}
+                    value={sourceWeek}
                     onChange={(event) => {
                       setCopyWeek(Number(event.target.value));
-                      setConfirmCopy(false);
+                      setCopyConfirmation(null);
                     }}
                   >
-                    {weeks.map((number) => (
-                      <option value={number - 1} key={number}>
-                        Week {number}
-                      </option>
-                    ))}
+                    {weeks
+                      .filter((number) => number - 1 !== week)
+                      .map((number) => (
+                        <option value={number - 1} key={number}>
+                          Week {number}
+                        </option>
+                      ))}
                   </select>
                 </label>
                 <Button
-                  disabled={
-                    copyWeek === week || (selected.length > 0 && !confirmCopy)
-                  }
-                  onClick={() => copyFrom(copyWeek)}
+                  disabled={selected.length > 0 && !confirmCopy}
+                  onClick={() => copyFrom(sourceWeek)}
                 >
-                  Copy into week {week + 1}
+                  Copy week {sourceWeek + 1} into week {week + 1}
                 </Button>
-                <Button
-                  disabled={!week || (selected.length > 0 && !confirmCopy)}
-                  onClick={() => copyFrom(week - 1)}
-                >
-                  Copy from previous
-                </Button>
+                {week > 0 && (
+                  <Button
+                    disabled={selected.length > 0 && !confirmCopy}
+                    onClick={() => copyFrom(week - 1)}
+                  >
+                    Copy previous: week {week} into week {week + 1}
+                  </Button>
+                )}
                 {selected.length > 0 && (
                   <label className="fika-choice">
                     <input
                       type="checkbox"
                       checked={confirmCopy}
-                      onChange={(event) => setConfirmCopy(event.target.checked)}
+                      onChange={(event) =>
+                        setCopyConfirmation(
+                          event.target.checked
+                            ? {
+                                sectionId: section.id,
+                                week,
+                                choices: JSON.stringify(selected),
+                              }
+                            : null,
+                        )
+                      }
                     />{" "}
-                    Replace this week’s choices
+                    Replace week {week + 1} choices
                   </label>
                 )}
               </div>
-            )}
-            <Button disabled={!canManage} onClick={() => setAdding(!adding)}>
-              <Icon name="plus" /> {adding ? "Close dish picker" : "Add dish"}
-            </Button>
-          </div>
+            </details>
+          )}
+          {visibleGroups.length > 0 && (
+            <p
+              id="section-table-scroll-help"
+              className={styles.sectionScrollHelp}
+            >
+              Scroll sideways to see dish actions. You can also focus the table
+              and use the arrow keys.
+            </p>
+          )}
           {visibleGroups.length > 0 && (
             <div
               className={styles.tableScroll}
               tabIndex={0}
               role="region"
               aria-label="Selected section dishes"
+              aria-describedby="section-table-scroll-help"
             >
               <table className={styles.table}>
                 <thead>
