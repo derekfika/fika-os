@@ -49,7 +49,8 @@ test("UAT blocker contracts remain wired end to end", () => {
   const batchAction = rollingRoute.slice(rollingRoute.indexOf('action === "batch-update-entries"'), rollingRoute.indexOf('action === "create-entry"'));
   assert.doesNotMatch(batchAction, /reconcileCatalogueFromRollingEntries|syncRollingEntries/);
   assert.match(batchAction, /await getWeek\(String\(body\.weekId\)\)/);
-  assert.match(batchAction, /publicationState: await publicationState\(/);
+  assert.match(batchAction, /publicationState: await readPublicationState\(/);
+  assert.match(rollingRoute, /publicationState\(scopedSnapshot\(snapshot, actor\), readableOplocs, catalogue, publication => scopeMenuPublication\(publication, actor\)\)/);
   assert.match(portionPlanner, /command\("batch-update-entries"/);
   assert.match(portionPlanner, /expectedWeekVersion/);
   assert.match(portionPlanner, /localStorage/);
