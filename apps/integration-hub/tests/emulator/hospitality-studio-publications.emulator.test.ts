@@ -10,6 +10,13 @@ import {
   canonicalJson, publicationHash, publicationIdFor, type PublicationPackage,
 } from "../../../shared/hospitality-menu-studio-publication";
 import { HubStudioPublications, type ActivationCommand } from "../../lib/hospitality-studio-publications";
+import { bindStudioQuote, prepareStudioBooking } from "../../lib/hospitality-studio-booking";
+import { createProductionFromApprovedBookingTransaction } from "../../lib/production-domain";
+import { calculateQuoteSnapshot, defaultDashboardQuoteSettings } from "../../lib/quote-engine";
+import { RCOA_BOOKING_INGESTION_CONTRACT_VERSION, type CanonicalBooking } from "../../lib/hospitality-booking-service";
+import { stableDocumentId } from "@fika/server-shared/stable-document-id";
+import { studioDishChoiceId } from "../../../shared/hospitality-menu-studio-selection";
+import type { QuoteRevision } from "../../lib/booking-workflow";
 
 const enabled = process.env.FIREBASE_PROJECT_ID === "demo-fika-os" && /^127\.0\.0\.1:\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST || "");
 const now = "2026-11-20T12:00:00.000Z";
@@ -126,5 +133,82 @@ test("emulator: a staff-only collection uses separate activation without exposin
     const current = await db.runTransaction(tx => hub.choices(tx, command.oplocId, "2027-03-23", [item]), { readOnly: true });
     assert.equal(current.items.size, 0);
     assert.equal(current.managedItems.has(item), true);
+  } finally { await deleteApp(app); }
+});
+
+test("emulator: Hub freezes accepted Studio selections across a new publication and canonical CPU handoff replay", { skip: !enabled }, async () => {
+  const app = initializeApp({ projectId: "demo-fika-os" }, randomUUID());
+  const db = getFirestore(app);
+  const id = randomUUID();
+  const hub = new HubStudioPublications(db, "demo-fika-os");
+  const canonicalId = `booking:studio:${id}`;
+  const ref = db.collection("fikaBookings").doc(canonicalId);
+  const oplocId = `oploc:${id}`;
+  const itemId = `hospitality-menu-item:rcoa:${id}`;
+  const menu = publication(id, itemId);
+  const first = menu.create();
+  const actor = { uid: "synthetic-actor", name: "Synthetic actor", role: "integration-admin", synthetic: true } as const;
+  const client = { name: "Fictional customer", companyName: "Fictional company", email: "customer@example.test" };
+  const service = { eventDate: "2027-04-05", startTime: "12:00", guestCount: 20, portalSiteId: "rcoa", oplocId };
+  const marker = { id: studioDishChoiceId, publicationHash: first.manifest.contentHash, quantities: { [menu.payload.dishes[0].dish.id]: 4 } };
+  const order: CanonicalBooking["order"] = { currency: "GBP", netTotal: 40, vatTotal: 0, grossTotal: 40, items: [{ itemId, itemName: "Pastry boxes", quantity: 4,
+    servingInfo: "boxes", unitPrice: 10, lineTotal: 40, choices: [marker] }] };
+  const booking: CanonicalBooking = {
+    canonicalId, entityType: "Booking", schemaVersion: "0.1.0", version: 1, commercialVersion: 1, lifecycleStatus: "Approved",
+    createdAt: now, updatedAt: now, createdBy: actor.uid, updatedBy: actor.uid,
+    source: { provider: "rcoa-booking-platform", sourceBookingId: id, submissionTimestamp: now,
+      contractVersion: RCOA_BOOKING_INGESTION_CONTRACT_VERSION, originalPayload: { bookingId: id, submittedAt: now, client, event: service, order } },
+    client, service, order: structuredClone(order), deliveryChargeRequired: true, dietaries: {}, acknowledgements: {}, attachments: [],
+    statusHistory: [], audit: [],
+  };
+  const activate = (manifestId: string, expectedGeneration: number) => hub.activate({
+    publicationId: manifestId, oplocId, expectedGeneration, commandId: randomUUID(),
+    confirmed: true, action: "activate-seasonal", visibility: "customer", reason: "Fictional review fixture",
+  }, async () => actor.uid, async () => {});
+  const accept = (candidate: CanonicalBooking) => db.runTransaction(async transaction => {
+    const stage = await prepareStudioBooking(transaction, ref, candidate, { allowed: true,
+      publications: hub, offerings: () => [{ itemId, offeringMode: "standard", price: { amount: 10 } }],
+    });
+    stage();
+    transaction.create(ref, candidate);
+  });
+  try {
+    await hub.register(first);
+    await seedSafety(db, menu.payload);
+    await activate(first.manifest.id, 0);
+    const forged = structuredClone(booking);
+    forged.order.items[0].choices = [{ ...marker, publicationHash: "f".repeat(64) }];
+    await assert.rejects(accept(forged), { code: "STUDIO_BOOKING_SELECTION_CHANGED" });
+    assert.equal((await ref.get()).exists, false);
+    await accept(booking);
+    assert.equal(booking.studioKitchenEvidenceVersion, 1);
+    assert.doesNotMatch(JSON.stringify((await ref.get()).data()), /Private kitchen instructions/);
+    const update = publication(id, itemId, 2);
+    update.payload.dishes[0].dish.kitchenDescription = "Later kitchen instructions";
+    const changed = update.payload.dishes[0];
+    changed.safety.subject = studioDishReviewSubject(changed.dish);
+    const second = update.create();
+    await hub.register(second);
+    await seedSafety(db, update.payload);
+    await activate(second.manifest.id, 1);
+    const quote: QuoteRevision = { id: `quote:${canonicalId}:r1`, revision: 1, createdAt: now, createdBy: actor.uid,
+      commercialVersion: 1, stale: false, pdfStatus: "saved", driveFileId: "fictional-pdf", documentReference: "fixture-quote",
+      snapshot: calculateQuoteSnapshot(booking, defaultDashboardQuoteSettings("rcoa")) };
+    await db.runTransaction(async transaction => {
+      await bindStudioQuote(transaction, ref, booking, quote);
+      transaction.update(ref, { quoteState: { currentRevisionId: quote.id, revisions: [quote] } });
+    });
+    await db.collection("integrationHubHospitalityMenuProductionRouting").doc(stableDocumentId(itemId)).create({ menuItemId: itemId, workstreams: ["hospitality"] });
+    const created = await createProductionFromApprovedBookingTransaction(actor, canonicalId, `synthetic:${id}`);
+    assert.equal(created.status, "created");
+    const spec = created.order?.lines[0].studioKitchenSpec?.selections[0];
+    assert.equal(spec?.kitchenDescription, "Private kitchen instructions");
+    assert.equal(spec?.publication.publicationId, first.manifest.id);
+    assert.equal(spec?.assortment?.boxCount, 4);
+    assert.equal(spec?.assortment?.expectedTotal, 24);
+    const retry = await createProductionFromApprovedBookingTransaction(actor, canonicalId, `synthetic:${id}`);
+    assert.equal(retry.status, "already_exists");
+    assert.deepEqual(retry.order?.lines, created.order?.lines);
+    assert.equal((await db.collection("fikaFulfilmentRequirementsV1").where("sourceEntityId", "==", created.order?.canonicalId).get()).size, 1);
   } finally { await deleteApp(app); }
 });

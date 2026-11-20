@@ -4,6 +4,7 @@ import { isGallagherBooking } from "./gallagher-rules";
 import { HOT_FORK_BUFFET_CHOICE_ID, assertHotForkBuffetCustomerSubmission, hotForkBuffetChoice, validateBuffetDietaryCounts } from "@fika/server-shared/hospitality-buffet-selection";
 import type { CanonicalRecord } from "./types";
 import type { MnkBookingPayload } from "./hospitality-booking-service";
+import { isStudioDishChoice } from "../../shared/hospitality-menu-studio-selection";
 
 const refuse = (message: string): never => { throw Object.assign(new Error(message), { status: 422 }); };
 const money = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
@@ -26,7 +27,8 @@ export function trustedPublicOrder(payload: MnkBookingPayload, records: Canonica
       assertHotForkBuffetCustomerSubmission(selection.value, record?.canonicalId || line.itemId, payload.event.guestCount);
     }
   }
-  const catalogueChoices = (choices: unknown[] | undefined) => choices?.filter(choice => !(choice && typeof choice === "object" && (choice as { id?: unknown }).id === HOT_FORK_BUFFET_CHOICE_ID));
+  const catalogueChoices = (choices: unknown[] | undefined) => choices?.filter(choice => !isStudioDishChoice(choice) &&
+    !(choice && typeof choice === "object" && (choice as { id?: unknown }).id === HOT_FORK_BUFFET_CHOICE_ID));
   if (governed.some(x => { const c = x.record?.record.configuration as RuleItem["configuration"]; return c?.rules || c?.choices?.some(g => g.controlType === "quantities"); })) {
     try { validateCatalogueRules(governed.map(({ line, record }) => ({ id: record?.canonicalId || line.itemId, bookingPolicy: record?.record.bookingPolicy as RuleItem["bookingPolicy"], name: String(record?.record.name || line.itemName || line.itemId), minimumQuantity: record?.record.minimumQuantity as number | undefined, minimumGuests: record?.record.minimumGuests as number | undefined, configuration: record?.record.configuration as RuleItem["configuration"] })), governed.map(({ line, record }) => ({ ...line, itemId: record?.canonicalId || line.itemId, choices: catalogueChoices(line.choices) as never })), { gallagher: isGallagherBooking({ companyName: payload.client.companyName, email: payload.client.email }), siteId: site, guestCount: payload.event.guestCount, eventDate: payload.event.eventDate, startTime: payload.event.startTime, now }); } catch (error) { return refuse((error as Error).message); }
   }
