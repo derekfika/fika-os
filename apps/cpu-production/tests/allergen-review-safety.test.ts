@@ -59,7 +59,8 @@ test("Delivered-In style persistence normalisation (shared contract) still deriv
 test("the Hospitality grid renders No Key as a keyboard-reachable, text-free native button with a 44px target, not a read-only icon or checkbox widget (#251)", () => {
   const component = read("../app/ui/HospitalityAllergenDetail.tsx");
   assert.doesNotMatch(component, /no-key-control|no-key-checkbox|no-key-status|No Key Allergens<span/);
-  assert.match(component, /aria-pressed=\{binaryCellPressed\(view\)\}/);
+  assert.match(component, /<HospitalityAllergenCell/);
+  assert.match(read("../app/ui/HospitalityAllergenCell.tsx"), /aria-pressed=\{binaryCellPressed\(view\)\}/);
   assert.match(component, /toggleCell\(menuItem\.id, sub, key\)/);
   assert.doesNotMatch(component, /derivedNoKeyState|read only/);
   assert.match(read("../app/ui/hospitality-allergen-detail.css"), /\.allergen-checker \.allergen-cell\{min-width:44px;min-height:44px\}/);
