@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import type { CollectionReference, DocumentData } from "firebase-admin/firestore";
 import { eventIsDue, markEventDelivered, markEventFailed, outboxRecord, type DurableDomainEvent } from "@fika/server-shared/durable-outbox";
-import { dueHospitalityMirrorQuery } from "../lib/cpux-mirror/outbox-query";
+import { dueHospitalityMirrorQuery, hospitalityMirrorOutboxStatus } from "../lib/cpux-mirror/outbox-query";
 
 const asOf = "2026-11-12T13:00:00.000Z";
 const batchLimit = 3;
@@ -25,7 +25,7 @@ function event(id: string, status: "pending" | "failed" | "delivered" | "dead-le
     payload: { bookingId: "booking:rcoa:fixture", orderId: "production-order:fixture" },
     delivery: { status, attempts: status === "failed" ? 2 : 0, nextEligibleAt: status === "delivered" || status === "dead-letter" ? undefined : nextEligibleAt, ...extra },
   };
-  const stored = outboxRecord(durable) as RecordData;
+  const stored = { ...outboxRecord(durable), outboxStatus: hospitalityMirrorOutboxStatus(status, true) } as RecordData;
   // Older terminal rows can retain a stale root timestamp; the production
   // inventory demonstrated that these still appear in the time-only query.
   if (status === "delivered" || status === "dead-letter") stored.nextEligibleAt = nextEligibleAt;
@@ -76,18 +76,20 @@ function realisticTwelve() {
 }
 
 test("Calendar worker query excludes terminal rows before its three-record limit", async () => {
-  const fake = fixtureCollection(realisticTwelve());
+  const rows = realisticTwelve();
+  rows.push({ id: "legacy-due", data: { ...event("legacy-due", "pending", "2026-11-10T10:00:00.000Z"), outboxStatus: "pending" } });
+  const fake = fixtureCollection(rows);
   const result = await dueHospitalityMirrorQuery(fake.collection, asOf, batchLimit).get();
 
   assert.deepEqual(fake.filters, [
-    { field: "outboxStatus", op: "in", value: ["pending", "failed"] },
+    { field: "outboxStatus", op: "in", value: ["live-pending", "live-failed"] },
     { field: "nextEligibleAt", op: "<=", value: asOf },
   ]);
   assert.equal(fake.orderField, "nextEligibleAt");
   assert.equal(fake.batch, batchLimit);
   assert.equal(result.docs.length, batchLimit);
   assert.deepEqual(result.docs.map(row => row.id), ["failed-1", "failed-2", "failed-3"]);
-  assert.ok(result.docs.every(row => ["pending", "failed"].includes(row.data().outboxStatus)));
+  assert.ok(result.docs.every(row => ["live-pending", "live-failed"].includes(row.data().outboxStatus)));
 });
 
 test("empty Calendar outbox query resolves to an empty batch", async () => {
@@ -99,8 +101,8 @@ test("empty Calendar outbox query resolves to an empty batch", async () => {
 
 test("a failed immediate Calendar publication becomes eligible for the existing Scheduler retry", async () => {
   const failed = markEventFailed(event("immediate-failure", "pending", asOf), "Calendar unavailable", asOf);
-  const row = { id: failed.eventId, data: outboxRecord(failed) as RecordData };
-  assert.equal(row.data.outboxStatus, "failed");
+  const row = { id: failed.eventId, data: { ...outboxRecord(failed), outboxStatus: hospitalityMirrorOutboxStatus(failed.delivery.status, true) } as RecordData };
+  assert.equal(row.data.outboxStatus, "live-failed");
   assert.equal(eventIsDue(failed, new Date(asOf)), false);
   assert.equal(eventIsDue(failed, new Date(failed.delivery.nextEligibleAt!)), true);
 

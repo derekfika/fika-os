@@ -13,9 +13,9 @@ function event(delivery: Record<string, unknown>, top: Record<string, unknown> =
     sourceAggregateId: "production-order:v1:booking:rcoa:fixture:r1",
     sourceVersion: 1,
     occurredAt: "2026-11-12T10:00:00.000Z",
-    payload: { bookingId: "booking:rcoa:fixture", orderId: "production-order:v1:booking:rcoa:fixture:r1" },
+    payload: { bookingId: "booking:rcoa:fixture", orderId: "production-order:v1:booking:rcoa:fixture:r1", cpuProjection: { changeType: "created", idempotencyKey: "fixture" } },
     delivery: { status: "pending", attempts: 0, ...delivery },
-    outboxStatus: delivery.status || "pending",
+    outboxStatus: delivery.status === "failed" ? "live-failed" : delivery.status === undefined || delivery.status === "pending" ? "live-pending" : delivery.status,
     ...top,
   };
 }
@@ -28,7 +28,7 @@ test("inventory uses the durable worker eligibility and lease rules, not status 
   assert.equal(pendingDue.wouldBeClaimedIfUnchanged, true);
   assert.equal(pendingDue.operationalClass, "pending-eligible");
 
-  const failedDue = classifyHospitalityMirrorOutboxRecord("production.order.created:production-order:v1:booking:rcoa:fixture:r1:v1", event({ status: "failed", attempts: 4, nextAttemptAt: asOf, nextEligibleAt: asOf }, { nextEligibleAt: asOf, outboxStatus: "failed" }), asOf, 1);
+  const failedDue = classifyHospitalityMirrorOutboxRecord("production.order.created:production-order:v1:booking:rcoa:fixture:r1:v1", event({ status: "failed", attempts: 4, nextAttemptAt: asOf, nextEligibleAt: asOf }, { nextEligibleAt: asOf, outboxStatus: "live-failed" }), asOf, 1);
   assert.equal(failedDue.workerEligibleAtSnapshot, true);
   assert.equal(failedDue.operationalClass, "retry-eligible");
 

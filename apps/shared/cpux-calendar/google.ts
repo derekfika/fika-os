@@ -13,17 +13,17 @@ const FOLDER_MIME = "application/vnd.google-apps.folder";
 const allowedId = (value: unknown): value is string =>
   typeof value === "string" && value !== "primary" && /^[a-zA-Z0-9_.+@-]{3,256}$/.test(value);
 
-function productionRuntime(env: Env) {
+export function mirrorProductionRuntime(env: Env = process.env) {
   return env.FIKA_RUNTIME_MODE === "production" && env.FIREBASE_PROJECT_ID === "fika-os" &&
     !env.FIRESTORE_EMULATOR_HOST && !env.FIREBASE_AUTH_EMULATOR_HOST && env.NODE_ENV === "production";
 }
 
 export function mirrorEnabled(env: Env = process.env) {
-  return productionRuntime(env) && env.FIKA_CPUX_MIRROR_WRITES_ENABLED === "true";
+  return mirrorProductionRuntime(env) && env.FIKA_CPUX_MIRROR_WRITES_ENABLED === "true";
 }
 
 export function mirrorPreviewEnabled(env: Env = process.env) {
-  return productionRuntime(env) && (env.FIKA_CPUX_MIRROR_PREVIEW_ENABLED === "true" || mirrorEnabled(env));
+  return mirrorProductionRuntime(env) && (env.FIKA_CPUX_MIRROR_PREVIEW_ENABLED === "true" || mirrorEnabled(env));
 }
 
 export function configuredMirrorTarget(stream: MirrorSource["stream"], site: string | undefined, env: Env = process.env): MirrorTarget {
@@ -75,7 +75,7 @@ type Event = {
 const privacySafeError = (response: Response) => new Error("Google Calendar or Drive refused the operation (HTTP " + response.status + ").");
 const SAFE_GOOGLE_ERROR_CODES = new Set(["insufficientFilePermissions", "insufficientAuthenticationScopes", "authError", "notFound", "accessNotConfigured", "invalid_grant", "unauthorized_client", "forbidden", "invalid_credential"]);
 const safeGoogleErrorCode = (value: unknown) => typeof value === "string" && SAFE_GOOGLE_ERROR_CODES.has(value) ? value : "PROVIDER_ERROR";
-class MirrorTokenError extends Error {
+export class MirrorTokenError extends Error {
   constructor(readonly stage: "iam-sign-jwt" | "oauth-exchange" | "scope-check", readonly httpStatus?: number, readonly providerCode?: string) { super("Calendar/Drive delegation failed."); }
 }
 
@@ -352,7 +352,7 @@ export async function openMirrorClient(target: MirrorTarget, env: Env = process.
       }
     }));
   }
-  async function publish(source: MirrorSource, details?: MirrorDetails, document?: MirrorDocument): Promise<MirrorObservation> {
+  async function publish(source: MirrorSource, details?: MirrorDetails, document?: MirrorDocument, beforeWrite?: () => Promise<void>): Promise<MirrorObservation> {
     assertWrite();
     if (!source.identity || !Number.isSafeInteger(source.revision) || source.revision < 1) throw new Error("Valid canonical source identity and revision are required.");
     const id = mirrorEventId(source.stream, source.identity);
@@ -377,6 +377,7 @@ export async function openMirrorClient(target: MirrorTarget, env: Env = process.
     }
     const headers: Record<string, string> = { "content-type": "application/json" };
     if (event?.etag) headers["if-match"] = event.etag;
+    await beforeWrite?.();
     const response = await request(collection + (event ? "/" + id : "") + "?supportsAttachments=true&sendUpdates=all", CALENDAR, target.subject,
       { method: event ? "PATCH" : "POST", headers, body: JSON.stringify(resource) });
     if (response.ok) {

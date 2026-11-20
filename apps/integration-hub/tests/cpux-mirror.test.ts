@@ -254,6 +254,10 @@ test("Google delivery checks both PDF recipients, inserts once, preserves ID on 
   assert.equal((await client.inspect(model.source)).disposition, "create");
   const pdf = await client.verifiedPdf(model.fileId!, "Approved quote.pdf");
   assert.equal(pdf.url, documentUrl("fixtureQuoteFile"));
+  await assert.rejects(client.publish(model.source, model.details, pdf, async () => {
+    throw new Error("Source version changed.");
+  }), /Source version changed/);
+  assert.equal(fixture.calls.filter(call => call.method !== "GET").length, 0);
   assert.equal((await client.publish(model.source, model.details, pdf)).disposition, "create");
   assert.equal((await client.publish(model.source, model.details, pdf)).disposition, "unchanged");
   const amended = { ...model.source, revision: model.source.revision + 1, sourceReference: "amended" };

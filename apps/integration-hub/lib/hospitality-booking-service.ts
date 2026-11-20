@@ -63,7 +63,7 @@ import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import type { Transaction } from "firebase-admin/firestore";
 import { createDomainEvent } from "../../shared/domain-events";
 import { stageDomainEvent } from "./domain-event-outbox";
-import { hospitalityProductionEventId, triggerHospitalityMirrorEvent } from "./cpux-mirror/queue";
+import { hospitalityMirrorAfterCpu } from "./cpux-mirror/queue";
 import { prepareFulfilmentEvent } from "./fulfilment-projection";
 import { cancellationDeliveryStatus, deliverHospitalityCancellation, ensureHospitalityCancellationEvent, hospitalityCancellationEventId, stageHospitalityCancellation } from "./hospitality-cancellation-outbox";
 import { readBookingServiceLayout } from "./hospitality-service-layout";
@@ -1047,24 +1047,39 @@ function addCalendarDays(date: string, days: number) {
 async function propagateProductionChanges(changes: ProductionProjectionChange[], cancellationEventIds: Map<string, string> = new Map()) {
   const results = [];
   for (const change of changes) {
-    try {
-      const cancellationEventId = cancellationEventIds.get(change.order.canonicalId);
-      const cpuProjectionPromise = cancellationEventId ? deliverHospitalityCancellation(cancellationEventId) : notifyCpuProjection(change.order, change.changeType, change.idempotencyKey);
-      const calendarEventId = hospitalityProductionEventId(change.order.canonicalId, change.order.version, change.changeType);
-      const calendarMirrorPromise = cpuProjectionPromise.then(async cpuProjection => {
-        const cpuStatus = cancellationEventId && cpuProjection && "delivery" in cpuProjection ? cpuProjection.delivery.status : "delivered";
-        if (cpuStatus !== "delivered") return { eventId: calendarEventId, status: "pending" };
-        return await triggerHospitalityMirrorEvent(calendarEventId);
-      });
-      const [cpuProjection, logisticsProjection, calendarMirror] = await Promise.all([cpuProjectionPromise, change.changeType === "created" ? Promise.resolve(undefined) : deliverLogisticsProjectionForProductionOrder(change.order), calendarMirrorPromise]);
-      const cpuStatus = cancellationEventId && cpuProjection && "delivery" in cpuProjection ? cpuProjection.delivery.status : "delivered";
-      const logisticsRequired = Boolean(cancellationEventId && change.order.requiresDelivery !== false && change.order.serviceDate && change.order.destinationOplocId);
-      results.push({ canonicalId: change.order.canonicalId, ...(cancellationEventId ? { cpuOutbox: cpuProjection } : cpuProjection), calendarMirror, ...(logisticsProjection ? { logisticsProjection } : {}), status: cpuStatus !== "delivered" || logisticsRequired && logisticsProjection?.outboxStatus !== "delivered" || logisticsProjection && logisticsProjection.outboxStatus !== "delivered" ? "pending" as const : "delivered" as const });
-    } catch (error) {
-      results.push({ canonicalId: change.order.canonicalId, status: "pending" as const, reason: error instanceof Error ? error.message : "CPU projection handoff failed." });
-    }
+    const { order, changeType, idempotencyKey } = change;
+    const cancellationEventId = cancellationEventIds.get(order.canonicalId);
+    const cpuProjectionPromise = cancellationEventId
+      ? deliverHospitalityCancellation(cancellationEventId)
+      : notifyCpuProjection(order, changeType, idempotencyKey);
+    const logisticsProjectionPromise = changeType === "created"
+      ? Promise.resolve(undefined)
+      : deliverLogisticsProjectionForProductionOrder(order);
+    const cpuDelivery = cpuProjectionPromise.then(projection => Boolean(projection &&
+      (cancellationEventId ? "delivery" in projection && projection.delivery?.status === "delivered" : "applied" in projection && projection.applied === true)), () => false);
+    const calendarMirrorPromise = cpuDelivery.then(confirmed => hospitalityMirrorAfterCpu(order, changeType, confirmed));
+    const [cpuProjection, logisticsProjection, calendarMirror] = await Promise.all([
+      cpuProjectionPromise.catch(() => undefined),
+      logisticsProjectionPromise.catch(() => undefined),
+      calendarMirrorPromise,
+    ]);
+    const cpuStatus = await cpuDelivery ? "delivered" as const : "pending" as const;
+    const logisticsRequired = changeType !== "created" && order.requiresDelivery !== false && Boolean(order.serviceDate && order.destinationOplocId);
+    const productionStatus = cpuStatus !== "delivered" || logisticsRequired && logisticsProjection?.outboxStatus !== "delivered" ||
+      logisticsProjection && logisticsProjection.outboxStatus !== "delivered" ? "pending" as const : "delivered" as const;
+    const status = productionStatus === "delivered" && ["delivered", "not_required"].includes(calendarMirror.status)
+      ? "delivered" as const : "pending" as const;
+    results.push({
+      canonicalId: order.canonicalId, cpuStatus, productionStatus, status,
+      ...(cancellationEventId ? { cpuOutbox: cpuProjection } : cpuProjection), calendarMirror,
+      ...(logisticsProjection ? { logisticsProjection } : {}),
+    });
   }
-  return { status: results.some((result) => result.status === "pending") ? "pending" as const : "delivered" as const, results };
+  return {
+    status: results.some(result => result.status === "pending") ? "pending" as const : "delivered" as const,
+    productionStatus: results.some(result => result.productionStatus === "pending") ? "pending" as const : "delivered" as const,
+    results,
+  };
 }
 
 async function productionOrdersForBookings(bookingIds: string[]) {
@@ -1823,9 +1838,9 @@ export async function executeBookingWorkflow(
     const changes = cancelledOrders.map(order => ({ order, changeType: "withdrawn" as const, idempotencyKey: `hospitality-withdrawal:${order.canonicalId}:v${order.version}` }));
     const delivery = await propagateProductionChanges(changes, eventIds);
     const eventStatus = await cancellationDeliveryStatus(events.map(event => event.eventId));
-    const status = reconciliation.requiresCpuReview ? "review_required" as const : delivery.status === "delivered" && eventStatus === "delivered" && !unresolvedFulfilment ? "delivered" as const : "pending" as const;
+    const status = reconciliation.requiresCpuReview ? "review_required" as const : delivery.productionStatus === "delivered" && eventStatus === "delivered" && !unresolvedFulfilment ? "delivered" as const : "pending" as const;
     const booking = await recordCancellationPropagation(result.booking, status);
-    return { booking, idempotent: true, projectionPropagation: { ...delivery, status, ...(reconciliation.requiresCpuReview ? { results: [...delivery.results, { reason: "Advanced Production Order remains active and requires CPU review." }] } : {}), ...(unresolvedFulfilment ? { results: [...delivery.results, { reason: "Legacy Logistics withdrawal is unresolved; fulfilment evidence is missing or still active." }] } : {}) } };
+    return { booking, idempotent: true, projectionPropagation: { ...delivery, status: status === "delivered" ? delivery.status : status, ...(reconciliation.requiresCpuReview ? { results: [...delivery.results, { reason: "Advanced Production Order remains active and requires CPU review." }] } : {}), ...(unresolvedFulfilment ? { results: [...delivery.results, { reason: "Legacy Logistics withdrawal is unresolved; fulfilment evidence is missing or still active." }] } : {}) } };
     } catch {
       return { booking: result.booking, idempotent: true, projectionPropagation: { status: "pending" as const, results: [{ reason: "Legacy cancellation reconciliation failed; downstream state remains unresolved." }] } };
     }
@@ -1837,8 +1852,8 @@ export async function executeBookingWorkflow(
     : await propagateProductionChanges(result.projectionChanges, command.action === "cancel"
       ? new Map(result.projectionChanges.map(change => [change.order.canonicalId, hospitalityCancellationEventId(change.order.canonicalId, change.order.version)]))
       : undefined);
-  const booking = result.booking.lifecycleStatus === "Cancelled" && (projectionPropagation.status === "pending" || projectionPropagation.status === "delivered")
-    ? await recordCancellationPropagation(result.booking, projectionPropagation.status)
+  const booking = result.booking.lifecycleStatus === "Cancelled" && "productionStatus" in projectionPropagation
+    ? await recordCancellationPropagation(result.booking, projectionPropagation.productionStatus)
     : result.booking;
   return { booking, ...(notification ? { notification } : {}), projectionPropagation };
 }
@@ -2283,7 +2298,7 @@ export async function cancelHospitalityBookingGroup(actor: Actor, input: { booki
         const eventIds = new Map(cancelledOrders.map(order => [order.canonicalId, hospitalityCancellationEventId(order.canonicalId, order.version)]));
         const delivery = await propagateProductionChanges(changes, eventIds);
         const outboxStatus = await cancellationDeliveryStatus(events.map(event => event.eventId));
-        const status = reconciliation.requiresCpuReview ? "review_required" as const : delivery.status === "delivered" && outboxStatus === "delivered" && !unresolvedFulfilment && requirements.docs.every(document => document.data().status === "cancelled") ? "delivered" as const : "pending" as const;
+        const status = reconciliation.requiresCpuReview ? "review_required" as const : delivery.productionStatus === "delivered" && outboxStatus === "delivered" && !unresolvedFulfilment && requirements.docs.every(document => document.data().status === "cancelled") ? "delivered" as const : "pending" as const;
         outcomes.set(child.canonicalId, status);
         allResults.push(reconciliation.requiresCpuReview || unresolvedFulfilment || requirements.docs.some(document => document.data().status !== "cancelled") ? { ...delivery, results: [...delivery.results, ...(reconciliation.requiresCpuReview ? [{ bookingId: child.canonicalId, reason: "Advanced Production Order remains active and requires CPU review." }] : []), ...(unresolvedFulfilment || requirements.docs.some(document => document.data().status !== "cancelled") ? [{ bookingId: child.canonicalId, reason: "Legacy Logistics or production requirement withdrawal is unresolved; authoritative records remain active or incomplete." }] : [])] } : delivery);
       } catch {
@@ -2296,12 +2311,12 @@ export async function cancelHospitalityBookingGroup(actor: Actor, input: { booki
       return child.lifecycleStatus === "Cancelled" && status && status !== child.dashboardWorkflow?.cancellation?.downstreamPropagation ? recordCancellationPropagation(child, status) : child;
     }));
     const status = updated.some(child => child.dashboardWorkflow?.cancellation?.downstreamPropagation === "review_required") ? "review_required" as const
-      : updated.some(child => child.dashboardWorkflow?.cancellation?.downstreamPropagation !== "delivered") ? "pending" as const : "delivered" as const;
+      : updated.some(child => child.dashboardWorkflow?.cancellation?.downstreamPropagation !== "delivered") || allResults.some(delivery => delivery.status === "pending") ? "pending" as const : "delivered" as const;
     return { bookings: updated, idempotent: true, projectionPropagation: { status, results: allResults.flatMap(item => item.results) } };
   }
   if (result.requiresCpuReview) return { bookings: result.children, projectionPropagation: { status: "review_required" as const, results: [] } };
   const projectionPropagation = await propagateProductionChanges(result.changes, new Map(result.changes.map(change => [change.order.canonicalId, hospitalityCancellationEventId(change.order.canonicalId, change.order.version)])));
-  const updated = await Promise.all(result.children.map(child => child.lifecycleStatus === "Cancelled" ? recordCancellationPropagation(child, projectionPropagation.status) : child));
+  const updated = await Promise.all(result.children.map(child => child.lifecycleStatus === "Cancelled" ? recordCancellationPropagation(child, projectionPropagation.productionStatus) : child));
   return { bookings: updated, projectionPropagation };
 }
 

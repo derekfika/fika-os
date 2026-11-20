@@ -4,7 +4,8 @@ import { errorResponse } from "@/lib/api";
 import { requireActor } from "@/lib/auth";
 import { assertPermission } from "@/lib/authmod";
 import { Transition } from "@/lib/production-transition-schema";
-import { acknowledgeProductionCancellation, createProductionFromApprovedBooking, productionQueue, productionQueueForWeek, productionOrderDetail, transitionProductionOrder, type ProductionStatus } from "@/lib/production-domain";
+import { acknowledgeProductionCancellation, createProductionFromApprovedBooking, productionQueue, productionQueueForWeek, productionOrderDetail, transitionProductionOrder, type ProductionOrder, type ProductionStatus } from "@/lib/production-domain";
+import { hospitalityMirrorAfterCpu } from "@/lib/cpux-mirror/queue";
 import { notifyCpuProjection } from "@/lib/cpu-projection-client";
 import { deliverLogisticsProjectionForProductionOrder } from "@/lib/logistics-projection-outbox";
 import { hospitalityMatrixStorageContext } from "@/lib/hospitality-matrix-storage";
@@ -47,4 +48,33 @@ export async function GET(request: NextRequest) {
     }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) { return errorResponse(error); }
 }
-export async function POST(request: NextRequest) { try { const actor = await requireActor(request, ["integration-admin", "reviewer"]); assertPermission(actor, "canonical.edit"); const input = await request.json(); if (input?.action === "create") { const command = Create.parse(input); const result = await createProductionFromApprovedBooking(actor, command.bookingId, command.idempotencyKey, command.conversions || {}); let cpuHandoff: "delivered" | "pending" = "delivered"; let logisticsHandoff: "delivered" | "pending" = "delivered"; if (result.order) { try { const delivery = await deliverLogisticsProjectionForProductionOrder(result.order); if (delivery && delivery.delivery.status !== "delivered") logisticsHandoff = "pending"; } catch { logisticsHandoff = "pending"; } try { await notifyCpuProjection(result.order, "created", `cpu-projection:${result.order.canonicalId}:v${result.order.version}`); } catch { cpuHandoff = "pending"; } } return NextResponse.json({ ...result, cpuHandoff, logisticsHandoff }); } if (input?.action === "acknowledge-cancellation") { const command = AcknowledgeCancellation.parse(input); return NextResponse.json({ order: await acknowledgeProductionCancellation(actor, command.canonicalId, command.expectedVersion) }); } const command = Transition.parse(input); const order = await transitionProductionOrder(actor, command.canonicalId, command.expectedVersion, command.status as ProductionStatus, command.reason); let cpuHandoff: "delivered" | "pending" = "delivered"; let logisticsHandoff: "delivered" | "pending" = "delivered"; try { const delivery = await deliverLogisticsProjectionForProductionOrder(order); if (delivery && delivery.delivery.status !== "delivered") logisticsHandoff = "pending"; } catch { logisticsHandoff = "pending"; } try { await notifyCpuProjection(order, command.status === "cancelled" ? "withdrawn" : "amended", `cpu-projection:${order.canonicalId}:v${order.version}`); } catch { cpuHandoff = "pending"; } return NextResponse.json({ order, cpuHandoff, logisticsHandoff }); } catch (error) { return errorResponse(error); } }
+export async function POST(request: NextRequest) {
+  try {
+    const actor = await requireActor(request, ["integration-admin", "reviewer"]);
+    assertPermission(actor, "canonical.edit");
+    const input = await request.json();
+    if (input?.action === "create") {
+      const command = Create.parse(input);
+      const result = await createProductionFromApprovedBooking(actor, command.bookingId, command.idempotencyKey, command.conversions || {});
+      if (!result.order) return NextResponse.json({ ...result, cpuHandoff: "delivered", logisticsHandoff: "delivered" });
+      return NextResponse.json({ ...result, ...await publishProductionChange(result.order, "created") });
+    }
+    if (input?.action === "acknowledge-cancellation") {
+      const command = AcknowledgeCancellation.parse(input);
+      return NextResponse.json({ order: await acknowledgeProductionCancellation(actor, command.canonicalId, command.expectedVersion) });
+    }
+    const command = Transition.parse(input);
+    const order = await transitionProductionOrder(actor, command.canonicalId, command.expectedVersion, command.status as ProductionStatus, command.reason);
+    return NextResponse.json({ order, ...await publishProductionChange(order, command.status === "cancelled" ? "withdrawn" : "amended") });
+  } catch (error) { return errorResponse(error); }
+}
+
+async function publishProductionChange(order: ProductionOrder, changeType: "created" | "amended" | "withdrawn") {
+  const cpuConfirmed = notifyCpuProjection(order, changeType, `cpu-projection:${order.canonicalId}:v${order.version}`)
+    .then(result => result.applied === true, () => false);
+  const logisticsHandoff = deliverLogisticsProjectionForProductionOrder(order)
+    .then(delivery => !delivery || delivery.delivery.status === "delivered" ? "delivered" : "pending", () => "pending");
+  const confirmed = await cpuConfirmed;
+  const calendarMirror = await hospitalityMirrorAfterCpu(order, changeType, confirmed, false);
+  return { cpuHandoff: confirmed ? "delivered" : "pending", logisticsHandoff: await logisticsHandoff, calendarMirror };
+}
