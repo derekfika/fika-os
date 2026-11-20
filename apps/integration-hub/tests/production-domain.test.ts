@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createCpuProductionOrder, externalProductionStatus, hospitalityCpuDestinationLabel, materialiseExternalProductionOrder, materialisedProductionId, productionOrderV1Id, productionRequirementId, saveHospitalityKitchenNotes } from "../lib/production-domain";
+import { randomUUID } from "node:crypto";
+import { createCpuProductionOrder, createProductionFromApprovedBookingTransaction, externalProductionStatus, hospitalityCpuDestinationLabel, materialiseExternalProductionOrder, materialisedProductionId, productionOrderV1Id, productionRequirementId, saveHospitalityKitchenNotes } from "../lib/production-domain";
 import { transitionProductionOrder } from "../lib/production-domain";
 import { db } from "../lib/firebase-admin";
 import type { ProductionLine } from "../lib/production-domain";
@@ -9,8 +10,152 @@ import { stableDocumentId } from "../lib/canonical-editor";
 import { CPU_SITE_OPLOC_ID } from "../../shared/production-location";
 import { productionOrderRequiresFulfilment } from "../../shared/fulfilment-requirement";
 import { kitchenNotesEventId } from "../lib/hospitality-kitchen-notes-outbox";
+import { ACCEPTED_STUDIO_KITCHEN_CONTRACT, acceptedStudioKitchenEvidenceRef, hospitalityBookingLineId } from "../lib/hospitality-studio-kitchen-handoff";
+import { getBookingByCanonicalId, RCOA_BOOKING_INGESTION_CONTRACT_VERSION, type CanonicalBooking } from "../lib/hospitality-booking-service";
+import { calculateQuoteSnapshot, defaultDashboardQuoteSettings } from "../lib/quote-engine";
+import type { StudioKitchenSpec } from "../../shared/hospitality-menu-studio-kitchen";
 
 const emulatorEnabled = process.env.FIREBASE_PROJECT_ID === "demo-fika-os" && process.env.FIRESTORE_EMULATOR_HOST === "127.0.0.1:8292" && (process.env.FIKA_RUNTIME_MODE || "local") === "local";
+
+function studioKitchenBooking() {
+  const id = randomUUID();
+  const bookingId = `booking:studio-kitchen:${id}`;
+  const quoteId = `quote:${bookingId}:r1`;
+  const orderId = productionOrderV1Id(bookingId);
+  const acceptedAt = "2026-11-18T12:00:00.000Z";
+  const actor = { uid: "emulator-fixture", name: "Emulator Fixture", role: "integration-admin", synthetic: true } as const;
+  const client = { name: "Synthetic Host", email: "host@example.test", companyName: "Synthetic Client" };
+  const service = { eventDate: "2026-12-03", startTime: "12:00", guestCount: 40, portalSiteId: "rcoa", oplocId: "oploc:fixture" };
+  const order: CanonicalBooking["order"] = { eventType: "Reception", items: [
+    { itemId: `hospitality-menu-item:rcoa:in-house-${id}`, itemName: "In-house service", quantity: 2, servingInfo: "trays", unitPrice: 15, lineTotal: 30 },
+    { itemId: `hospitality-menu-item:rcoa:pastries-${id}`, itemName: "Reception order", quantity: 16, servingInfo: "portions", unitPrice: 3, lineTotal: 48 },
+  ], netTotal: 78, vatTotal: 15.60, grossTotal: 93.60, currency: "GBP" };
+  const booking: CanonicalBooking = {
+    canonicalId: bookingId, version: 7, lifecycleStatus: "Approved",
+    entityType: "Booking", schemaVersion: "0.1.0", commercialVersion: 2,
+    createdAt: acceptedAt, createdBy: actor.uid, updatedAt: acceptedAt, updatedBy: actor.uid,
+    source: {
+      provider: "rcoa-booking-platform", sourceBookingId: id, submissionTimestamp: acceptedAt,
+      contractVersion: RCOA_BOOKING_INGESTION_CONTRACT_VERSION,
+      originalPayload: { bookingId: id, submittedAt: acceptedAt, client, event: service, order: structuredClone(order) },
+    },
+    client, service, order,
+    deliveryChargeRequired: true, dietaries: {}, acknowledgements: {}, attachments: [], statusHistory: [], audit: [],
+    notes: "Public booking note", kitchenNotes: "Separate staff kitchen note",
+  };
+  const [inHouse, cpu] = booking.order.items;
+  const cpuRoutingRef = db.collection("integrationHubHospitalityMenuProductionRouting").doc(stableDocumentId(cpu.itemId));
+  const inHouseRoutingRef = db.collection("integrationHubHospitalityMenuProductionRouting").doc(stableDocumentId(inHouse.itemId));
+  const bookingRef = db.collection("fikaBookings").doc(bookingId);
+  const acceptedRef = acceptedStudioKitchenEvidenceRef(bookingRef, quoteId);
+  const canonicalOrderRef = db.collection("fikaProductionOrdersV1").doc(stableDocumentId(orderId));
+  const proofText = "Label each tray with its exact contents.";
+  const spec: StudioKitchenSpec = {
+    version: 1, bookingId, bookingLineId: hospitalityBookingLineId(bookingId, 1),
+    selections: [{
+      selectionId: "selection:pastries",
+      subject: { dishId: "dish:pastries", revision: 2, sourceHash: "a".repeat(64) },
+      publication: { publicationId: "publication:fixture", publicationRevision: 3, contentHash: "b".repeat(64) },
+      release: { releaseId: "release:fixture", matrixHash: "c".repeat(64) },
+      name: "Mini Pastries", kitchenDescription: proofText,
+      assortment: { boxCount: 4, unit: "pieces", expectedTotal: 24, components: [{ id: "component:mini", name: "Mini pastry", quantity: 24 }] },
+    }],
+  };
+  const makeQuote = () => {
+    const snapshot = calculateQuoteSnapshot(booking, defaultDashboardQuoteSettings("rcoa"));
+    booking.quoteState = { currentRevisionId: quoteId, revisions: [{
+      id: quoteId, revision: 1, documentReference: quoteId, commercialVersion: 2,
+      createdAt: acceptedAt, createdBy: actor.uid, snapshot, stale: false, pdfStatus: "saved", driveFileId: "synthetic-pdf",
+    }] };
+  };
+  const evidence = {
+    contract: ACCEPTED_STUDIO_KITCHEN_CONTRACT, bookingId, quoteRevisionId: quoteId, commercialVersion: 2,
+    eventDate: booking.service.eventDate, destinationOplocId: booking.service.oplocId,
+    acceptedAt, acceptedBy: actor.uid, lines: [{ itemId: cpu.itemId, customerQuantity: 16, spec }],
+  };
+  const seed = async (cpuRouted = true) => {
+    makeQuote();
+    const batch = db.batch();
+    batch.set(bookingRef, booking);
+    batch.set(cpuRoutingRef, { menuItemId: cpu.itemId, workstreams: cpuRouted ? ["hospitality"] : [] });
+    batch.set(inHouseRoutingRef, { menuItemId: inHouse.itemId, workstreams: [] });
+    await batch.commit();
+  };
+  const handoff = () => createProductionFromApprovedBookingTransaction(actor, bookingId, `studio-handoff:${bookingId}`);
+  return { booking, bookingRef, acceptedRef, canonicalOrderRef, evidence, spec, orderId, seed, handoff };
+}
+
+test("emulator: the saved Hub quote and accepted Studio specification freeze exactly one routed production line across replay", { skip: !emulatorEnabled }, async () => {
+  const fixture = studioKitchenBooking();
+  fixture.booking.studioKitchenEvidenceVersion = 1;
+  await fixture.seed();
+  await fixture.acceptedRef.create(fixture.evidence);
+  const first = await fixture.handoff();
+  assert.equal(first.status, "created");
+  assert.equal(first.order?.lines.length, 1);
+  const line = first.order?.lines[0];
+  assert.equal(line?.sourceBookingLineId, fixture.spec.bookingLineId);
+  assert.equal(line?.customerQuantity, 16);
+  assert.equal(line?.customerUnit, "portions");
+  assert.deepEqual(line?.studioKitchenSpec, fixture.spec);
+  assert.equal(first.order?.guestCount, 40);
+  assert.equal(first.order?.kitchenNotes, "Separate staff kitchen note");
+  assert.doesNotMatch(JSON.stringify(first.requirement?.sourceSnapshot), /studioKitchenSpec|Label each tray/);
+  assert.doesNotMatch(JSON.stringify(await getBookingByCanonicalId(fixture.booking.canonicalId)), /studioKitchenSpec|Label each tray/);
+  const replay = await fixture.handoff();
+  assert.equal(replay.status, "already_exists");
+  assert.deepEqual(replay.order, (await fixture.canonicalOrderRef.get()).data());
+  const events = await db.collection("fikaDomainEventsV1").where("sourceAggregateId", "==", fixture.orderId).get();
+  assert.equal(events.size, 1);
+  assert.deepEqual(events.docs[0].get("payload.productionOrder.lines")[0].studioKitchenSpec, fixture.spec);
+  const fulfilment = await db.collection("fikaFulfilmentRequirementsV1").where("sourceEntityId", "==", fixture.orderId).get();
+  assert.equal(fulfilment.size, 1);
+  assert.equal(fulfilment.docs[0].get("sourceVersion"), first.order?.version);
+  assert.doesNotMatch(JSON.stringify(fulfilment.docs[0].data()), /studioKitchenSpec|Label each tray/);
+  await fixture.acceptedRef.update({ lines: [{ ...fixture.evidence.lines[0], spec: { ...fixture.spec, selections: [{ ...fixture.spec.selections[0], kitchenDescription: "Changed after handoff" }] } }] });
+  await assert.rejects(fixture.handoff(), { code: "STUDIO_KITCHEN_SPEC_INTEGRITY_FAILURE" });
+  assert.deepEqual((await fixture.canonicalOrderRef.get()).get("lines")[0].studioKitchenSpec, fixture.spec);
+});
+
+test("emulator: a stale quote, substituted line or invalid count fails without an order, requirement, event or booking write", { skip: !emulatorEnabled }, async () => {
+  const fixture = studioKitchenBooking();
+  fixture.booking.studioKitchenEvidenceVersion = 1;
+  fixture.booking.lifecycleStatus = "Quoted";
+  await fixture.seed();
+  const baseline = (await fixture.bookingRef.get()).data();
+  const variants = [
+    { ...fixture.evidence, quoteRevisionId: "quote:outdated" },
+    { ...fixture.evidence, commercialVersion: 1 },
+    { ...fixture.evidence, lines: [{ ...fixture.evidence.lines[0], customerQuantity: 99 }] },
+    { ...fixture.evidence, lines: [{ ...fixture.evidence.lines[0], spec: { ...fixture.spec, bookingLineId: hospitalityBookingLineId(fixture.booking.canonicalId, 0) } }] },
+    { ...fixture.evidence, lines: [{ ...fixture.evidence.lines[0], spec: { ...fixture.spec, selections: [{ ...fixture.spec.selections[0], assortment: { ...fixture.spec.selections[0].assortment, boxCount: 0 } }] } }] },
+  ];
+  await assert.rejects(fixture.handoff(), { code: "STUDIO_KITCHEN_SPEC_INTEGRITY_FAILURE" });
+  for (const corrupt of variants) {
+    await fixture.acceptedRef.set(corrupt);
+    await assert.rejects(fixture.handoff(), { code: "STUDIO_KITCHEN_SPEC_INTEGRITY_FAILURE" });
+  }
+  assert.deepEqual((await fixture.bookingRef.get()).data(), baseline);
+  assert.equal((await fixture.canonicalOrderRef.get()).exists, false);
+  assert.equal((await db.collection("fikaProductionRequirements").where("sourceBookingId", "==", fixture.booking.canonicalId).get()).size, 0);
+  assert.equal((await db.collection("fikaFulfilmentRequirementsV1").where("sourceEntityId", "==", fixture.orderId).get()).size, 0);
+  assert.equal((await db.collection("fikaDomainEventsV1").where("sourceAggregateId", "==", fixture.orderId).get()).size, 0);
+  assert.equal((await db.collection("fikaBookingNotifications").where("bookingId", "==", fixture.booking.canonicalId).get()).size, 0);
+});
+
+test("emulator: client choices cannot supply the private specification and in-house work still needs no order", { skip: !emulatorEnabled }, async () => {
+  const legacy = studioKitchenBooking();
+  legacy.booking.order.items[1].choices = [{ studioKitchenSpec: legacy.spec }];
+  await legacy.seed();
+  await legacy.acceptedRef.create(legacy.evidence);
+  assert.equal((await legacy.handoff()).order?.lines[0].studioKitchenSpec, undefined);
+  const inHouse = studioKitchenBooking();
+  inHouse.booking.studioKitchenEvidenceVersion = 1;
+  await inHouse.seed(false);
+  await inHouse.acceptedRef.create({ deliberatelyInvalid: true });
+  assert.equal((await inHouse.handoff()).status, "no_cpu_production_required");
+  assert.equal((await inHouse.canonicalOrderRef.get()).exists, false);
+});
 
 test("RCoA CPU handoff destination includes floor and room; other sites keep their current label", () => {
   const booking = { service: { portalSiteId: "rcoa", portalSiteLabel: "RCoA Hospitality", oplocId: "oploc:rcoa", floorLevel: "Second Floor", roomOrArea: "Meeting Room 4" } } as never;
