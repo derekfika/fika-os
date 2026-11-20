@@ -284,11 +284,9 @@ test("251: accessible names and aria-pressed carry allergen, row and on/off stat
 
 test("251: the boxes are text-free native buttons and the review status and helper text sit outside them", () => {
   const component = read("../app/ui/HospitalityAllergenDetail.tsx");
-  const start = component.indexOf("const view = binaryCellView(");
-  const end = component.indexOf('<td className="may-contain-notes">');
-  assert.ok(start > 0 && end > start);
-  const cellSource = component.slice(start, end);
-  assert.match(cellSource, /<button[\s\S]*type="button"[\s\S]*aria-pressed=\{binaryCellPressed\(view\)\}[\s\S]*toggleCell\(menuItem\.id, sub, key\)[\s\S]*\/>/, "a self-closing native button has no children, so no visible text or symbol");
+  const cellSource = read("../app/ui/HospitalityAllergenCell.tsx");
+  assert.match(component, /<HospitalityAllergenCell[\s\S]*onToggle=\{\(\) => toggleCell\(menuItem\.id, sub, key\)\}/);
+  assert.match(cellSource, /<button[\s\S]*type="button"[\s\S]*aria-pressed=\{binaryCellPressed\(view\)\}[\s\S]*onClick=\{onToggle\}[\s\S]*\/>/, "a self-closing native button has no children, so no visible text or symbol");
   assert.doesNotMatch(cellSource, /cellLabel|"MC"|No Key Allergens|<input|<label|<small|no-key-status|title=/);
   assert.match(cellSource, /allergen-cell allergen-cell--\$\{view === "on" \? "contains" : view === "may_contain" \? "may_contain" : "off"\}/);
   assert.match(component, /data-testid=\{`review-badge-\$\{sub\.id\}`\}/, "row-level status stays in the Check column");
@@ -306,5 +304,6 @@ test("251: a click edits through the review-reopening path and a signed-authorit
   assert.match(component, /const toggleCell = \(menuId: string, sub: PlannedSubItem, key: string\) => \{\s*if \(reviewLockedByAuthority\) return;/);
   assert.match(component, /applyHospitalityBinaryClick\(sub\.allergens, key, rowContext\(sub\)\)/);
   assert.match(component, /evidenceStatus: "not_completed", allergenReview: undefined/);
-  assert.match(component, /aria-disabled=\{reviewLockedByAuthority \|\| undefined\}/);
+  assert.match(component, /locked=\{reviewLockedByAuthority\}/);
+  assert.match(read("../app/ui/HospitalityAllergenCell.tsx"), /aria-disabled=\{locked \|\| undefined\}/);
 });
