@@ -84,6 +84,7 @@ export function stageLogisticsProjectionEvent(
   requirement: FulfilmentRequirement,
   previous?: FulfilmentRequirement,
 ) {
+  if (requirement.studioRehearsal || previous?.studioRehearsal) return;
   const event = eventForRequirement(requirement, previous);
   const ref = outbox().doc(event.eventId);
   // A later transition at an unchanged sourceVersion owns a distinct identity
@@ -99,6 +100,7 @@ export function stageLogisticsProjectionEvent(
  * bounded and idempotent; normal mutations use stageLogisticsProjectionEvent.
  */
 export async function ensureLogisticsProjectionEvent(requirement: FulfilmentRequirement) {
+  if (requirement.studioRehearsal) throw Object.assign(new Error("Studio rehearsal has no outbound Logistics delivery."), { status: 409 });
   // Legacy repair only fills a missing sourceVersion-level event; it never
   // fabricates a transition identity for already-revised requirements.
   const event = eventForRequirement(requirement, undefined, "source-version");
@@ -112,7 +114,7 @@ export async function ensureLogisticsProjectionEvent(requirement: FulfilmentRequ
 }
 
 export function logisticsProjectionEventIdForProductionOrder(order: ProductionOrderFulfilmentSource) {
-  if (order.requiresDelivery === false || !order.serviceDate || !order.destinationOplocId) return undefined;
+  if (order.studioRehearsal || order.requiresDelivery === false || !order.serviceDate || !order.destinationOplocId) return undefined;
   const sourceDomain = order.origin === "grab_and_go" ? "grab-and-go" : "cpu-production";
   const sourceEntityId = sourceDomain === "grab-and-go" ? order.sourceEntityId || order.canonicalId : order.canonicalId;
   return logisticsProjectionEventId({
@@ -130,6 +132,7 @@ export async function deliverLogisticsProjectionForProductionOrder(order: Produc
 }
 
 export async function deliverLogisticsProjectionForRequirement(requirement: FulfilmentRequirement) {
+  if (requirement.studioRehearsal) return;
   const delivered = await deliverLogisticsProjection(eventIdForRequirement(requirement));
   if (delivered || logisticsProjectionRequirementRevision(requirement) === undefined) return delivered;
   // Requirements revised before transition identities existed only have the
@@ -145,7 +148,7 @@ export async function repairLogisticsProjectionForServiceDate(serviceDate: strin
     .get();
   const truncated = snapshot.size > boundedLimit;
   const requirements = snapshot.docs.slice(0, boundedLimit).map(document => document.data() as FulfilmentRequirement);
-  const eventIds = await Promise.all(requirements.map(async requirement => {
+  const eventIds = await Promise.all(requirements.filter(requirement => !requirement.studioRehearsal).map(async requirement => {
     const event = await ensureLogisticsProjectionEvent(requirement);
     return event.eventId;
   }));

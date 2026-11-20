@@ -11,7 +11,7 @@ import { assertHospitalityBookingDate, prepareHospitalityAdminOrder, priceHistor
 import type { HospitalityAdminAuthority } from "./hospitality-booking-authorization";
 import { trustedPublicOrder } from "./hospitality-price-trust";
 import { hospitalityPortalReadFromRecords } from "./hospitality-catalogue-service";
-import { assertFrozenStudioAmendment, bindStudioQuote, isStudioBookingPilot, prepareStudioBooking, studioPublicationsForBooking } from "./hospitality-studio-booking";
+import { assertFrozenStudioAmendment, bindStudioQuote, isStudioBookingPilot, isStudioRehearsalBooking, prepareStudioBooking, studioPublicationsForBooking } from "./hospitality-studio-booking";
 import { angelCourtBookingConstraintRecords, loadAngelCourtBookingCatalogue, loadMnkBookingCatalogue, loadRcoaBookingCatalogue, mnkBookingPricingRecords, rcoaBookingConstraintRecords } from "./mnk-booking-catalogue";
 import { hospitalityMenuDate } from "../../shared/hospitality-menu-date";
 import { isHotForkBuffetBooking } from "../../shared/hot-fork-buffet";
@@ -875,7 +875,7 @@ export async function ingestMnkBooking(
         status: result.booking.lifecycleStatus,
       },
     );
-    if (!groupLink || groupLink.size <= 1) {
+    if (!isStudioRehearsalBooking(result.booking) && (!groupLink || groupLink.size <= 1)) {
       transaction.create(
         db
           .collection("fikaBookingNotifications")
@@ -1822,6 +1822,7 @@ export async function executeBookingWorkflow(
         ...(command.action === "cancel" ? { cancellationEvent } : {}),
       },
     );
+    if (isStudioRehearsalBooking(next)) notificationKind = undefined;
     if (notificationKind) {
       const notification = bookingNotificationRecord(
         next,
@@ -1839,7 +1840,7 @@ export async function executeBookingWorkflow(
     const previouslyHandedOffBuffet = isHotForkBuffetBooking(current) && ["Sent to CPU", "Approved", "Completed"].includes(current.lifecycleStatus);
     const buffetChangeApproved = command.action === "amend" && previouslyHandedOffBuffet && (["eventDate", "startTime", "endTime", "guestCount", "oplocId", "portalSiteId", "portalSiteLabel"] as const).some(field => (current.service[field] || "") !== (next.service[field] || ""));
     const buffetNoticeKind = previouslyHandedOffBuffet && command.action === "cancel" ? "buffet-cancellation" : buffetChangeApproved ? "buffet-change" : undefined;
-    if (buffetNoticeKind) {
+    if (buffetNoticeKind && !isStudioRehearsalBooking(next)) {
       const notice = buffetNotificationRecord(next, buffetNoticeKind, next.version, now, current.canonicalId, current);
       transaction.create(db.collection("fikaBookingNotifications").doc(notice.notificationId), notice);
     }
@@ -1929,6 +1930,7 @@ export async function dispatchBookingNotification(
     const source = await transaction.get(bookings().doc(booking.canonicalId));
     if (!source.exists) return { status: "skipped" as const, reason: "Booking missing." };
     const current = source.data() as CanonicalBooking;
+    if (isStudioRehearsalBooking(current)) return { status: "skipped" as const, reason: "Studio rehearsal has no outbound notifications." };
     if (current.version !== version || (kind === "confirmed" && !["Sent to CPU", "Approved"].includes(current.lifecycleStatus)))
       return { status: "skipped" as const, reason: "Booking transition is no longer current." };
     const notification = bookingNotificationRecord(current, kind, version, current.updatedAt);

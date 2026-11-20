@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
     if (!internalAllowed(request)) { const actor = await requireActor(request); assertPermission(actor, "canonical.view"); }
     const query = request.nextUrl.searchParams;
     const requirements = await listFulfilmentRequirements({ serviceDate: query.get("serviceDate") || undefined, serviceDateFrom: query.get("serviceDateFrom") || undefined, serviceDateToExclusive: query.get("serviceDateToExclusive") || undefined, status: (query.get("status") as never) || undefined, destinationOplocId: query.get("destinationOplocId") || undefined, productionLocationId: query.get("productionLocationId") || undefined });
-    return NextResponse.json({ requirements }, { headers: { "Cache-Control": "no-store, max-age=0" } });
+    return NextResponse.json({ requirements: requirements.filter(requirement => !requirement.studioRehearsal) }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) { return errorResponse(error); }
 }
 

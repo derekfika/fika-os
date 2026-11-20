@@ -35,12 +35,18 @@ type CommercialOffering = { itemId: string; offeringMode: string; quoteRequired?
 
 const stale = (message: string) => Object.assign(new Error(message), { status: 409, code: "STUDIO_BOOKING_SELECTION_CHANGED" });
 const acceptedRef = (booking: DocumentReference) => booking.collection("private").doc("studio-accepted-menu-v1");
+const rehearsalBookingId = /^STUDIO-UAT-[A-Z0-9-]+$/;
+
+export function isStudioRehearsalBooking(booking: Pick<CanonicalBooking, "source" | "studioKitchenEvidenceVersion">) {
+  return booking.studioKitchenEvidenceVersion === 1 && rehearsalBookingId.test(booking.source.sourceBookingId);
+}
 
 export function isStudioBookingPilot(booking: Pick<CanonicalBooking, "source" | "service">) {
   const pilot = studioPilot();
   const sourceId = process.env.FIKA_STUDIO_HUB_PILOT_SOURCE_BOOKING_ID;
   return Boolean(pilot && process.env.FIKA_STUDIO_HUB_PILOT_BOOKING_ENABLED === "true" &&
-    sourceId && sourceId === booking.source.sourceBookingId && pilot.oplocId === booking.service.oplocId &&
+    process.env.FIKA_HOSPITALITY_EMAIL_DELIVERY_ENABLED === "false" &&
+    sourceId && rehearsalBookingId.test(sourceId) && sourceId === booking.source.sourceBookingId && pilot.oplocId === booking.service.oplocId &&
     pilot.firstDate <= booking.service.eventDate && booking.service.eventDate <= pilot.lastDate);
 }
 
