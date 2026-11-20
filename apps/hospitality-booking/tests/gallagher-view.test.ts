@@ -60,7 +60,7 @@ test("search covers reference, PO, item, room and contact, requiring every term"
   assert.deepEqual(ids(""), ["1", "2"]);
 });
 
-test("date range and status filters are inclusive; undated bookings never satisfy a date filter", () => {
+test("date range filters are inclusive; undated bookings never satisfy a date filter", () => {
   const rows = [
     booking({ sourceBookingId: "A", date: "2026-10-25" }),
     booking({ sourceBookingId: "B", date: "2026-10-30", status: "Cancelled" }),
@@ -69,8 +69,23 @@ test("date range and status filters are inclusive; undated bookings never satisf
   const run = (patch: Partial<typeof emptyFilters>) => filterBookings(rows, { ...emptyFilters, ...patch }).map((item) => item.sourceBookingId);
   assert.deepEqual(run({ from: "2026-10-25", to: "2026-10-30" }), ["A", "B"]);
   assert.deepEqual(run({ from: "2026-10-26" }), ["B"]);
-  assert.deepEqual(run({ status: "Cancelled" }), ["B"]);
+  assert.deepEqual(run({ statuses: ["Cancelled"] }), ["B"]);
   assert.deepEqual(run({}), ["A", "B", "C"]);
+});
+
+test("status filters union selected display statuses and an empty selection means all", () => {
+  const rows = [
+    booking({ sourceBookingId: "NEW", status: "Upcoming", displayStatus: "Upcoming" }),
+    booking({ sourceBookingId: "CONFIRMED", status: "Upcoming", displayStatus: "Confirmed" }),
+    booking({ sourceBookingId: "CANCELLED", status: "Cancelled", displayStatus: "Cancelled" }),
+  ];
+  const run = (statuses: string[]) => filterBookings(rows, { ...emptyFilters, statuses }).map(item => item.sourceBookingId);
+  assert.deepEqual(run(["Upcoming"]), ["NEW"]);
+  assert.deepEqual(run(["Upcoming", "Confirmed"]), ["NEW", "CONFIRMED"]);
+  assert.deepEqual(run([]), ["NEW", "CONFIRMED", "CANCELLED"]);
+  assert.deepEqual(filterBookings(rows, { ...emptyFilters, statuses: ["Confirmed"], query: "new" }), []);
+  assert.equal(filtersActive({ ...emptyFilters, statuses: [] }), false);
+  assert.equal(filtersActive({ ...emptyFilters, statuses: ["Confirmed"] }), true);
 });
 
 test("an inverted date range is reported and matches nothing rather than silently swapping", () => {
