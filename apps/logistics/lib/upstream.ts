@@ -1,10 +1,11 @@
 import type { FulfilmentRequirement } from "../../shared/fulfilment-requirement";
 import { menuDestination, menuDestinationKey, type MenuDestination } from "@fika/server-shared/menu-destination";
+import { isRetainedMenuSiteLineage, type RetainedMenuSiteLineage } from "@fika/server-shared/weekly-publication-packet";
 import { requiredUpstreamUrl } from "./runtime";
 export type GovernedOploc = { id:string; label:string; address?:string };
 export type ProductionContext = { canonicalId:string; sourceBookingId?:string; status?:string; workflowStatus?:string; serviceDate?:string; clientName?:string; serviceType?:string; guestCount?:number; origin?:string; productionCategory?:string; destinationLabel?:string; requiredBy?:string; serviceWindow?:{startTime:string;endTime?:string}; operationalNotes?:string };
 export type AuthoritativeProductionOrder = { canonicalId:string; origin:string; status:string; version:number; sourceEntityId?:string; sourceVersion?:number; sourcePublicationId?:string; sourcePublicationDayId?:string; sourceContentHash?:string; destinationOplocId?:string; serviceDate?:string; supersededBy?:string };
-type AuthoritativePublicationDay = { publicationDayId:string; sourceDayId:string; date:string; version:number; status:string; contentHash:string; entries:Array<{ allocations:Array<{ destinationId?:string; destination?:MenuDestination; destinationLabel:string }> }> };
+type AuthoritativePublicationDay = { publicationDayId:string; sourceDayId:string; date:string; version:number; status:string; contentHash:string; retainedSiteLineage?:RetainedMenuSiteLineage; entries:Array<{ allocations:Array<{ destinationId?:string; destination?:MenuDestination; destinationLabel:string }> }> };
 type AuthoritativePublication = { publicationId:string; sourceWeekId:string; days:AuthoritativePublicationDay[] };
 const hub = requiredUpstreamUrl("FIKA_HUB_BASE_URL");
 const cpu = requiredUpstreamUrl("FIKA_CPU_BASE_URL");
@@ -78,13 +79,16 @@ export async function assertMenuProductionAuthority(requirements:FulfilmentRequi
     const sourceDayId = order.sourceEntityId;
     if (!sourceDayId) throw Object.assign(new Error("Menu Planning source-day lineage is incomplete; refresh Logistics before continuing."), { status:503 });
     const currentDay = publication.days.filter(candidate => candidate.sourceDayId === sourceDayId && candidate.status === "published").sort((left, right) => right.version - left.version)[0];
-    const siteAllocationExists = day?.entries.some(entry => entry.allocations.some(allocation => {
+    const siteAllocationExists = (candidate: AuthoritativePublicationDay) => candidate.entries.some(entry => entry.allocations.some(allocation => {
       if (menuDestinationKey(allocation) !== requirement.destinationOplocId) return false;
       if (allocation.destination?.kind === "one-off") menuDestination(allocation, sourceDayId);
       return true;
     }));
+    if (currentDay?.retainedSiteLineage !== undefined && !isRetainedMenuSiteLineage(currentDay.retainedSiteLineage, currentDay.version)) throw upstreamUnavailable("Menu Planning retained site lineage could not be verified.");
+    const retained = currentDay?.retainedSiteLineage?.[requirement.destinationOplocId];
+    const currentLineage = retained || currentDay;
     const menuSourceVersion = directMenuSource ? requirement.sourceVersion : order.sourceVersion;
-    if (!menuSourceVersion || !day || day.sourceDayId !== sourceDayId || directMenuSource && sourceDayId !== requirement.sourceEntityId || day.date !== requirement.serviceDate || day.version !== menuSourceVersion || day.contentHash !== order.sourceContentHash || day.status !== "published" || currentDay?.publicationDayId !== publicationDayId || !siteAllocationExists) throw Object.assign(new Error("Menu Planning publication day is withdrawn, superseded or inconsistent with this Logistics requirement."), { status:409 });
+    if (!menuSourceVersion || !day || !currentDay || !currentLineage || day.sourceDayId !== sourceDayId || directMenuSource && sourceDayId !== requirement.sourceEntityId || day.date !== requirement.serviceDate || currentDay.date !== day.date || day.version !== menuSourceVersion || day.contentHash !== order.sourceContentHash || day.status !== (retained ? "superseded" : "published") || currentLineage.publicationDayId !== publicationDayId || currentLineage.version !== day.version || currentLineage.contentHash !== day.contentHash || !siteAllocationExists(day) || !siteAllocationExists(currentDay)) throw Object.assign(new Error("Menu Planning publication day is withdrawn, superseded or inconsistent with this Logistics requirement."), { status:409 });
   }));
 }
 export async function fetchRequirementsForDateRange(fromDate:string, toDateExclusive:string, cookie?:string):Promise<FulfilmentRequirement[]> { const params = new URLSearchParams({ serviceDateFrom: fromDate, serviceDateToExclusive: toDateExclusive }); const response = await fetchUpstream(`${hub}/api/fulfilment-requirements?${params.toString()}`, "Integration Hub fulfilment", cookie); const body = await response.json() as {requirements?:FulfilmentRequirement[]}; return body.requirements || []; }

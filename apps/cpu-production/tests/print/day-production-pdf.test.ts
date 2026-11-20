@@ -61,6 +61,32 @@ const hospitality = (id: number): ProductionOrder => ({
   lines: collection(`hospitality-${id}`, 2, true).lines.map(line => ({ ...line, customerUnit: "tray" })),
 });
 
+test("Chromium compact and full A4 keep PAX next to Order ref on every continuation", async () => {
+  const withPax = { ...collection("menu-pax", 95, true), origin: "menu_planning" as const, destinationOplocId: "oploc:asana", guestCount: 60 };
+  const withoutPax = { ...collection("menu-unrecorded", 2), origin: "menu_planning" as const, destinationOplocId: "oploc:optiver" };
+  const browser = await chromium.launch({ headless: true });
+  try {
+    for (const layout of ["compact", "full"] as const) {
+      const page = await browser.newPage();
+      await preparePrint(page, runSheetProductionPrintHtml(
+        new Map([[day, [withPax, withoutPax]]]), [day], ["oploc:oploc:asana", "oploc:oploc:optiver"], new Date(day + "T12:00:00Z"), "Both sites", layout,
+      ));
+      const output = page.locator("#day-pages");
+      const continued = output.locator('[data-collection-id="menu-pax"]');
+      assert.ok(await continued.count() > 1);
+      for (const text of await continued.locator(".collection-details").allTextContents()) {
+        assert.match(text, /Order ref[^\n]*PAX 60/);
+      }
+      assert.doesNotMatch(await output.locator('[data-collection-id="menu-unrecorded"] .collection-details').innerText(), /PAX/);
+      await page.emulateMedia({ media: "print" });
+      assert.ok((await page.pdf(pdfOptions)).byteLength > 1000);
+      await page.close();
+    }
+  } finally {
+    await browser.close();
+  }
+});
+
 test("Chromium A4 preserves frozen Studio instructions and box totals across continuation pages", async () => {
   const source = hospitality(3);
   source.kitchenNotes = "Booking kitchen notes are separate.";

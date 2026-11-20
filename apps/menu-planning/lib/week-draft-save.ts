@@ -7,6 +7,7 @@ import { assertMenuSlotCanBeRemoved, plannerSlotsForWeek, type RollingSnapshot, 
 import { editableDay, editableWorkingDraftDay, type WeekSaveRequest } from "./week-draft";
 import { isGovernedMenuSlot } from "./menu-template";
 import type { Stored } from "./rolling-menu";
+import { menuSiteIdentity, menuSiteKey } from "./site-pax";
 
 const id = z.string().trim().min(1).max(300).refine(value => !value.includes("/"), "Invalid identity");
 const destination = z.discriminatedUnion("kind", [
@@ -16,8 +17,9 @@ const destination = z.discriminatedUnion("kind", [
 const allocation = z.object({ destinationId: id.optional(), oneOffDestinationId: id.optional(), destination: destination.optional(), destinationLabel: z.string().min(1).max(300), destinationAddress: z.string().max(1000).optional(), quantity: z.number().finite().nonnegative(), sourceLabel: z.string().max(300).optional() }).strict();
 const slot = z.string().min(1).max(80).refine(isGovernedMenuSlot, "Choose a governed menu row");
 const patch = z.object({ itemId: z.string().max(300).optional(), itemLabel: z.string().max(500).optional(), slot: slot.optional(), portions: z.number().finite().nonnegative().optional(), allocations: z.array(allocation).max(100).optional(), isCoreSalad: z.boolean().optional() }).strict();
-const requestSchema = z.object({ weekId: id, expectedWeekVersion: z.number().int().positive(), requestId: z.string().regex(/^[a-zA-Z0-9_-]{8,100}$/), workingDraft: z.boolean().optional(), changes: z.object({ updates: z.array(z.object({ entryId: id, dayId: id, patch }).strict()).max(350), creates: z.array(z.object({ id, dayId: id, slot, itemId: id.optional(), itemLabel: z.string().trim().max(500), portions: z.number().finite().nonnegative(), allocations: z.array(allocation).max(100), isCoreSalad: z.boolean().optional() }).strict()).max(350), customSlots: z.array(slot).max(100).optional(), removedSlots: z.array(slot).max(100).optional(), templateAdditions: z.array(slot).max(50).optional() }).strict().refine(changes => changes.updates.length + changes.creates.length <= 350) }).strict();
-const safeLogFields = new Set(["weekId", "expectedWeekVersion", "requestId", "changes", "updates", "creates", "dayId", "entryId", "slot", "itemId", "itemLabel", "portions", "allocations", "destinationId", "oneOffDestinationId", "destination", "destinationLabel", "destinationAddress", "quantity", "sourceLabel", "isCoreSalad", "customSlots", "removedSlots", "templateAdditions", "workingDraft"]);
+const sitePax = z.object({ dayId: id, destinationId: id, kind: z.enum(["governed", "one-off"]), pax: z.number().int().positive().nullable() }).strict();
+const requestSchema = z.object({ weekId: id, expectedWeekVersion: z.number().int().positive(), requestId: z.string().regex(/^[a-zA-Z0-9_-]{8,100}$/), workingDraft: z.boolean().optional(), changes: z.object({ updates: z.array(z.object({ entryId: id, dayId: id, patch }).strict()).max(350), creates: z.array(z.object({ id, dayId: id, slot, itemId: id.optional(), itemLabel: z.string().trim().max(500), portions: z.number().finite().nonnegative(), allocations: z.array(allocation).max(100), isCoreSalad: z.boolean().optional() }).strict()).max(350), destinationPax: z.array(sitePax).max(350).optional(), customSlots: z.array(slot).max(100).optional(), removedSlots: z.array(slot).max(100).optional(), templateAdditions: z.array(slot).max(50).optional() }).strict().refine(changes => changes.updates.length + changes.creates.length <= 350) }).strict();
+const safeLogFields = new Set(["weekId", "expectedWeekVersion", "requestId", "changes", "updates", "creates", "dayId", "entryId", "slot", "itemId", "itemLabel", "portions", "allocations", "destinationId", "oneOffDestinationId", "destination", "destinationLabel", "destinationAddress", "quantity", "sourceLabel", "isCoreSalad", "customSlots", "removedSlots", "templateAdditions", "workingDraft", "destinationPax", "pax"]);
 function fail(message: string, status = 422): never { throw Object.assign(new Error(message), { status }); }
 export type WeekSaveValidationError = { path: string; field: string; message: string; entryKind?: "create" | "update"; entryIndex?: number; dayId?: string; slot?: string; itemLabel?: string; itemId?: string };
 function failEntry(message: string, field: string, entry: RollingSnapshot["entries"][number], status = 422): never {
@@ -51,7 +53,7 @@ type WorkingDraftLineage = { dayId: string; publicationDayId: string; publicatio
 type Receipt = RollingWeek["audit"][number] & { requestId?: string; fingerprint?: string; baseVersion?: number; savedVersion?: number; workingDraftLineage?: WorkingDraftLineage[] };
 const fingerprint = (request: WeekSaveRequest) => createHash("sha256").update(JSON.stringify(request)).digest("hex");
 
-export function applyWeekSave(snapshot: RollingSnapshot, request: WeekSaveRequest, actor: string, allowedOplocIds: ReadonlySet<string>, at = new Date().toISOString(), oplocAliases: ReadonlyMap<string, string> = new Map(), workingDraftLineage: WorkingDraftLineage[] = []) {
+export function applyWeekSave(snapshot: RollingSnapshot, request: WeekSaveRequest, actor: string, allowedOplocIds: ReadonlySet<string>, at = new Date().toISOString(), oplocAliases: ReadonlyMap<string, string> = new Map(), workingDraftLineage: WorkingDraftLineage[] = [], allowOneOffPax = true) {
   const hash = fingerprint(request);
   const receipt = (snapshot.week.audit as Receipt[]).find(event => event.requestId === request.requestId);
   if (receipt) {
@@ -70,6 +72,33 @@ export function applyWeekSave(snapshot: RollingSnapshot, request: WeekSaveReques
   if (next.week.dayIds.some(id => !next.days.some(day => day.id === id)) || next.week.entryIds.some(id => !next.entries.some(entry => entry.id === id)) || next.days.some(day => day.entryIds.some(id => !next.entries.some(entry => entry.id === id && entry.dayId === day.id)))) fail("This week is incomplete. No changes were saved.", 409);
   const audit: Receipt = { action: "week-draft-saved", at, by: actor, requestId: request.requestId, fingerprint: hash, baseVersion: snapshot.week.version, savedVersion: snapshot.week.version + 1, ...(request.workingDraft ? { workingDraftLineage: structuredClone(workingDraftLineage) } : {}) };
   const touched = new Set<string>();
+  const touchedPax = new Set<string>();
+  for (const change of request.changes.destinationPax || []) {
+    const day = next.days.find(day => day.id === change.dayId && next.week.dayIds.includes(day.id));
+    if (!day || !(workingDraft ? editableWorkingDraftDay(next, day.id) : editableDay(next, day.id))) fail("PAX belongs to a missing or locked service day.", 409);
+    const destinationId = change.kind === "governed" ? oplocAliases.get(change.destinationId) || change.destinationId : change.destinationId;
+    if (change.kind === "governed" && !allowedOplocIds.has(destinationId)) fail("This PAX destination is outside your permitted scope.", 403);
+    if (change.kind === "one-off") {
+      if (!allowOneOffPax) fail("This one-off PAX destination is outside your permitted scope.", 403);
+      if (!day.oneOffDestinations?.some(destination => destination.id === destinationId)) fail("Choose a one-off destination recorded for this service day.");
+    }
+    if (change.pax !== null && (!Number.isSafeInteger(change.pax) || change.pax <= 0)) fail("Enter a positive whole number for PAX or leave it blank.");
+    const siteKey = menuSiteKey(change.kind, destinationId);
+    const touchedKey = JSON.stringify([day.id, siteKey]);
+    if (touchedPax.has(touchedKey)) fail("A save cannot change PAX twice for the same site and day.");
+    touchedPax.add(touchedKey);
+    const values = { ...day.destinationPax };
+    if (change.kind === "governed") {
+      for (const key of Object.keys(values)) {
+        const site = menuSiteIdentity(key);
+        if (site?.kind === "governed" && oplocAliases.get(site.id) === destinationId) delete values[key];
+      }
+    }
+    if (change.pax === null) delete values[siteKey];
+    else values[siteKey] = change.pax;
+    if (Object.keys(values).length) day.destinationPax = values;
+    else delete day.destinationPax;
+  }
   const checkAllocations = (entry: RollingSnapshot["entries"][number]) => {
     if (entry.allocations.some(value => value.destinationId && !allowedOplocIds.has(oplocAliases.get(value.destinationId) || value.destinationId))) failEntry("This save contains a destination outside your permitted scope.", "allocations.destinationId", entry, 403);
     if (entry.portions !== entry.allocations.reduce((sum, value) => sum + value.quantity, 0) && entry.allocations.length) failEntry("Portions must match destination allocations.", "portions/allocations", entry);
@@ -118,13 +147,13 @@ export function applyWeekSave(snapshot: RollingSnapshot, request: WeekSaveReques
     if (occupied.has(key) && next.entries.filter(value => value.dayId === entry.dayId && value.slot === entry.slot).some(value => touched.has(value.id))) failEntry("Two dishes cannot occupy the same menu cell.", "slot", entry, 409);
     occupied.add(key);
   }
-  if (touched.size + (request.changes.customSlots ? 1 : 0) + (request.changes.removedSlots ? 1 : 0) === 0) return { snapshot, replayed: false };
+  if (!touched.size && !touchedPax.size && !request.changes.customSlots && !request.changes.removedSlots) return { snapshot, replayed: false };
   next.week.version += 1; next.week.audit.push(audit);
   return { snapshot: next, replayed: false };
 }
 
 /** A bounded week transaction; the existing adapter persists diffs and leaves publications/outboxes untouched. */
-export async function saveWeekDraft(raw: unknown, actor: string, allowedOplocIds: ReadonlySet<string>, oplocAliases: ReadonlyMap<string, string> = new Map()) {
+export async function saveWeekDraft(raw: unknown, actor: string, allowedOplocIds: ReadonlySet<string>, oplocAliases: ReadonlyMap<string, string> = new Map(), allowOneOffPax = true) {
   const parsed = requestSchema.safeParse(raw);
   if (!parsed.success) {
     const validationErrors = requestValidationErrors(raw, parsed.error.issues);
@@ -141,21 +170,20 @@ export async function saveWeekDraft(raw: unknown, actor: string, allowedOplocIds
     const week = rolling.weeks.find(week => week.id === request.weekId);
     if (!week) return fail("The planning week was not found.", 404);
     const current = { week, days: rolling.days.filter(day => week.dayIds.includes(day.id)), entries: rolling.entries.filter(entry => week.entryIds.includes(entry.id)) };
+    const touchedDays = new Set([...request.changes.updates.map(update => update.dayId), ...request.changes.creates.map(entry => entry.dayId), ...(request.changes.destinationPax || []).map(update => update.dayId)]);
     if (request.workingDraft) {
       const publications = state.publications as { publications?: Array<{ sourceWeekId?: string; days?: Array<{ sourceDayId: string; status: string }> }> };
       const publication = publications.publications?.find(value => value.sourceWeekId === request.weekId);
       const currentPublished = (publication?.days || []).filter(day => day.status === "published");
       const currentPublishedDays = new Set(currentPublished.map(day => day.sourceDayId));
       if (!publication || !currentPublishedDays.size) fail("A working draft requires an existing current publication. Nothing was saved.", 409);
-      const changedDays = new Set([...request.changes.updates.map(update => update.dayId), ...request.changes.creates.map(entry => entry.dayId)]);
-      if ([...changedDays].some(dayId => !currentPublishedDays.has(dayId))) fail("Working-draft saves may change only currently published days. Nothing was saved.", 409);
+      if ([...touchedDays].some(dayId => !currentPublishedDays.has(dayId))) fail("Working-draft saves may change only currently published days. Nothing was saved.", 409);
     }
     const publicationState = state.publications as { publications?: Array<{ sourceWeekId?: string; publicationVersion?: number; days?: Array<{ sourceDayId: string; publicationDayId: string; version: number; status: string }> }> };
     const publication = publicationState.publications?.find(value => value.sourceWeekId === request.weekId);
     const currentPublishedDays = (publication?.days || []).filter(day => day.status === "published");
-    const touchedDays = new Set([...request.changes.updates.map(update => update.dayId), ...request.changes.creates.map(entry => entry.dayId)]);
     const lineage = request.workingDraft ? currentPublishedDays.filter(day => touchedDays.has(day.sourceDayId)).map(day => ({ dayId: day.sourceDayId, publicationDayId: day.publicationDayId, publicationVersion: publication?.publicationVersion || day.version })) : [];
-    const result = applyWeekSave(current, request, actor, allowedOplocIds, new Date().toISOString(), oplocAliases, lineage);
+    const result = applyWeekSave(current, request, actor, allowedOplocIds, new Date().toISOString(), oplocAliases, lineage, allowOneOffPax);
     if (!result.replayed) {
       rolling.weeks[rolling.weeks.findIndex(week => week.id === request.weekId)] = result.snapshot.week;
       const entries = new Map(result.snapshot.entries.map(entry => [entry.id, entry]));

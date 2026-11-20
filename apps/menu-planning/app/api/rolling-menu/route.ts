@@ -24,6 +24,7 @@ import {
   validateWeekAuthoritative,
 } from "@/lib/rolling-menu";
 import {
+  assertAmendmentPaxScope,
   createPublishedMenuWeek,
   getMenuPublication,
   previewPublishedWeekAmendment,
@@ -40,6 +41,7 @@ import {
   requirePublicationActor,
   resolveMenuActor,
   scopeMenuPublication,
+  scopeMenuSitePax,
   type MenuActor,
 } from "@/lib/auth";
 import { readDeliveredInOplocs } from "@/lib/oploc-authority";
@@ -91,7 +93,7 @@ function scopedSnapshot(
   // Historical demand review evidence remains in stored weeks but is no longer
   // projected into Menu Planning's active API after buffet moved directly to CPU.
   const { hospitalityDemandAllocations: _historicalDemand, ...week } = snapshot.week as typeof snapshot.week & { hospitalityDemandAllocations?: unknown };
-  return { ...snapshot, week, entries };
+  return { ...snapshot, week, entries, days: snapshot.days.map(day => ({ ...day, destinationPax: scopeMenuSitePax(day.destinationPax, actor) })) };
 }
 
 function assertSnapshotScope(
@@ -99,6 +101,11 @@ function assertSnapshotScope(
   actor: MenuActor,
 ) {
   if (actor.allOplocs) return;
+  for (const day of snapshot.days) {
+    if (Object.keys(day.destinationPax || {}).length !== Object.keys(scopeMenuSitePax(day.destinationPax, actor) || {}).length) {
+      throw Object.assign(new Error("This week contains PAX outside your permitted OPLOC scope."), { status: 403 });
+    }
+  }
   for (const entry of snapshot.entries)
     for (const allocation of entry.allocations) {
       if (
@@ -240,16 +247,14 @@ async function handleGet(request: NextRequest) {
     const governedOplocs = (await readDeliveredInOplocs(request)).filter(
       (oploc) => actorCanAccessOploc(actor, oploc.canonicalId),
     );
-    const snapshot = scopedSnapshot(
-      normaliseRollingSnapshotDestinations(
-        storedSnapshot ||
-          await createWeekSnapshot(
-            requestedWeekCommencing || planningWeekFromQuery(undefined),
-          ),
-        governedOplocs,
-      ),
-      actor,
+    const sourceSnapshot = normaliseRollingSnapshotDestinations(
+      storedSnapshot ||
+        await createWeekSnapshot(
+          requestedWeekCommencing || planningWeekFromQuery(undefined),
+        ),
+      governedOplocs,
     );
+    const snapshot = scopedSnapshot(sourceSnapshot, actor);
     const governedOplocIds = governedOplocs
       ? new Set(governedOplocs.map((oploc) => oploc.canonicalId))
       : undefined;
@@ -262,8 +267,9 @@ async function handleGet(request: NextRequest) {
     const publicationStateMs = performance.now() - publicationStarted;
     const resolved = await resolvedSnapshot(snapshot, catalogue, actor);
     const amendmentPreview = amendmentPreviewRequested
-      ? (assertSnapshotScope(snapshot, actor), await previewPublishedWeekAmendment(snapshot.week.id, governedOplocs))
+      ? (assertSnapshotScope(sourceSnapshot, actor), await previewPublishedWeekAmendment(snapshot.week.id, governedOplocs))
       : undefined;
+    if (amendmentPreview && !actor.allOplocs) assertAmendmentPaxScope(amendmentPreview.changeSet, governedOplocIds);
     const activeCanonicalDishIds = new Set(catalogue.map((entry) => entry.id));
     console.info("Menu Planning rolling-menu GET timings", {
       rollingStateMs,
@@ -323,6 +329,7 @@ async function handlePost(request: NextRequest) {
       requirePublicationActor(actor);
       const weekId = String(body.weekId || "");
       const oplocs = liveOplocs;
+      const governedOplocIds = new Set(oplocs.map(oploc => oploc.canonicalId));
       const sourceSnapshot = normaliseRollingSnapshotDestinations(await getWeek(weekId), oplocs);
       assertSnapshotScope(sourceSnapshot, actor);
       const publication = await publishScopedPublishedWeekAmendment(weekId, {
@@ -330,7 +337,7 @@ async function handlePost(request: NextRequest) {
         publicationVersion: Number(body.publicationVersion),
         changeSetHash: String(body.changeSetHash || ""),
         requestId: String(body.requestId || ""),
-      }, actor.uid, new Set(oplocs.map(oploc => oploc.canonicalId)), oplocs);
+      }, actor.uid, governedOplocIds, oplocs, actor.allOplocs ? undefined : governedOplocIds);
       const handoff = queuedPublicationHandoff(publication);
       const saved = await getWeek(weekId);
       const published = await getMenuPublication(publication.publicationId);
@@ -345,8 +352,8 @@ async function handlePost(request: NextRequest) {
     }
     if (action === "save-week") {
       const { action: _action, ...saveRequest } = body;
-      const result = await saveWeekDraft(saveRequest, actor.uid, new Set(liveOplocs.map(oploc => oploc.canonicalId)), new Map(liveOplocs.flatMap(oploc => (oploc.legacyIds || []).map(alias => [alias, oploc.canonicalId] as const))));
-      return NextResponse.json({ snapshot: scopedSnapshot(result.snapshot, actor), replayed: result.replayed, publicationState: await publicationState(result.snapshot, liveOplocs) });
+      const result = await saveWeekDraft(saveRequest, actor.uid, new Set(liveOplocs.map(oploc => oploc.canonicalId)), new Map(liveOplocs.flatMap(oploc => (oploc.legacyIds || []).map(alias => [alias, oploc.canonicalId] as const))), actor.allOplocs);
+      return NextResponse.json({ snapshot: scopedSnapshot(normaliseRollingSnapshotDestinations(result.snapshot, liveOplocs), actor), replayed: result.replayed, publicationState: await publicationState(result.snapshot, liveOplocs) });
     }
     if (action === "set-hospitality-availability") {
       const result = await setWeekAvailableToHospitality(String(body.weekId || ""), Number(body.expectedWeekVersion), body.available === true, actor.uid);

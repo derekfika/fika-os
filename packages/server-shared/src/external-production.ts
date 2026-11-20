@@ -24,6 +24,8 @@ export type ExternalProductionMaterialisation = {
   destinationOplocId: string;
   destination?: MenuDestination;
   destinationLabel?: string;
+  /** Explicit Menu Planning site/day PAX. Omission means no PAX is recorded on this revision. */
+  guestCount?: number;
   serviceDate: string;
   requiredBy?: string;
   serviceWindow?: { startTime: string; endTime?: string };
@@ -91,6 +93,7 @@ export const externalProductionMaterialisationInput = z.object({
     z.object({ kind: z.literal("one-off"), id: z.string().min(1), sourceDayId: z.string().min(1), label: z.string().trim().min(1), address: z.string().trim(), addressStatus: z.literal("pending").optional(), contact: z.string().optional(), deliveryInstructions: z.string().optional() }).strict(),
   ]).optional(),
   destinationLabel: z.string().optional(),
+  guestCount: z.number().int().positive().optional(),
   serviceDate: z.string(),
   requiredBy: z.string().optional(),
   serviceWindow: z.object({ startTime: z.string(), endTime: z.string().optional() }).optional(),
@@ -110,6 +113,12 @@ export const externalProductionMaterialisationInput = z.object({
     approvedAllergenSnapshot: approvedAllergenSnapshotSchema.optional(),
   })).min(1),
 }).strict().superRefine((input, context) => {
+  if (input.guestCount !== undefined && (input.sourceDomain !== "menu-planning" || (input.status !== "published" && input.status !== "amended"))) {
+    context.addIssue({ code: "custom", message: "PAX is supported only for active Menu Planning publications.", path: ["guestCount"] });
+  }
+  if (input.guestCount !== undefined && (!input.publicationId || !input.sourcePublicationDayId || !/^[a-f0-9]{64}$/i.test(input.sourceContentHash || ""))) {
+    context.addIssue({ code: "custom", message: "Menu PAX requires immutable publication lineage.", path: ["guestCount"] });
+  }
   input.lines.forEach((line, index) => {
     if (line.isCoreSalad === true && (input.sourceDomain !== "menu-planning" || !/^SALAD [1-6]$/i.test(line.slot || ""))) {
       context.addIssue({ code: "custom", message: "Core Salad metadata is valid only for a Menu Planning salad placement.", path: ["lines", index, "isCoreSalad"] });

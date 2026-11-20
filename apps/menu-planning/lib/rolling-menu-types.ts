@@ -24,12 +24,13 @@ export type RollingSlot = typeof CANONICAL_MENU_SLOTS[number]["id"];
 export type RollingWeekStatus = "draft" | "imported" | "needs_review" | "ready" | "partially_published" | "published" | "archived";
 export type RollingDayPublicationStatus = "draft" | "ready" | "published" | "superseded";
 import type { CanonicalAllergenMap, OperationalAllergenState } from "./fika-contracts";
+import type { SitePax } from "./site-pax";
 export type AllergenState = OperationalAllergenState;
 export type AllergenMap = CanonicalAllergenMap;
 export interface RollingAllocation { destinationId?: string; oneOffDestinationId?: string; destination?: import("@fika/server-shared/menu-destination").MenuDestination; destinationLabel: string; destinationAddress?: string; quantity: number; sourceLabel?: string; }
 export interface RollingEntry { id: string; dayId: string; date: string; slot: string; itemId?: string; itemLabel: string; portions: number; allocations: RollingAllocation[]; /** Manual placement designation; absent historical values mean not Core. */ isCoreSalad?: boolean; allergens: AllergenMap; mayContainNotes?: string; allergenDetailNotes?: string; allergenReviewInvalidated?: boolean; allergenReview?: import("./fika-contracts").AllergenRowReview | import("../../shared/allergen-declaration").ExplicitRowReview; noKeyDeclaration?: import("../../shared/allergen-declaration").NoKeyDeclarationRecord; source?: { workbook: string; sheet: string; range: string; rawText?: string }; audit: Array<{ action: string; at: string; by: string }>; }
 export interface RollingOneOffDestination { id: string; label: string; address?: string; addressStatus: "pending" | "confirmed"; contact?: string; deliveryInstructions?: string; }
-export interface RollingDay { id: string; date: string; dayName: string; entryIds: string[]; oneOffDestinations?: RollingOneOffDestination[]; }
+export interface RollingDay { id: string; date: string; dayName: string; entryIds: string[]; oneOffDestinations?: RollingOneOffDestination[]; destinationPax?: SitePax; }
 export interface RollingWeek { id: string; weekCommencing: string; weekEnding: string; status: RollingWeekStatus; version: number; dayIds: string[]; entryIds: string[]; sourceFiles: string[]; /** Explicit permission for Hospitality to show the current client-safe menu preview. Does not publish operational work. */ availableToHospitality?: boolean; /** Immutable-at-creation template snapshot; absent only on legacy weeks. */ templateSlots?: string[]; customSlots?: string[]; removedSlots?: string[]; dayStatuses?: Record<string, RollingDayPublicationStatus>; audit: Array<{ action: string; at: string; by: string }>; }
 export interface RollingSnapshot { week: RollingWeek; days: RollingDay[]; entries: RollingEntry[]; }
 /** Keep the standard Dessert rows visible in legacy drafts without rewriting saved history. */

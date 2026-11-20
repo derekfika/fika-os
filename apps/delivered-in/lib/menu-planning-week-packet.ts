@@ -1,4 +1,5 @@
-import { menuDestination, type MenuDestination } from "@fika/server-shared/menu-destination";
+import { menuDestination, menuDestinationKey, type MenuDestination } from "@fika/server-shared/menu-destination";
+import { isRetainedMenuSiteLineage, type RetainedMenuSiteLineage } from "@fika/server-shared/weekly-publication-packet";
 import { approvedAllergenSnapshotSchema } from "@fika/server-shared/external-production";
 import { createHash } from "node:crypto";
 import { canonicalOplocId } from "@fika/server-shared/governed-oplocs";
@@ -18,7 +19,7 @@ export const MENU_PLANNING_PUBLICATIONS_COLLECTION = "fikaMenuPlanningPublicatio
 export const MENU_PLANNING_SNAPSHOTS_COLLECTION = "fikaMenuPlanningPublishedSnapshots";
 
 export type MenuPlanningWeekPacketEntry = { sourceEntryId: string; slot: string; canonicalDishId?: string; dishName: string; portions: number; allocations: Array<{ destinationId?: string; destination?: MenuDestination; destinationAddress?: string; destinationLabel: string; quantity: number }>; allergens?: Record<string, string>; allergenEvidenceStatus?: "confirmed" | "unreviewed" | "missing" | "conflicting"; mayContainNotes?: string; allergenDetailNotes?: string };
-export type MenuPlanningWeekPacketDay = { publicationDayId: string; sourceDayId: string; date: string; dayName: string; version: number; status?: "published" | "superseded" | "withdrawn"; contentHash?: string; entries: MenuPlanningWeekPacketEntry[]; allergenSignoff?: Record<string, unknown> };
+export type MenuPlanningWeekPacketDay = { publicationDayId: string; sourceDayId: string; date: string; dayName: string; version: number; status?: "published" | "superseded" | "withdrawn"; contentHash?: string; retainedSiteLineage?: RetainedMenuSiteLineage; entries: MenuPlanningWeekPacketEntry[]; allergenSignoff?: Record<string, unknown> };
 export type MenuPlanningWeekPacket = { schemaVersion: number; publicationId: string; sourceWeekId: string; publicationStatus?: "withdrawn"; publicationVersion?: number; contentHash?: string; week: { weekCommencing: string; weekEnding: string }; days: MenuPlanningWeekPacketDay[] };
 type PacketDocument = { packet?: unknown; payload?: unknown; payloadBase64?: unknown; encoding?: unknown; contentHash?: unknown; compressedSize?: unknown; uncompressedSize?: unknown; [key: string]: unknown };
 
@@ -63,7 +64,12 @@ function validate(value: unknown, expectedPublicationId?: string): MenuPlanningW
       if (!evidence.success) throw invalid("The published packet contains invalid allergen evidence.");
       return { ...evidence.data, sourceEntryId: entry.sourceEntryId, slot: entry.slot, ...(typeof entry.canonicalDishId === "string" ? { canonicalDishId: entry.canonicalDishId } : {}), dishName: entry.dishName, portions: entryPortions, allocations, ...(isRecord(entry.allergens) ? { allergens: Object.fromEntries(Object.entries(entry.allergens).filter(([, state]) => typeof state === "string").map(([key, state]) => [key, state as string])) } : {}), ...(entry.allergenEvidenceStatus === "confirmed" || entry.allergenEvidenceStatus === "unreviewed" || entry.allergenEvidenceStatus === "missing" || entry.allergenEvidenceStatus === "conflicting" ? { allergenEvidenceStatus: entry.allergenEvidenceStatus } : {}), ...(typeof entry.mayContainNotes === "string" ? { mayContainNotes: entry.mayContainNotes } : {}) };
     });
-    return { publicationDayId: day.publicationDayId, sourceDayId: day.sourceDayId, date: day.date, dayName: day.dayName, version: dayVersion, ...(day.status === "published" || day.status === "superseded" || day.status === "withdrawn" ? { status: day.status } : {}), contentHash: day.contentHash, entries, ...(isRecord(day.allergenSignoff) ? { allergenSignoff: day.allergenSignoff } : {}) };
+    const retained = day.retainedSiteLineage;
+    if (retained !== undefined) {
+      const activeSites = new Set(entries.flatMap(entry => entry.allocations.filter(allocation => allocation.quantity > 0).map(menuDestinationKey)));
+      if (!isRetainedMenuSiteLineage(retained, dayVersion) || Object.entries(retained).some(([id, lineage]) => !activeSites.has(id) || lineage.publicationDayId === day.publicationDayId)) throw invalid("The Menu Planning weekly packet contains invalid retained site lineage.");
+    }
+    return { publicationDayId: day.publicationDayId, sourceDayId: day.sourceDayId, date: day.date, dayName: day.dayName, version: dayVersion, ...(day.status === "published" || day.status === "superseded" || day.status === "withdrawn" ? { status: day.status } : {}), contentHash: day.contentHash, ...(retained ? { retainedSiteLineage: retained as RetainedMenuSiteLineage } : {}), entries, ...(isRecord(day.allergenSignoff) ? { allergenSignoff: day.allergenSignoff } : {}) };
   });
   return { schemaVersion: Number(value.schemaVersion || 1), publicationId: value.publicationId, sourceWeekId: value.sourceWeekId, ...(typeof value.publicationVersion === "number" && Number.isInteger(value.publicationVersion) ? { publicationVersion: value.publicationVersion } : {}), ...(typeof value.contentHash === "string" ? { contentHash: value.contentHash } : {}), week: { weekCommencing: value.week.weekCommencing, weekEnding: value.week.weekEnding }, days };
 }
@@ -104,7 +110,7 @@ export function decodeMenuPlanningWeekPacket(value: unknown, expectedPublication
 }
 
 function toSourcePublication(packet: MenuPlanningWeekPacket): SourcePublication {
-  return { publicationId: packet.publicationId, sourceWeekId: packet.sourceWeekId, weekCommencing: packet.week.weekCommencing, weekEnding: packet.week.weekEnding, ...(packet.publicationStatus ? { publicationStatus: packet.publicationStatus, publicationVersion: packet.publicationVersion } : {}), days: packet.days.map(day => ({ publicationDayId: day.publicationDayId, sourceDayId: day.sourceDayId, date: day.date, dayName: day.dayName, version: day.version, status: day.status || "published", contentHash: day.contentHash!, entries: day.entries.map(entry => ({ ...entry, allergens: safeAllergens(entry.allergens) })), allergenSignoff: {} })) };
+  return { publicationId: packet.publicationId, sourceWeekId: packet.sourceWeekId, weekCommencing: packet.week.weekCommencing, weekEnding: packet.week.weekEnding, ...(packet.publicationStatus ? { publicationStatus: packet.publicationStatus, publicationVersion: packet.publicationVersion } : {}), days: packet.days.map(day => ({ publicationDayId: day.publicationDayId, sourceDayId: day.sourceDayId, date: day.date, dayName: day.dayName, version: day.version, status: day.status || "published", contentHash: day.contentHash!, ...(day.retainedSiteLineage ? { retainedSiteLineage: day.retainedSiteLineage } : {}), entries: day.entries.map(entry => ({ ...entry, allergens: safeAllergens(entry.allergens) })), allergenSignoff: {} })) };
 }
 export type MenuPlanningPacketPublication = ReturnType<typeof toSourcePublication>;
 export const packetPublication = toSourcePublication;
