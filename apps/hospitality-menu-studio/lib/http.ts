@@ -15,12 +15,15 @@ const maxBytes = 700_000;
 const readSchema = z.union([
   z.object({ list: z.enum(["menus", "dishes"]), cursor: idSchema.optional() }).strict(),
   z.object({ list: z.literal("history"), menuId: idSchema, cursor: idSchema.optional() }).strict(),
+  z.object({ list: z.literal("published-kitchen-dishes"), menuId: idSchema, publicationId: idSchema, cursor: idSchema.optional() }).strict(),
   z.object({ list: z.literal("versions"), menuId: idSchema, cursor: versionQuerySchema.optional() }).strict(),
   z.object({ list: z.literal("versions"), dishId: idSchema, cursor: versionQuerySchema.optional() }).strict(),
   z.object({ list: z.literal("catalogue") }).strict(),
   z.object({ menuId: idSchema, fromVersion: versionQuerySchema, toVersion: versionQuerySchema }).strict(),
   z.object({ menuId: idSchema, eventDate: dateSchema, siteId: idSchema.optional() }).strict(),
-  z.object({ menuId: idSchema, publicationId: idSchema, kitchenDishId: idSchema }).strict(),
+  z.object({ menuId: idSchema, publicationId: idSchema, kitchenDishId: idSchema,
+    boxes: z.string().regex(/^\d{1,16}$/).transform(Number).pipe(z.number().int().positive()).optional(),
+  }).strict(),
   z.object({ menuId: idSchema }).strict(),
   z.object({ dishId: idSchema, reviewVersion: versionQuerySchema }).strict(),
   z.object({ dishId: idSchema }).strict(),
@@ -68,9 +71,15 @@ export function studioHandlers(
       };
       if ("list" in query && query.list === "catalogue") return studioCatalogueOptions((await catalogue()).catalogue);
       if ("reviewVersion" in query && !safetyAvailable()) return { status: "unavailable" };
+      if (("kitchenDishId" in query || ("list" in query && query.list === "published-kitchen-dishes")) && !safetyAvailable()) {
+        throw blocked("Published kitchen specifications are unavailable.");
+      }
       const db = store();
       if ("list" in query) {
         if (query.list === "history") return db.listHistory(query.menuId, query.cursor);
+        if (query.list === "published-kitchen-dishes") {
+          return db.listPublishedKitchenDishes(query.menuId, query.publicationId, query.cursor);
+        }
         if (query.list === "versions") return "menuId" in query
           ? db.listVersions("menus", query.menuId, query.cursor)
           : db.listVersions("dishes", query.dishId, query.cursor);
@@ -89,7 +98,9 @@ export function studioHandlers(
         if (dish.version !== query.reviewVersion) throw new StudioProblem(409, "DRAFT_CONFLICT", "The dish changed. Reload its latest saved revision.");
         return (await db.dishSafety([dish])).get(dish.id);
       }
-      if ("kitchenDishId" in query) throw blocked("Current signed kitchen specifications are unavailable.");
+      if ("kitchenDishId" in query) {
+        return db.previewPublishedKitchen(query.menuId, query.publicationId, query.kitchenDishId, query.boxes);
+      }
       const menu = await db.read<Menu>("menus", query.menuId);
       if ("eventDate" in query) {
         if (!query.siteId) {
