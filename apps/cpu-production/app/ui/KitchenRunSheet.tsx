@@ -81,7 +81,7 @@ export function CollectionCard({
           <div><dt>Service type</dt><dd>{details.service}</dd></div>
           <div><dt>Ready By</dt><dd>{details.readyBy}</dd></div>
           <div><dt>Collection Time</dt><dd>{details.collection}</dd></div>
-          <div><dt>Order ref</dt><dd>{details.reference}</dd></div>
+          <div><dt>Order ref</dt><dd>{details.reference}{details.pax && <> · PAX {details.pax}</>}</dd></div>
           {details.serviceWindow && details.serviceWindow !== "TBC" && <div><dt>Service / delivery window</dt><dd>{details.serviceWindow}</dd></div>}
         </dl>
       </header>

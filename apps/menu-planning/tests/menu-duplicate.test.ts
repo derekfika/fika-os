@@ -68,6 +68,19 @@ function target(snapshot: RollingSnapshot, overrides: Partial<DuplicateTargetInp
   return { weekCommencing: snapshot.week.weekCommencing, snapshot, isNewWeek: false, protectedDayIds: new Set(), placement: { kind: "corresponding" }, alreadyApplied: false, ...overrides };
 }
 
+test("Duplicate Planning preserves target PAX and leaves an empty target's PAX unrecorded", () => {
+  const source = week("2026-10-26");
+  const sameSite = `governed:${OPLOC_A}`;
+  source.days[0].destinationPax = { [sameSite]: 60 };
+  entry(source, 0, "SOUP", { id: "dish:soup", label: "Soup" }, [{ destinationId: OPLOC_A, destinationLabel: "Site A", quantity: 20 }]);
+  const withPax = week("2026-11-02");
+  withPax.days[0].destinationPax = { [sameSite]: 42 };
+  const withoutPax = week("2026-11-09");
+  const result = plan({ content: "menu-and-portions", targets: [target(withPax), target(withoutPax)] }, source);
+  assert.deepEqual(result.targets[0].next.days[0].destinationPax, { [sameSite]: 42 });
+  assert.equal(result.targets[1].next.days[0].destinationPax, undefined);
+});
+
 function sourceWithMonday(allocations: Array<{ destinationId?: string; destinationLabel: string; quantity: number }> = [{ destinationId: OPLOC_A, destinationLabel: "Site A", quantity: 10 }]) {
   const source = week("2026-11-02");
   entry(source, 0, "COLD PROTEIN", { id: "dish:chicken", label: "Chicken Breast" }, allocations);

@@ -35,6 +35,37 @@ test("conflict, scope and lock failures leave the complete draft and original au
   assert.throws(() => applyWeekSave({ ...source, week: { ...source.week, status: "published" } }, request, "person:1", allowed), /locked/);
   assert.equal(JSON.stringify(source), before); assert.equal(draft.entries[0].itemLabel, "My name");
 });
+
+test("day PAX is independent of allocations, scoped by stable identity and removed by clearing", async () => {
+  const source = emptyWeek("2099-06-01", "fixture-actor");
+  const [tuesday, wednesday] = source.days.slice(1);
+  const venue = { id: `${wednesday.id}:one-off:fixture`, label: "Same display name", addressStatus: "pending" as const };
+  wednesday.oneOffDestinations = [venue];
+  await saveSnapshot(source);
+  const request = {
+    weekId: source.week.id, expectedWeekVersion: 1, requestId: "request-site-pax",
+    changes: { updates: [], creates: [], destinationPax: [
+      { dayId: tuesday.id, kind: "governed" as const, destinationId: "old:1", pax: 27 },
+      { dayId: wednesday.id, kind: "governed" as const, destinationId: "site:1", pax: 60 },
+      { dayId: wednesday.id, kind: "one-off" as const, destinationId: venue.id, pax: 35 },
+    ] },
+  };
+  const aliases = new Map([["old:1", "site:1"]]);
+  await assert.rejects(saveWeekDraft(request, "person:1", allowed, aliases, false), /permitted scope/);
+  await assert.rejects(saveWeekDraft({ ...request, changes: { ...request.changes, destinationPax: [{ ...request.changes.destinationPax[2], dayId: tuesday.id }] } }, "person:1", allowed, aliases), /recorded for this service day/);
+  await assert.rejects(saveWeekDraft({ ...request, changes: { ...request.changes, destinationPax: [{ ...request.changes.destinationPax[1], pax: 0 }] } }, "person:1", allowed, aliases), /invalid entries/);
+  const saved = await saveWeekDraft(request, "person:1", allowed, aliases);
+  assert.equal(saved.snapshot.week.version, 2);
+  assert.equal((await saveWeekDraft(request, "person:1", allowed, aliases)).replayed, true);
+  const reloaded = await getWeek(source.week.id);
+  assert.deepEqual(reloaded.days[1].destinationPax, { "governed:site:1": 27 });
+  assert.deepEqual(reloaded.days[2].destinationPax, { "governed:site:1": 60, [`one-off:${venue.id}`]: 35 });
+  assert.deepEqual(reloaded.entries, source.entries);
+  await assert.rejects(saveWeekDraft({ ...request, requestId: "request-stale-pax" }, "person:2", allowed, aliases), /changed on the server/);
+  const clear = { ...request, expectedWeekVersion: 2, requestId: "request-clear-pax", changes: { ...request.changes, destinationPax: [{ ...request.changes.destinationPax[1], pax: null }] } };
+  await saveWeekDraft(clear, "person:1", allowed, aliases);
+  assert.deepEqual((await getWeek(source.week.id)).days[2].destinationPax, { [`one-off:${venue.id}`]: 35 });
+});
 test("real isolated persistence: 20 local edits, one save, repeated saves, retry, reload and no publication side effects", async () => {
   const source = base(); await saveSnapshot(source); let draft = source;
   for (let i = 0; i < 20; i++) draft = editWeek(draft, "update-entry", { entryId: source.entries[0].id, patch: { itemLabel: `Label ${i}` } });

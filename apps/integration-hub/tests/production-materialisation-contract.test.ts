@@ -40,6 +40,12 @@ test("the Menu Planning publisher payload, including publicationId, is accepted 
   };
 
   assert.deepEqual(parseExternalProductionMaterialisation(payload), payload);
+  assert.equal(parseExternalProductionMaterialisation({ ...payload, guestCount: 60 }).guestCount, 60);
+  for (const guestCount of [0, -1, 1.5, Infinity, "60"]) {
+    assert.throws(() => parseExternalProductionMaterialisation({ ...payload, guestCount }), /guestCount/);
+  }
+  assert.throws(() => parseExternalProductionMaterialisation({ ...payload, sourceDomain: "grab-and-go", guestCount: 60 }), /active Menu Planning publications/);
+  assert.throws(() => parseExternalProductionMaterialisation({ ...payload, sourceContentHash: undefined, guestCount: 60 }), /immutable publication lineage/);
   assert.throws(() => parseExternalProductionMaterialisation({ ...payload, unexpected: true }), /Unrecognized key/);
   assert.throws(() => parseExternalProductionMaterialisation({ ...payload, lines: [{ ...payload.lines[0], canonicalOrderIndex: undefined }] }), /Canonical menu slot metadata requires/);
   const parsed = parseExternalProductionMaterialisation(payload);

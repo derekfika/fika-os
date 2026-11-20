@@ -1,9 +1,10 @@
 import { menuDestination, menuDestinationKey, type MenuDestination } from "@fika/server-shared/menu-destination";
+import type { RetainedMenuSiteLineage } from "@fika/server-shared/weekly-publication-packet";
 export type SiteAccess = { email: string; oplocIds: string[]; permissions: string[]; canViewOneOffDestinations?: boolean; oneOffDestinationIds?: string[] };
 export type Site = { oplocId: string; label: string; destination?: MenuDestination };
 export type SourceAllocation = { destinationId?: string; destination?: MenuDestination; destinationAddress?: string; destinationLabel: string; quantity: number };
 export type SourceEntry = { sourceEntryId: string; slot: string; canonicalDishId?: string; dishName: string; portions: number; allocations: SourceAllocation[]; allergens: Record<string, "clear" | "contains" | "may_contain" | "unrecorded">; allergenEvidenceStatus?: "confirmed" | "unreviewed" | "missing" | "conflicting"; allergenDetailNotes?: string; mayContainNotes?: string };
-export type SourceDay = { publicationDayId: string; sourceDayId: string; date: string; dayName: string; version: number; status: "published" | "superseded" | "withdrawn"; contentHash: string; entries: SourceEntry[]; allergenSignoff: { productionChef?: { printedName: string; signedAt: string }; headChefSiteManager?: { printedName: string; signedAt: string }; printedName?: string; signedAt?: string }; driveArchive?: { pdfDriveUrl?: string; pdfStatus?: string; pdfFileName?: string } };
+export type SourceDay = { publicationDayId: string; sourceDayId: string; date: string; dayName: string; version: number; status: "published" | "superseded" | "withdrawn"; contentHash: string; retainedSiteLineage?: RetainedMenuSiteLineage; entries: SourceEntry[]; allergenSignoff: { productionChef?: { printedName: string; signedAt: string }; headChefSiteManager?: { printedName: string; signedAt: string }; printedName?: string; signedAt?: string }; driveArchive?: { pdfDriveUrl?: string; pdfStatus?: string; pdfFileName?: string } };
 export type SourcePublication = { publicationId: string; sourceWeekId: string; weekCommencing: string; weekEnding: string; publicationStatus?: "withdrawn"; publicationVersion?: number; days: SourceDay[] };
 export type ProjectedEntry = { sourceEntryId: string; slot: string; canonicalDishId?: string; dishName: string; quantity: number; allergens: Record<string, "clear" | "contains" | "may_contain" | "unrecorded">; allergenEvidenceStatus?: "confirmed" | "unreviewed" | "missing" | "conflicting"; allergenDetailNotes?: string; mayContainNotes?: string; allergensVisible?: boolean };
 export type ProjectedDestination = { oplocId: string; label: string; portions: number; destination?: MenuDestination };
@@ -92,14 +93,15 @@ export function projectPublishedWeeks(publications: SourcePublication[], selecte
             const current = destinations.get(canonicalId);
             destinations.set(canonicalId, { ...(allocation.destination ? { destination: allocation.destination } : {}), oplocId: canonicalId, label: allocation.destinationLabel, portions: (current?.portions || 0) + allocation.quantity });
           }
+          const lineage = day.retainedSiteLineage?.[selectedCanonicalOplocId || selectedOplocId] || day;
           return {
           publicationId: publication.publicationId,
-          publicationDayId: day.publicationDayId,
+          publicationDayId: lineage.publicationDayId,
           sourceDayId: day.sourceDayId,
           date: day.date,
           dayName: day.dayName,
-          version: day.version,
-          contentHash: day.contentHash,
+          version: lineage.version,
+          contentHash: lineage.contentHash,
           weekCommencing: publication.weekCommencing,
           destinations: [...destinations.values()].sort((a, b) => a.label.localeCompare(b.label)),
           allergenSignoff: day.allergenSignoff,

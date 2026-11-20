@@ -610,6 +610,7 @@ export async function materialiseExternalProductionOrder(actor: Actor, input: Ex
     // Menu withdrawal retains the published content version. Cancellation is
     // terminal for that version; only a newer publication may restore work.
     if (previous && input.sourceDomain === "menu-planning" && previous.sourceVersion === input.sourceVersion && previous.status === "cancelled" && status !== "cancelled") return { created: false, duplicate: true, order: previous };
+    if (previous && input.sourceDomain === "menu-planning" && previous.sourceVersion === input.sourceVersion && status !== "cancelled" && previous.guestCount !== input.guestCount) throw conflict("Menu PAX changed without a new publication version.");
     if (previous && previous.sourceVersion === input.sourceVersion && previous.sourceContentHash === input.sourceContentHash && previous.status === status) {
       // Republishing a week can replace an unchanged day's immutable publication ID
       // without increasing its content version. Logistics checks this current ID on
@@ -655,6 +656,10 @@ export async function materialiseExternalProductionOrder(actor: Actor, input: Ex
       status, priority: previous?.priority || "normal", lines: input.lines.map((_, index) => projectExternalProductionLine(input, canonicalId, index, status)),
       exceptions: [], createdAt: previous?.createdAt || now, createdBy: previous?.createdBy || actor.uid, idempotencyKey: `materialise:${input.sourceDomain}:${input.sourceEntityId}:${input.destinationOplocId}`, externalReferences: previous?.externalReferences || [], audit: [...(previous?.audit || []), { action: previous ? "external-production-order-amended" : "external-production-order-created", at: now, by: actor.uid, previousState: previous?.status, newState: status, reason: `Materialised from ${input.sourceDomain}.` }],
     };
+    if (input.sourceDomain === "menu-planning") {
+      if (input.guestCount === undefined) delete order.guestCount;
+      else order.guestCount = input.guestCount;
+    }
     const event = createDomainEvent({ eventType: status === "cancelled" ? "production.order.withdrawn" : previous ? "production.order.amended" : "production.order.created", sourceAggregateId: canonicalId, sourceVersion: order.version, occurredAt: now, correlationId: order.idempotencyKey, payload: { canonicalId, version: order.version, status, productionOrder: order } });
     await stageFulfilmentEvent(transaction, event);
     transaction.set(ref, order);

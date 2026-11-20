@@ -36,6 +36,14 @@ test("portion-only v7 to v9 amendment updates demand while preserving complete e
   assert.equal(result.destinations[0].allergenApproval, "preserved");
 });
 
+test("PAX-only amendment preserves equivalent allergen approval for the affected site", () => {
+  const prior = { ...day([base()]), destinationPax: { "governed:oploc:bank": 55 } };
+  const next = { ...day([base()], "v8"), destinationPax: { "governed:oploc:bank": 60 } };
+  const impact = amendmentImpactForDays([prior], [next]);
+  assert.deepEqual(impact.destinations.map(value => [value.siteId, value.productionDemand, value.allergenApproval]), [["governed:oploc:bank", "pax_only", "preserved"]]);
+  assert.equal(impact.freshAllergenReviewCount, 0);
+});
+
 test("a changed dish or ingredient fingerprint requires fresh review", () => {
   const changedDish = base({ sourceEntryId: "entry:fish", canonicalDishId: "dish:fish", dishName: "Fish soup", allergenEvidenceHash: "b".repeat(64) });
   const result = amendmentImpactForDays([day([base()])], [day([changedDish], "v10")]);

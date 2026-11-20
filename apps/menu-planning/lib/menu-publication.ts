@@ -27,6 +27,7 @@ import {
   type Stored as RollingMenuStored,
 } from "./rolling-menu";
 import type { GovernedOploc } from "./oploc-authority";
+import { menuSiteIdentity, menuSiteKey, type SitePax } from "./site-pax";
 import { CANONICAL_MENU_SLOTS, canonicalMenuSlotIdFor, MENU_ORDER_VERSION, orderMenuEntries } from "../../shared/menu-section-order";
 import { renderPdfLocally } from "./local-pdf";
 import { resolveAllergenSnapshot } from "./allergen-resolution";
@@ -57,6 +58,7 @@ import {
 import {
   decodeWeeklyPublicationPacket,
   encodeWeeklyPublicationPacket,
+  type RetainedMenuSiteLineage,
   type WeeklyPublicationPacket,
 } from "@fika/server-shared/weekly-publication-packet";
 
@@ -136,6 +138,8 @@ export type CompiledPublishedWeekSnapshot = {
     date: string;
     dayName: string;
     version: number;
+    destinationPax?: SitePax;
+    retainedSiteLineage?: RetainedMenuSiteLineage;
     entries: PublishedMenuEntry[];
   }>;
 };
@@ -161,6 +165,8 @@ export type PublishedMenuDay = {
   contentHash: string;
   publishedAt: string;
   publishedBy: string;
+  destinationPax?: SitePax;
+  retainedSiteLineage?: RetainedMenuSiteLineage;
   entries: PublishedMenuEntry[];
   allergenSignoff?: MenuPublicationSignoff;
   driveArchive?: DriveArchive;
@@ -378,7 +384,8 @@ function orderedEntriesForDay(snapshot: RollingSnapshot, day: RollingDay) {
   }))).map(({ entry }) => entry);
 }
 function historicalDayMatchesWorkingOrder(current: PublishedMenuDay, day: RollingDay, snapshot: RollingSnapshot, workingHash: string) {
-  const originalContent = normalizePublicationValue({ sourceDayId: current.sourceDayId, date: current.date, dayName: current.dayName, entries: current.entries });
+  const { sourceDayId, date, dayName, destinationPax } = current;
+  const originalContent = normalizePublicationValue({ sourceDayId, date, dayName, entries: current.entries, destinationPax });
   if (contentHash(originalContent) !== current.contentHash) return false;
   const entryPosition = new Map((day.entryIds || []).map((id, index) => [id, index]));
   const slotPosition = new Map([...slotsForWeek(snapshot.week), ...(snapshot.week.customSlots || [])].map((slot, index) => [slot, index]));
@@ -390,7 +397,7 @@ function historicalDayMatchesWorkingOrder(current: PublishedMenuDay, day: Rollin
     const slotDifference = (slotPosition.get(left.slot) ?? Number.MAX_SAFE_INTEGER) - (slotPosition.get(right.slot) ?? Number.MAX_SAFE_INTEGER);
     return slotDifference || compareStableText(left.slot, right.slot) || compareStableText(left.sourceEntryId, right.sourceEntryId);
   });
-  return contentHash(normalizePublicationValue({ sourceDayId: current.sourceDayId, date: current.date, dayName: current.dayName, entries })) === workingHash;
+  return contentHash(normalizePublicationValue({ sourceDayId, date, dayName, entries, destinationPax })) === workingHash;
 }
 export function buildPublishedDay(snapshot: RollingSnapshot, day: RollingDay, canonicalDishes: readonly MenuItem[] = [], options: PublicationBuildOptions = {}) {
   const entries = orderedEntriesForDay(snapshot, day).map((entry) => {
@@ -406,6 +413,7 @@ export function buildPublishedDay(snapshot: RollingSnapshot, day: RollingDay, ca
     sourceDayId: day.id,
     date: day.date,
     dayName: day.dayName,
+    destinationPax: day.destinationPax,
     entries,
   });
   return { ...stableDay, contentHash: contentHash(stableDay) };
@@ -467,6 +475,8 @@ export function buildCompiledPublicationSnapshot(
         dayName: day.dayName,
         version: day.version,
         contentHash: day.contentHash,
+        destinationPax: day.destinationPax,
+        retainedSiteLineage: day.retainedSiteLineage,
         entries: clone(day.entries),
       })),
   });
@@ -649,6 +659,9 @@ function appendPublicationEvents(
     : allDestinations;
   for (const destinationOplocId of destinations) {
     const active = currentDestinations.includes(destinationOplocId);
+    const allocation = day.entries.flatMap(entry => entry.allocations).find(allocation => menuDestinationKey(allocation) === destinationOplocId);
+    const guestCount = allocation && action !== "withdrawn" ? day.destinationPax?.[publishedSiteIdentity(allocation)] : undefined;
+    const lineage = action === "withdrawn" || !active ? day : day.retainedSiteLineage?.[destinationOplocId] || day;
     addEvent(
       createDomainEvent({
         eventType: "production.materialise",
@@ -661,17 +674,13 @@ function appendPublicationEvents(
           sourceDomain: "menu-planning",
           sourceEntityId: day.sourceDayId,
           publicationId: publication.publicationId,
-          sourcePublicationDayId: day.publicationDayId,
-          sourceVersion: day.version,
-          sourceContentHash: day.contentHash,
+          sourcePublicationDayId: lineage.publicationDayId,
+          sourceVersion: lineage.version,
+          sourceContentHash: lineage.contentHash,
           destinationOplocId,
-          destination: day.entries.flatMap(entry => entry.allocations).find(allocation => menuDestinationKey(allocation) === destinationOplocId)?.destination || publication.days.flatMap(previous => previous.entries.flatMap(entry => entry.allocations)).find(allocation => menuDestinationKey(allocation) === destinationOplocId)?.destination,
-          destinationLabel:
-            day.entries
-              .flatMap((entry) => entry.allocations)
-              .find(
-                (allocation) => menuDestinationKey(allocation) === destinationOplocId,
-              )?.destinationLabel || destinationOplocId,
+          destination: allocation?.destination || publication.days.flatMap(previous => previous.entries.flatMap(entry => entry.allocations)).find(allocation => menuDestinationKey(allocation) === destinationOplocId)?.destination,
+          destinationLabel: allocation?.destinationLabel || destinationOplocId,
+          guestCount,
           serviceDate: day.date,
           status: active
             ? action === "withdrawn"
@@ -714,9 +723,9 @@ function appendPublicationEvents(
                         ...(entry.mayContainNotes !== undefined
                           ? { mayContainNotes: entry.mayContainNotes }
                           : {}),
-                        sourcePublicationDayId: day.publicationDayId,
-                        sourceVersion: day.version,
-                        sourceContentHash: day.contentHash,
+                        sourcePublicationDayId: lineage.publicationDayId,
+                        sourceVersion: lineage.version,
+                        sourceContentHash: lineage.contentHash,
                       }),
                     }),
                   ),
@@ -811,7 +820,7 @@ export type PublishedDemandEvidence = Pick<PublishedMenuEntry,
   "mayContainNotes" | "allergenDetailNotes" | "allergenEvidenceHash" | "canonicalIngredientRecipeHash" | "allergenEvidenceComplete"
 >;
 export type PublishedWeekDemandOperation = {
-  kind: "added" | "removed" | "replaced" | "quantity_changed" | "details_changed";
+  kind: "added" | "removed" | "replaced" | "quantity_changed" | "details_changed" | "pax_changed";
   sourceDayId: string;
   date: string;
   dayName: string;
@@ -820,6 +829,8 @@ export type PublishedWeekDemandOperation = {
   slot: string;
   before?: { date: string; dayName: string; dishId: string; dishName: string; quantity: number; entries: PublishedDemandEvidence[] };
   after?: { date: string; dayName: string; dishId: string; dishName: string; quantity: number; entries: PublishedDemandEvidence[] };
+  beforePax?: number;
+  afterPax?: number;
 };
 /** A read-only, source-version-pinned description for a future scoped publisher. */
 export type PublishedWeekDemandChangeSet = {
@@ -836,7 +847,7 @@ export type PublishedWeekAmendmentImpact = {
   dayName: string;
   siteId: string;
   siteLabel: string;
-  productionDemand: "unchanged" | "quantity_only" | "operational_details" | "service_date_changed" | "dish_set_changed" | "new_allocation" | "withdrawal";
+  productionDemand: "unchanged" | "quantity_only" | "pax_only" | "operational_details" | "service_date_changed" | "dish_set_changed" | "new_allocation" | "withdrawal";
   allergenApproval: "preserved" | "fresh_review_required" | "withdrawn";
   reason: string;
 };
@@ -854,7 +865,7 @@ type DemandLine = {
 const publishedDishIdentity = (entry: PublishedMenuEntry) => entry.canonicalDishId || `legacy-name:${entry.dishName.trim().toLocaleLowerCase()}`;
 const publishedSiteIdentity = (entry: PublishedMenuEntry["allocations"][number]) => {
   const id = menuDestinationKey(entry);
-  return id ? `${entry.destination?.kind || "governed"}:${id}` : `unresolved:${entry.destinationLabel.trim().toLocaleLowerCase()}|${(entry.destinationAddress || "").trim().toLocaleLowerCase()}`;
+  return id ? menuSiteKey(entry.destination?.kind || "governed", id) : `unresolved:${entry.destinationLabel.trim().toLocaleLowerCase()}|${(entry.destinationAddress || "").trim().toLocaleLowerCase()}`;
 };
 const demandSort = (left: DemandLine, right: DemandLine) =>
   compareStableText(left.sourceDayId, right.sourceDayId) || compareStableText(left.siteId, right.siteId) ||
@@ -918,8 +929,8 @@ function makeDemandOperations(before: DemandLine[], after: DemandLine[]): Publis
   for (const line of added) if (!replacedNew.has(line)) operations.push({ kind: "added", sourceDayId: line.sourceDayId, date: line.date, dayName: line.dayName, siteId: line.siteId, siteLabel: line.siteLabel, slot: line.slot, after: demandPayload(line) });
   return operations.sort((a, b) => compareStableText(a.sourceDayId, b.sourceDayId) || compareStableText(a.siteId, b.siteId) || compareStableText(a.slot, b.slot) || compareStableText(a.kind, b.kind) || compareStableText(a.after?.dishId || a.before?.dishId || "", b.after?.dishId || b.before?.dishId || ""));
 }
-export function amendmentImpactForDays(beforeDays: readonly Pick<PublishedMenuDay, "sourceDayId" | "date" | "dayName" | "contentHash" | "entries">[], afterDays: readonly Pick<PublishedMenuDay, "sourceDayId" | "date" | "dayName" | "contentHash" | "entries">[]): PublishedWeekAmendmentImpactSummary {
-  type ImpactDay = Pick<PublishedMenuDay, "sourceDayId" | "date" | "dayName" | "contentHash" | "entries">;
+type ImpactDay = Pick<PublishedMenuDay, "sourceDayId" | "date" | "dayName" | "contentHash" | "entries" | "destinationPax">;
+export function amendmentImpactForDays(beforeDays: readonly ImpactDay[], afterDays: readonly ImpactDay[]): PublishedWeekAmendmentImpactSummary {
   const grouped = (days: readonly ImpactDay[]) => {
     type ImpactEntry = { entry: PublishedMenuEntry; quantity: number; allocation: PublishedMenuEntry["allocations"][number] };
     type SiteImpactGroup = { day: ImpactDay; siteId: string; siteLabel: string; entries: ImpactEntry[] };
@@ -960,6 +971,7 @@ export function amendmentImpactForDays(beforeDays: readonly Pick<PublishedMenuDa
     else if (prior && next && prior.day.date !== next.day.date) productionDemand = "service_date_changed";
     else if (prior && next && demandQuantityChanged) productionDemand = "quantity_only";
     else if (prior && next && contentHash(demandDetails(prior)) !== contentHash(demandDetails(next))) productionDemand = "operational_details";
+    else if (prior && next && prior.day.destinationPax?.[current.siteId] !== next.day.destinationPax?.[current.siteId]) productionDemand = "pax_only";
 
     let allergenApproval: PublishedWeekAmendmentImpact["allergenApproval"];
     let reason: string;
@@ -1027,17 +1039,30 @@ export function compareWorkingWeekToPublication(
   const candidateDays = normalized.days.slice(0, 5).map(day => ({ day, preview: buildPublishedDay(normalized, day, canonicalDishes) }));
   const before = baselineDays.flatMap(day => demandLines(day.sourceDayId, day.date, day.dayName, day.entries || []));
   const after = candidateDays.flatMap(({ day, preview }) => demandLines(day.id, preview.date, preview.dayName, preview.entries));
+  const paxOperations = candidateDays.flatMap(({ day, preview }) => {
+    const previous = currentDays.get(day.id);
+    const beforePax = previous?.destinationPax || {};
+    const afterPax = preview.destinationPax || {};
+    const labels = new Map([
+      ...governedOplocs.map(oploc => [menuSiteKey("governed", oploc.canonicalId), oploc.label] as const),
+      ...(day.oneOffDestinations || []).map(destination => [menuSiteKey("one-off", destination.id), destination.label] as const),
+      ...[...(previous?.entries || []), ...preview.entries].flatMap(entry => entry.allocations.map(allocation => [publishedSiteIdentity(allocation), allocation.destinationLabel] as const)),
+    ]);
+    return [...new Set([...Object.keys(beforePax), ...Object.keys(afterPax)])].sort(compareStableText)
+      .filter(siteId => beforePax[siteId] !== afterPax[siteId])
+      .map(siteId => ({ kind: "pax_changed" as const, sourceDayId: day.id, date: day.date, dayName: day.dayName, siteId, siteLabel: labels.get(siteId) || siteId, slot: "PAX", beforePax: beforePax[siteId], afterPax: afterPax[siteId] }));
+  });
   const changeSet: PublishedWeekDemandChangeSet = {
     ...(publication?.publicationId ? { publicationId: publication.publicationId } : {}),
     publicationVersion: publication?.publicationVersion || 0,
     sourceWeekId: normalized.week.id,
     sourceWeekVersion: normalized.week.version,
     days: baselineDays.map(day => ({ sourceDayId: day.sourceDayId, publicationDayId: day.publicationDayId, publicationDayVersion: day.version, contentHash: day.contentHash })),
-    operations: makeDemandOperations(before, after),
+    operations: [...makeDemandOperations(before, after), ...paxOperations],
   };
   const impactSummary = amendmentImpactForDays(
     baselineDays,
-    candidateDays.map(({ day, preview }) => ({ sourceDayId: day.id, date: preview.date, dayName: preview.dayName, contentHash: preview.contentHash, entries: preview.entries })),
+    candidateDays.map(({ preview }) => preview),
   );
   return {
     hasUnpublishedChanges: Object.values(dayHasUnpublishedChanges).some(Boolean),
@@ -1100,6 +1125,17 @@ export type PublishedWeekAmendmentPreview = {
   publicationVersion: number;
 };
 
+export function assertAmendmentPaxScope(changeSet: PublishedWeekDemandChangeSet, allowedOplocs?: ReadonlySet<string>) {
+  if (!allowedOplocs) return;
+  for (const change of changeSet.operations) {
+    if (change.kind !== "pax_changed") continue;
+    const site = menuSiteIdentity(change.siteId);
+    if (site?.kind !== "governed" || !allowedOplocs.has(site.id)) {
+      throw Object.assign(new Error("This amendment contains PAX outside your permitted OPLOC scope."), { status: 403 });
+    }
+  }
+}
+
 /** Preview a saved amendment against the current immutable publication lineage. */
 export async function previewPublishedWeekAmendment(
   weekId: string,
@@ -1130,6 +1166,7 @@ export async function publishScopedPublishedWeekAmendment(
   actor = "local-menu-planner",
   governedOplocIds?: Set<string>,
   governedOplocs: readonly GovernedOploc[] = [],
+  allowedPaxOplocs?: ReadonlySet<string>,
 ) {
   if (!input.requestId.trim() || input.requestId.length > 160 || !Number.isSafeInteger(input.sourceWeekVersion) || !Number.isSafeInteger(input.publicationVersion) || !/^[a-f0-9]{64}$/.test(input.changeSetHash))
     throw Object.assign(new Error("The amendment review request is invalid."), { status: 400 });
@@ -1150,6 +1187,7 @@ export async function publishScopedPublishedWeekAmendment(
     if (snapshot.week.version !== input.sourceWeekVersion || (publication.publicationVersion || 1) !== input.publicationVersion)
       throw conflict("The published week changed after amendment review. Refresh, save and review the latest version.");
     const comparison = compareWorkingWeekToPublication(snapshot, publication, governedOplocs, canonicalDishes);
+    assertAmendmentPaxScope(comparison.changeSet, allowedPaxOplocs);
     if (contentHash(comparison.changeSet) !== input.changeSetHash)
       throw conflict("The amendment changed after review. Refresh and review the exact current demand before publishing.");
     const changedDayIds = Object.entries(comparison.dayHasUnpublishedChanges).filter(([, changed]) => changed).map(([dayId]) => dayId);
@@ -1166,8 +1204,15 @@ export async function publishScopedPublishedWeekAmendment(
       previews.set(dayId, buildPublishedDay(snapshot, day, canonicalDishes, { requireAuthoritativeCatalogue: hostedPublication(), allowExplicitReviewWithoutCatalogue: !hostedPublication() }));
     }
     const publishedAt = now();
+    const changedSites = new Map(changedDayIds.map(dayId => [dayId, new Set(comparison.changeSet.operations.filter(operation => operation.sourceDayId === dayId).map(operation => operation.siteId))]));
     const changedDays: PublishedMenuDay[] = changedDayIds.map(dayId => {
       const preview = previews.get(dayId)!;
+      const prior = currentDays.get(dayId)!;
+      const priorLineage = { publicationDayId: prior.publicationDayId, version: prior.version, contentHash: prior.contentHash };
+      const retainedSiteLineage = Object.fromEntries(preview.entries.flatMap(entry => entry.allocations).flatMap(allocation => {
+        const id = menuDestinationKey(allocation);
+        return id && !changedSites.get(dayId)!.has(publishedSiteIdentity(allocation)) ? [[id, prior.retainedSiteLineage?.[id] || priorLineage]] : [];
+      }));
       const highest = publication!.days.filter(day => day.sourceDayId === dayId).reduce((value, day) => Math.max(value, day.version), 0);
       const publicationDayIndex = snapshot.week.dayIds.indexOf(dayId);
       if (publicationDayIndex < 0) throw conflict("An amended day is outside the published week.");
@@ -1176,10 +1221,12 @@ export async function publishScopedPublishedWeekAmendment(
         sourceDayId: dayId, date: preview.date, dayName: preview.dayName,
         version: highest + 1, status: "published" as const,
         contentHash: preview.contentHash, publishedAt, publishedBy: actor,
+        destinationPax: preview.destinationPax,
+        ...(Object.keys(retainedSiteLineage).length ? { retainedSiteLineage } : {}),
         entries: clone(preview.entries),
       });
     });
-    const impactSummary = amendmentImpactForDays([...currentDays.values()], changedDays);
+    const impactSummary = amendmentImpactForDays(changedDayIds.map(dayId => currentDays.get(dayId)!), changedDays);
     publication.days = publication.days.map(day => changedDayIds.includes(day.sourceDayId) && day.status === "published" ? { ...day, status: "superseded" as const } : day).concat(changedDays);
     publication.publicationVersion = (publication.publicationVersion || 1) + 1;
     publication.publicationStatus = "published";
@@ -1190,8 +1237,7 @@ export async function publishScopedPublishedWeekAmendment(
     stored.snapshots[compiledSnapshot.snapshotId] = compiledSnapshot;
     const handoffEventIds: string[] = [];
     for (const day of changedDays) {
-      const siteIdentities = new Set(comparison.changeSet.operations.filter(operation => operation.sourceDayId === day.sourceDayId).map(operation => operation.siteId));
-      handoffEventIds.push(...appendPublicationEvents(stored, publication, day, "amended", actor, { siteIdentities }));
+      handoffEventIds.push(...appendPublicationEvents(stored, publication, day, "amended", actor, { siteIdentities: changedSites.get(day.sourceDayId) }));
     }
     const uniqueHandoffIds = [...new Set(handoffEventIds)];
     publication.audit.push({ action: "menu-week-scoped-amendment-published", at: publishedAt, by: actor, requestId: input.requestId, changeSetHash: input.changeSetHash, impactSummary, sourceWeekVersion: input.sourceWeekVersion, handoffEventIds: uniqueHandoffIds });
@@ -1291,6 +1337,7 @@ export async function createPublishedMenuDay(
         contentHash: preview.contentHash,
         publishedAt,
         publishedBy: actor,
+        destinationPax: preview.destinationPax,
         entries: clone(preview.entries),
         ...(Object.keys(signoff || {}).length
           ? { allergenSignoff: normalizePublicationValue(signoff) }
@@ -1436,6 +1483,7 @@ export async function createPublishedMenuWeek(
           contentHash: preview.contentHash,
           publishedAt,
           publishedBy: actor,
+          destinationPax: preview.destinationPax,
           entries: preview.entries,
         });
       });

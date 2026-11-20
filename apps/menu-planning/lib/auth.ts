@@ -56,6 +56,12 @@ export function assertActorCanAccessOploc(actor: MenuActor, oplocId?: string) {
   if (!actorCanAccessOploc(actor, oplocId)) throw failure("This Menu Planning identity is not authorised for the requested OPLOC.", 403);
 }
 
+export function scopeMenuSitePax(destinationPax: import("./site-pax").SitePax | undefined, actor: MenuActor) {
+  if (!destinationPax || actor.allOplocs) return destinationPax;
+  const visible = Object.fromEntries(Object.entries(destinationPax).filter(([key]) => key.startsWith("governed:") && actorCanAccessOploc(actor, key.slice("governed:".length))));
+  return Object.keys(visible).length ? visible : undefined;
+}
+
 export function scopeMenuPublication(publication: MenuPublication, actor: MenuActor): MenuPublication {
   if (actor.allOplocs) return publication;
   return {
@@ -65,9 +71,11 @@ export function scopeMenuPublication(publication: MenuPublication, actor: MenuAc
     weekPacket: undefined,
     days: publication.days.map(day => ({
       ...day,
+      destinationPax: scopeMenuSitePax(day.destinationPax, actor),
+      ...(day.retainedSiteLineage ? { retainedSiteLineage: Object.fromEntries(Object.entries(day.retainedSiteLineage).filter(([id]) => actorCanAccessOploc(actor, id))) } : {}),
       entries: day.entries
         .map(entry => ({ ...entry, allocations: entry.allocations.filter(allocation => actorCanAccessOploc(actor, allocation.destinationId)) }))
         .filter(entry => entry.allocations.length > 0 || entry.allocations.length === day.entries.find(candidate => candidate.sourceEntryId === entry.sourceEntryId)?.allocations.length),
-    })).filter(day => day.entries.length > 0),
+    })).filter(day => day.entries.length > 0 || day.destinationPax),
   };
 }

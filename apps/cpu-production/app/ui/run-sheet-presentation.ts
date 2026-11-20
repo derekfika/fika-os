@@ -66,6 +66,10 @@ export function referenceAlias(identity: string) {
 
 export function collectionDetails(order: ProductionOrder) {
   const hospitality = order.origin === "hospitality_booking";
+  const guests = order.guestCount;
+  const pax = (hospitality || order.origin === "menu_planning") && typeof guests === "number" && Number.isSafeInteger(guests) && guests > 0
+    ? guests.toLocaleString("en-GB")
+    : undefined;
   const source = (hospitality ? order.sourceBookingId : order.sourceEntityId || order.sourceBookingId)?.trim();
   const reference = order.origin !== "menu_planning" && source && /^[\w-]{1,32}$/.test(source) && source !== order.canonicalId
     ? source
@@ -79,6 +83,7 @@ export function collectionDetails(order: ProductionOrder) {
     serviceWindow: order.requiresDelivery !== false ? recordedServiceWindow(order) : undefined,
     client: hospitality ? order.clientName : undefined,
     event,
+    ...(pax ? { pax } : {}),
     reference: order.sourceVersion === undefined ? reference : `${reference} · v${order.sourceVersion}`,
   };
 }

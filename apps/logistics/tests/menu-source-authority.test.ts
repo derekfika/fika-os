@@ -67,6 +67,25 @@ test("a current active Menu Planning order remains eligible", async () => {
   });
 });
 
+test("same-day amendment preserves only the explicitly retained destination's authority", async () => {
+  const requirement = baseRequirement();
+  const amended = publication("superseded");
+  const old = amended.publication.days[0];
+  const current = {
+    ...old, publicationDayId: `${publicationId}:source-day:test:v5`, status: "published", version: 5, contentHash: "content-hash-v5",
+    retainedSiteLineage: { "oploc:test": { publicationDayId, version: 4, contentHash: old.contentHash } },
+  };
+  amended.publication.days.push(current);
+  await withFetch(url => url.includes("/api/production?") ? Response.json({ order: order(requirement) }) : Response.json(amended), async () => {
+    await assert.doesNotReject(() => assertMenuProductionAuthority([requirement]));
+    current.retainedSiteLineage["oploc:test"].contentHash = "wrong-prior-hash";
+    await assert.rejects(() => assertMenuProductionAuthority([requirement]), { status: 409 });
+    current.retainedSiteLineage["oploc:test"].contentHash = old.contentHash;
+    current.entries = [{ allocations: [{ destinationId: "oploc:other-site" }] }];
+    await assert.rejects(() => assertMenuProductionAuthority([requirement]), { status: 409 });
+  });
+});
+
 test("a current active Delivered-In requirement resolves publication day through its Production Order lineage", async () => {
   const productionOrderId = "production-order:v1:menu-planning:source-day:test:oploc:test";
   const requirement:FulfilmentRequirement = {

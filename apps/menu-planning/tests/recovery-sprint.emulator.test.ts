@@ -32,6 +32,10 @@ test("emulator: weekly publication, one-off amendment and signed allergen handof
     const { GOVERNED_OPLOCS } = await importApp("../../../packages/server-shared/src/governed-oplocs");
     const { parseExternalProductionMaterialisation, approvedAllergenSnapshotSchema } = await importApp("../../../packages/server-shared/src/external-production");
     const cpuDecoder = await importApp("../../cpu-production/lib/menu-planning-week-packet");
+    const { buildCpuDayProjection } = await importApp("../../cpu-production/lib/cpu-projection");
+    const { cpuProjectionToOrders } = await importApp("../../cpu-production/lib/cpu-dashboard-adapter");
+    const { collectionPrintHtml } = await importApp("../../cpu-production/app/ui/day-production-print");
+    const { decodeWeeklyPublicationPacket } = await importApp("../../../packages/server-shared/src/weekly-publication-packet");
     const diDecoder = await importApp("../../delivered-in/lib/menu-planning-week-packet");
     const { projectPublishedWeeks, assertAuthorisedOploc } = await importApp("../../delivered-in/lib/projection");
     const { stampAllergenReviews } = await importApp("../../cpu-production/app/lib/allergen-review-stamp");
@@ -66,17 +70,35 @@ test("emulator: weekly publication, one-off amendment and signed allergen handof
     await mkdir(dirname(catalogue), { recursive: true });
     await writeFile(catalogue, JSON.stringify({ items: [0, 1].map(index => ({ canonicalId: `dish:fixture:${index}`, displayName: `Synthetic dish ${index}`, reviewStatus: "approved" })) }));
     await menu.saveSnapshot(snapshot);
+    const siteKeys = governed.map(site => `governed:${site.id}`);
+    const previousDay = snapshot.days[1], paxDay = snapshot.days[2];
+    const oneOffId = paxDay.oneOffDestinations![0].id;
+    const initialPax = await saveWeekDraft({
+      weekId: snapshot.week.id, expectedWeekVersion: snapshot.week.version, requestId: randomUUID(),
+      changes: { creates: [], updates: [], destinationPax: [
+        { dayId: previousDay.id, destinationId: governed[0].id, kind: "governed", pax: 42 },
+        { dayId: paxDay.id, destinationId: governed[0].id, kind: "governed", pax: 60 },
+        { dayId: paxDay.id, destinationId: governed[1].id, kind: "governed", pax: 35 },
+        { dayId: paxDay.id, destinationId: oneOffId, kind: "one-off", pax: 20 },
+      ] },
+    }, "isolated-planner", ids);
+    assert.deepEqual(initialPax.snapshot.entries, snapshot.entries, "PAX-only save leaves authored portions and review intact");
     const { MenuPlanningFirestoreRepository } = await import("../lib/firestore-operational-store");
     const menuRepository = new MenuPlanningFirestoreRepository();
-    await menuRepository.createRollingSnapshot(snapshot);
+    await menuRepository.createRollingSnapshot(initialPax.snapshot);
     const storedWeek = await menuRepository.getWeekSnapshot(snapshot.week.id);
     assert.deepEqual(storedWeek!.entries[0].allocations[2], snapshot.entries[0].allocations[2]);
     assert.equal(Object.hasOwn(storedWeek!.entries[0].allocations[2], "destinationId"), false);
     assert.deepEqual(storedWeek!.entries[1].noKeyDeclaration, snapshot.entries[1].noKeyDeclaration);
+    assert.deepEqual(storedWeek!.days.find(day => day.id === paxDay.id)!.destinationPax, { [siteKeys[0]]: 60, [siteKeys[1]]: 35, [`one-off:${oneOffId}`]: 20 });
     await menuRepository.db.terminate();
     const publication = await publications.createPublishedMenuWeek(snapshot.week.id, {}, "isolated-planner", ids);
     assert.equal(publication.days.filter(day => day.status === "published").length, 5);
     const cpuPacket = cpuDecoder.decodeMenuPlanningWeekPacket(publication.weekPacket);
+    const rawPacket = decodeWeeklyPublicationPacket(publication.weekPacket);
+    assert.deepEqual(rawPacket.days.find(day => day.sourceDayId === paxDay.id).destinationPax, { [siteKeys[0]]: 60, [siteKeys[1]]: 35, [`one-off:${oneOffId}`]: 20 });
+    assert.equal(rawPacket.days.find(day => day.sourceDayId === previousDay.id).destinationPax[siteKeys[0]], 42);
+    assert.equal(Object.hasOwn(rawPacket.days[0], "destinationPax"), false, "legacy-shaped days omit the optional field");
     assert.equal(cpuPacket.days.length, 5);
     assert.deepEqual(cpuPacket.days.flatMap(day => day.entries.filter(entry => entry.isCoreSalad).map(entry => entry.sourceEntryId)), [snapshot.entries[1].id]);
     const decoded = diDecoder.decodeMenuPlanningWeekPacket(publication.weekPacket);
@@ -96,8 +118,15 @@ test("emulator: weekly publication, one-off amendment and signed allergen handof
       const persisted = (await db.collection("fikaProductionOrdersV1").doc(stableDocumentId(first.order.canonicalId)).get()).data()!;
       assert.deepEqual(persisted.destination, payload.destination);
       assert.deepEqual(persisted.lines[0].approvedAllergenSnapshot.allergens, payload.lines[0].approvedAllergenSnapshot!.allergens);
+      assert.equal(persisted.guestCount, payload.guestCount);
       materialised.push({ order: first.order, payload });
     }
+    const paxOrders = materialised.filter(({ order }) => order.serviceDate === paxDay.date).map(({ order }) => order);
+    const displayedOrders = cpuProjectionToOrders(buildCpuDayProjection(paxDay.date, paxOrders));
+    assert.deepEqual(displayedOrders.map(order => order.guestCount).sort((a, b) => a - b), [20, 35, 60]);
+    for (const order of displayedOrders) assert.match(collectionPrintHtml(order), new RegExp(`PAX ${order.guestCount}\\b`));
+    assert.equal(materialised.find(({ payload }) => payload.sourceEntityId === previousDay.id && payload.destinationOplocId === governed[0].id).order.guestCount, 42);
+    assert.equal(materialised.find(({ payload }) => payload.sourceEntityId === snapshot.days[0].id).order.guestCount, undefined);
     const oneOff = materialised.find(value => value.payload.destination?.kind === "one-off" && value.payload.destination.addressStatus === "pending")!;
     const fridayOrder = materialised.find(value => value.payload.sourceEntityId === snapshot.days[3].id && value.payload.destination?.kind === "one-off")!;
     assert.equal(oneOff.order.destination?.kind, "one-off");
@@ -237,6 +266,44 @@ test("emulator: weekly publication, one-off amendment and signed allergen handof
     assert.equal(withdrawn.order.status, "cancelled");
     assert.equal((await db.collection("fikaFulfilmentRequirementsV1").where("sourceEntityId", "==", withdrawn.order.canonicalId).get()).docs[0].data().status, "withdrawn");
     assert.equal((await hub.materialiseExternalProductionOrder(actor, amendedEvent)).order.status, "cancelled", "replay cannot resurrect withdrawn work");
+
+    // Clear only Wednesday's first governed site's PAX. The other site's signed
+    // packet consumers must still resolve the exact old source hash and version.
+    const paxBase = await menu.getWeek(snapshot.week.id);
+    const paxDayBefore = amendedPublication.days.find(day => day.sourceDayId === paxDay.id && day.status === "published");
+    const paxClear = await saveWeekDraft({
+      weekId: snapshot.week.id, expectedWeekVersion: paxBase.week.version, requestId: randomUUID(), workingDraft: true,
+      changes: { creates: [], updates: [], destinationPax: [{ dayId: paxDay.id, destinationId: governed[0].id, kind: "governed", pax: null }] },
+    }, "isolated-planner", ids);
+    assert.deepEqual(paxClear.snapshot.entries, paxBase.entries);
+    const previewPax = await publications.previewPublishedWeekAmendment(snapshot.week.id);
+    assert.deepEqual(previewPax.changeSet.operations.map(op => [op.kind, op.sourceDayId, op.siteId, op.beforePax, op.afterPax]), [["pax_changed", paxDay.id, siteKeys[0], 60, undefined]]);
+    const beforePaxEvents = new Set((await publications.listMenuPublicationEvents()).map(event => event.eventId));
+    await assert.rejects(publications.publishScopedPublishedWeekAmendment(snapshot.week.id, { ...previewPax, requestId: randomUUID() }, "isolated-planner", ids, [], new Set([governed[1].id])), { status: 403 });
+    const paxAmendment = await publications.publishScopedPublishedWeekAmendment(snapshot.week.id, { ...previewPax, requestId: randomUUID() }, "isolated-planner", ids);
+    const clearEvents = (await publications.listMenuPublicationEvents()).filter(event => event.eventType === "production.materialise" && !beforePaxEvents.has(event.eventId));
+    assert.equal(clearEvents.length, 1);
+    const clearPayload = parseExternalProductionMaterialisation(clearEvents[0].payload);
+    assert.equal(clearPayload.destinationOplocId, governed[0].id);
+    assert.equal(clearPayload.sourceVersion, paxDayBefore.version + 1);
+    assert.notEqual(clearPayload.sourceContentHash, paxDayBefore.contentHash);
+    assert.equal(Object.hasOwn(clearPayload, "guestCount"), false);
+    const priorPaxOrder = paxOrders.find(order => order.destinationOplocId === governed[0].id);
+    const cleared = await hub.materialiseExternalProductionOrder(actor, clearPayload);
+    assert.equal(cleared.order.canonicalId, priorPaxOrder.canonicalId);
+    assert.deepEqual(cleared.order.lines.map(line => line.customerQuantity), priorPaxOrder.lines.map(line => line.customerQuantity));
+    assert.equal(Object.hasOwn(cleared.order, "guestCount"), false);
+    assert.equal((await hub.materialiseExternalProductionOrder(actor, clearPayload)).duplicate, true);
+    const delayedPax = materialised.find(({ order }) => order.canonicalId === cleared.order.canonicalId).payload;
+    assert.equal((await hub.materialiseExternalProductionOrder(actor, delayedPax)).order.guestCount, undefined);
+    assert.doesNotMatch(collectionPrintHtml(cpuProjectionToOrders(buildCpuDayProjection(paxDay.date, [cleared.order]))[0]), /PAX \d/);
+    const otherPaxOrder = paxOrders.find(order => order.destinationOplocId === governed[1].id);
+    assert.deepEqual(await hub.productionOrderDetail(otherPaxOrder.canonicalId), JSON.parse(JSON.stringify(otherPaxOrder)));
+    const paxWeek = diDecoder.packetPublication(diDecoder.decodeMenuPlanningWeekPacket(paxAmendment.weekPacket));
+    const unaffectedSite = projectPublishedWeeks([paxWeek], governed[1].id, ids, paxWeek.weekCommencing)[0].days.find(day => day.sourceDayId === paxDay.id);
+    const affectedSite = projectPublishedWeeks([paxWeek], governed[0].id, ids, paxWeek.weekCommencing)[0].days.find(day => day.sourceDayId === paxDay.id);
+    assert.deepEqual([unaffectedSite.publicationDayId, unaffectedSite.version, unaffectedSite.contentHash], [paxDayBefore.publicationDayId, paxDayBefore.version, paxDayBefore.contentHash]);
+    assert.deepEqual([affectedSite.publicationDayId, affectedSite.version, affectedSite.contentHash], [clearPayload.sourcePublicationDayId, clearPayload.sourceVersion, clearPayload.sourceContentHash]);
   } finally {
     process.chdir(originalCwd);
     // Retain isolated evidence for inspection; no production or shared test data was touched.
