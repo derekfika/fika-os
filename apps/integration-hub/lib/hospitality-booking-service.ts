@@ -1,6 +1,7 @@
 import { groupCommercialState, groupHash, validateBookingGroup, MAX_GROUP_SERVICES } from "./hospitality-group-commercial";
 import { groupAmendmentCommand, groupChargesCommand, type GroupAmendmentCommand, type GroupChargesCommand } from "./hospitality-group-amendment";
 import crypto from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { groupEventKey, groupNotificationRecord, groupSubmittedNotification } from "./booking-group-notifications";
 import { hospitalityGroupProjection } from "./hospitality-group-projection";
 import { explicitMenuProductionRouting } from "./connections-service";
@@ -9,6 +10,8 @@ import { BOOKING_LABELS, hospitalityPlatformOf, isGovernedRoutingPlatform, LINE_
 import { assertHospitalityBookingDate, prepareHospitalityAdminOrder, priceHistoricalRcoaCommercialOrder } from "./hospitality-booking-cutoffs";
 import type { HospitalityAdminAuthority } from "./hospitality-booking-authorization";
 import { trustedPublicOrder } from "./hospitality-price-trust";
+import { hospitalityPortalReadFromRecords } from "./hospitality-catalogue-service";
+import { assertFrozenStudioAmendment, bindStudioQuote, isStudioBookingPilot, prepareStudioBooking, studioPublicationsForBooking } from "./hospitality-studio-booking";
 import { angelCourtBookingConstraintRecords, loadAngelCourtBookingCatalogue, loadMnkBookingCatalogue, loadRcoaBookingCatalogue, mnkBookingPricingRecords, rcoaBookingConstraintRecords } from "./mnk-booking-catalogue";
 import { hospitalityMenuDate } from "../../shared/hospitality-menu-date";
 import { isHotForkBuffetBooking } from "../../shared/hot-fork-buffet";
@@ -742,6 +745,7 @@ export async function ingestMnkBooking(
   payload: MnkBookingPayload,
   expectedRcoaOplocId?: string,
   existingOnly = false,
+  authoriseStudioPilotBooking?: (transaction: Transaction) => Promise<string>,
 ): Promise<IngestionResult> {
   const portalSiteId = portalSiteKeyForPayload(payload);
   const isRcoa = portalSiteId === "rcoa";
@@ -751,10 +755,17 @@ export async function ingestMnkBooking(
   const bookingId = canonicalBookingId(payload.bookingId, portalSiteId);
   const now = new Date().toISOString();
   const result = await db.runTransaction(async (transaction) => {
-    const existingSnapshot = await transaction.get(bookings().doc(bookingId));
+    const bookingRef = bookings().doc(bookingId);
+    const existingSnapshot = await transaction.get(bookingRef);
     if (existingSnapshot.exists) {
       recordDataAccess({ app: "integration-hub", operation: "hospitality.ingest.transaction-reads", source: "FIRESTORE", dataset: "hospitality-ingest", documents: 1, estimatedBillableReads: 1, firestoreReadKind: "transaction" });
-      return ingestMnkBookingFromExisting(existingSnapshot.data() as CanonicalBooking, payload, []);
+      const existing = existingSnapshot.data() as CanonicalBooking;
+      if (existing.studioKitchenEvidenceVersion) {
+        if (!authoriseStudioPilotBooking) throw conflict("This Studio booking requires its authorised operator.");
+        await authoriseStudioPilotBooking(transaction);
+        if (!isDeepStrictEqual(existing.source.originalPayload, payload)) throw conflict("This Studio booking ID was already accepted for a different submission.");
+      }
+      return ingestMnkBookingFromExisting(existing, payload, []);
     }
     if (isRcoa && (!payload.event.floorLevel?.trim() || !payload.event.roomOrArea?.trim() || !isValidRcoaLocationPair(payload.event.floorLevel, payload.event.roomOrArea))) throw conflict("Choose a listed RCoA floor and a location on that floor.");
     if (existingOnly) throw conflict("The existing RCoA service could not be found. No booking was created; refresh and retry the original request.");
@@ -778,6 +789,7 @@ export async function ingestMnkBooking(
       ? "RCoA has no confirmed canonical destination OPLOC. Configure the governed source mapping for rcoa before submission."
       : "This delivery-requiring Hospitality Booking has no confirmed canonical destination OPLOC; resolve the governed site mapping before submission.");
     let pricingRecords = canonicalRecords;
+    let studioCatalogueRecords: CanonicalRecord[] | undefined;
     if (portalSiteId === "mnk") {
       const catalogue = await loadMnkBookingCatalogue(canonicalRecords, payload, destinationOplocId, async (field, ids) => {
         const snapshot = await transaction.get(canonical().where(field, "in", ids).limit(501));
@@ -785,6 +797,7 @@ export async function ingestMnkBooking(
         recordDataAccess({ app: "integration-hub", operation: "hospitality.ingest.catalogue-relations", source: "FIRESTORE", dataset: "hospitality-ingest", documents: snapshot.size, estimatedBillableReads: snapshot.size, firestoreReadKind: "transaction" });
         return snapshot.docs.map(document => document.data() as CanonicalRecord);
       });
+      studioCatalogueRecords = catalogue;
       pricingRecords = mnkBookingPricingRecords(catalogue, { oplocId: destinationOplocId, serviceDate: hospitalityMenuDate(new Date(now)) });
     } else if (portalSiteId === "angel-court") {
       const catalogue = await loadAngelCourtBookingCatalogue(canonicalRecords, payload, destinationOplocId, async (field, ids) => {
@@ -803,6 +816,7 @@ export async function ingestMnkBooking(
         return snapshot.docs.map(document => document.data() as CanonicalRecord);
       });
     }
+    studioCatalogueRecords ??= pricingRecords;
     // Old short-hour defaults must not override the noon policy for opaque canonical sandwich IDs.
     // Annotate only requested short-notice candidates from authoritative routing, never from client policy flags.
     const shortNoticeItems = pricingRecords.filter(record => {
@@ -825,6 +839,19 @@ export async function ingestMnkBooking(
     if (!result.created) return result;
     if (isRcoa) await assertRcoaBookingServiceVisibility(transaction, result.booking, canonicalRecords);
     await assertHospitalityBookingDate(transaction, result.booking, now, canonicalRecords);
+    const studioPilot = isStudioBookingPilot(result.booking);
+    if (studioPilot && !authoriseStudioPilotBooking) throw conflict("This Studio booking requires its authorised operator.");
+    const stageStudioEvidence = await prepareStudioBooking(transaction, bookingRef, result.booking, {
+      allowed: studioPilot,
+      actorId: studioPilot ? await authoriseStudioPilotBooking!(transaction) : undefined,
+      publications: studioPublicationsForBooking(db),
+      offerings: () => {
+        const records = studioCatalogueRecords!;
+        const withSite = records.some(record => record.canonicalId === destinationOplocId)
+          ? records : [...records, destinationSnapshot!.data() as CanonicalRecord];
+        return hospitalityPortalReadFromRecords(withSite, { oplocId: destinationOplocId, serviceDate: result.booking.service.eventDate }).offerings;
+      },
+    });
     // Grouped services are ingested one by one: the customer gets ONE request-received email, created in the same
     // transaction that commits the last service. Single-service bookings keep their per-booking notification.
     const groupLink = result.booking.bookingGroup;
@@ -834,10 +861,8 @@ export async function ingestMnkBooking(
       try { groupSubmitted = groupSubmittedNotification(result.booking, siblings.docs.map(document => document.data() as CanonicalBooking)); }
       catch (error) { console.error("hospitality.group-email.submitted-skipped", { bookingGroupId: groupLink.id, message: error instanceof Error ? error.message : String(error) }); }
     }
-    transaction.create(
-      bookings().doc(result.booking.canonicalId),
-      result.booking,
-    );
+    stageStudioEvidence();
+    transaction.create(bookingRef, result.booking);
     transaction.create(
       bookingAudit().doc(
         `${result.booking.canonicalId.replace(/[^A-Za-z0-9_-]/g, "_")}:1`,
@@ -1387,6 +1412,7 @@ async function prepareBookingAmendment(transaction: Transaction, actor: Actor, c
     vatTotal: 0,
     grossTotal: items.reduce((total, item) => total + item.lineTotal, 0),
   };
+  assertFrozenStudioAmendment(current, next);
   if (historicalRcoaCorrection) {
     const serviceKeys = ["eventDate", "startTime", "endTime", "oplocId", "portalSiteId", "portalSiteLabel", "operationalAreaId", "serviceArrangementId", "floorLevel", "roomOrArea", "deliveryPoint", "onsiteContactName", "onsiteContactPhone"] as const;
     if (serviceKeys.some(key => (current.service[key] ?? "") !== (next.service[key] ?? "")) || current.order.eventType !== next.order.eventType) {
@@ -1673,6 +1699,7 @@ export async function executeBookingWorkflow(
         stale: false,
         pdfStatus: "pending",
       };
+      await bindStudioQuote(transaction, ref, next, quote);
       next.order = {
         ...next.order,
         netTotal: snapshotData.totals.net.amount,

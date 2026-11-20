@@ -8,6 +8,7 @@ export type StudioKitchenSpec = {
 
 type StudioKitchenSelection = {
   selectionId: string;
+  customerQuantity?: number;
   subject: { dishId: string; revision: number; sourceHash: string };
   publication: { publicationId: string; publicationRevision: number; contentHash: string };
   release: { releaseId: string; matrixHash: string };
@@ -87,7 +88,7 @@ export function readStudioKitchenSpec(
   for (const value of spec.selections) {
     const selection = record(value);
     if (!selection) return undefined;
-    const { selectionId, name, kitchenDescription } = selection;
+    const { selectionId, customerQuantity, name, kitchenDescription } = selection;
     const subject = record(selection.subject);
     const publication = record(selection.publication);
     const release = record(selection.release);
@@ -95,10 +96,12 @@ export function readStudioKitchenSpec(
     if (!id(selectionId) || distinct.has(selectionId) || !text(name, 200) || !text(kitchenDescription, 12000) ||
         !subject || !id(subject.dishId) || !positiveInteger(subject.revision) || !hash(subject.sourceHash) ||
         !publication || !id(publication.publicationId) || !positiveInteger(publication.publicationRevision) || !hash(publication.contentHash) ||
-        !release || !id(release.releaseId) || !hash(release.matrixHash) || assortment === undefined) return undefined;
+        !release || !id(release.releaseId) || !hash(release.matrixHash) || assortment === undefined ||
+        (customerQuantity !== undefined && (!positiveInteger(customerQuantity) || (assortment && assortment.boxCount !== customerQuantity)))) return undefined;
     distinct.add(selectionId);
     selections.push({
       selectionId,
+      ...(customerQuantity !== undefined ? { customerQuantity } : {}),
       subject: { dishId: subject.dishId, revision: subject.revision, sourceHash: subject.sourceHash },
       publication: { publicationId: publication.publicationId, publicationRevision: publication.publicationRevision, contentHash: publication.contentHash },
       release: { releaseId: release.releaseId, matrixHash: release.matrixHash },
