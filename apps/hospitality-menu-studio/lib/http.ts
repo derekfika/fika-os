@@ -1,7 +1,9 @@
 import { z } from "zod";
 import type { CatalogueLoadResult } from "@fika/server-shared/hospitality-catalogue-client";
+import { studioDishReviewSubject } from "../../shared/hospitality-menu-studio-safety";
 import { catalogueUnavailable, siteOfferings, studioCatalogueOptions } from "./catalogue";
 import type { Dish, Menu, Review, StudioActor } from "./contract";
+import type { cpuDishReview } from "./cpu-dish-review";
 import { StudioProblem } from "./problem";
 import type { PublicationImpactTarget, PublicationRequest } from "./publication";
 import { draftCustomerChoices, draftReadiness, menuDishIds } from "./review";
@@ -37,6 +39,7 @@ export function studioHandlers(
   assertCommand?: (command: StudioCommand) => void,
   safetyAvailable: () => boolean = () => false,
   readImpact?: (request: Request, target: PublicationImpactTarget) => Promise<Review["impact"]>,
+  stagedReview?: () => ReturnType<typeof cpuDishReview> | undefined,
 ) {
   const publicationInputs = async (request: Request, actor: StudioActor, command: PublicationRequest, db: StudioStore) => {
     const catalogue = readCatalogue?.(request).catch(() => undefined);
@@ -70,7 +73,8 @@ export function studioHandlers(
         return readCatalogue(request);
       };
       if ("list" in query && query.list === "catalogue") return studioCatalogueOptions((await catalogue()).catalogue);
-      if ("reviewVersion" in query && !safetyAvailable()) return { status: "unavailable" };
+      const stageChecker = "reviewVersion" in query ? stagedReview?.() : undefined;
+      if ("reviewVersion" in query && !stageChecker && !safetyAvailable()) return { status: "unavailable" };
       if (("kitchenDishId" in query || ("list" in query && query.list === "published-kitchen-dishes")) && !safetyAvailable()) {
         throw blocked("Published kitchen specifications are unavailable.");
       }
@@ -96,6 +100,7 @@ export function studioHandlers(
         const dish = await db.read<Dish>("dishes", query.dishId);
         if (!("reviewVersion" in query)) return { item: dish };
         if (dish.version !== query.reviewVersion) throw new StudioProblem(409, "DRAFT_CONFLICT", "The dish changed. Reload its latest saved revision.");
+        if (stageChecker) return stageChecker.status(studioDishReviewSubject(dish));
         return (await db.dishSafety([dish])).get(dish.id);
       }
       if ("kitchenDishId" in query) {
@@ -159,6 +164,8 @@ export function studioHandlers(
       }
       if (!actor.canManage) throw denied("Studio authoring is read-only for this environment or account.");
       if (command.action === "submit-dish-review") {
+        const stageChecker = stagedReview?.();
+        if (stageChecker) return stageChecker.submit(await store().prepareDishReview(command.dishId, command.version, actor.id));
         if (!safetyAvailable()) throw blocked("The CPU allergen checker connection is unavailable.");
         const subject = await store().requestDishReview(command.dishId, command.version, actor.id);
         return { subject };

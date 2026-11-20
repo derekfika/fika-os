@@ -1,5 +1,5 @@
 import { getApps, initializeApp } from "firebase-admin/app";
-import { FieldPath, getFirestore, type DocumentReference, type Firestore, type Transaction } from "firebase-admin/firestore";
+import { FieldPath, getFirestore, type DocumentReference, type DocumentSnapshot, type Firestore, type Transaction } from "firebase-admin/firestore";
 import { isDeepStrictEqual } from "node:util";
 import type { CatalogueLoadResult } from "@fika/server-shared/hospitality-catalogue-client";
 import {
@@ -278,17 +278,8 @@ export class StudioStore {
     const requestRef = this.db.collection(studioDishReviewRequests).doc(key);
     return this.db.runTransaction(async transaction => {
       const [current, revision, existing] = await transaction.getAll(head, head.collection("revisions").doc(String(version)), requestRef);
-      const draft = dishSchema.safeParse(current.data()?.item);
-      if (!draft.success || draft.data.id !== dishId || draft.data.version !== version) throw conflict();
-      const archived = dishSchema.safeParse(revision.data()?.item);
-      if (!archived.success || !isDeepStrictEqual(archived.data, draft.data)) {
-        throw new StudioProblem(503, "DRAFT_REVISION_INTEGRITY", "The saved dish revision could not be verified.");
-      }
-      const dish = archived.data;
-      if (!dish.name || !dish.kitchenDescription || !assortmentIsComplete(dish)) {
-        throw new StudioProblem(422, "DISH_REVIEW_INCOMPLETE", "Add a dish name, kitchen description and complete fixed assortment before requesting review.");
-      }
-      const subject = studioDishReviewSubject(dish);
+      const request = this.dishReviewRequest(current, revision, dishId, version, actorId);
+      const { dish, subject } = request;
       if (existing.exists) {
         const saved = existing.data() as StudioDishReviewRequest;
         const requestedDish = dishSchema.safeParse(saved.dish);
@@ -298,13 +289,33 @@ export class StudioStore {
           throw new StudioProblem(503, "DISH_REVIEW_INTEGRITY", "The checker request could not be verified.");
         }
       } else {
-        transaction.create(requestRef, {
-          contract: "hospitality-menu-studio.dish-review-request.v1", subject, dish,
-          requestedBy: actorId, requestedAt: this.now().toISOString(),
-        } satisfies StudioDishReviewRequest);
+        transaction.create(requestRef, request);
       }
       return subject;
     });
+  }
+
+  async prepareDishReview(dishId: string, version: number, actorId: string) {
+    const head = this.draftHead("dishes", dishId);
+    return this.db.runTransaction(async transaction => {
+      const [current, revision] = await transaction.getAll(head, head.collection("revisions").doc(String(version)));
+      return this.dishReviewRequest(current, revision, dishId, version, actorId);
+    }, { readOnly: true });
+  }
+
+  private dishReviewRequest(current: DocumentSnapshot, revision: DocumentSnapshot, dishId: string, version: number, actorId: string) {
+    const draft = dishSchema.safeParse(current.data()?.item);
+    if (!draft.success || draft.data.id !== dishId || draft.data.version !== version) throw conflict();
+    const archived = dishSchema.safeParse(revision.data()?.item);
+    if (!archived.success || !isDeepStrictEqual(archived.data, draft.data)) {
+      throw new StudioProblem(503, "DRAFT_REVISION_INTEGRITY", "The saved dish revision could not be verified.");
+    }
+    const dish = archived.data;
+    if (!dish.name || !dish.kitchenDescription || !assortmentIsComplete(dish)) {
+      throw new StudioProblem(422, "DISH_REVIEW_INCOMPLETE", "Add a dish name, kitchen description and complete fixed assortment before requesting review.");
+    }
+    return { contract: "hospitality-menu-studio.dish-review-request.v1", subject: studioDishReviewSubject(dish), dish,
+      requestedBy: actorId, requestedAt: this.now().toISOString() } satisfies StudioDishReviewRequest;
   }
 
   async dishSafety(dishes: Dish[]) {

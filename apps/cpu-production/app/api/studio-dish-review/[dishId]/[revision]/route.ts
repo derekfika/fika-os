@@ -4,6 +4,8 @@ import { requireCpuStudioReviewer } from "../../../../../lib/cpu-access-client";
 import { getHubBaseUrl } from "../../../../../lib/hub-url";
 import { getFikaRuntimeConfig } from "../../../../../lib/runtime-config";
 import { studioDishId, studioDishRevision, studioDishReviewCommand, StudioDishReviewStore } from "../../../../../lib/studio-dish-review";
+import { stagingStudioReviewEnabled } from "../../../../../lib/studio-dish-review-staging";
+import { studioReviewStaging } from "../../../../../../shared/hospitality-menu-studio-staging";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,6 +15,7 @@ const noStore = { "Cache-Control": "private, no-store" };
 const loopback = /^(?:127\.0\.0\.1|localhost):\d+$/;
 
 function checkRuntime(request: NextRequest) {
+  if (stagingStudioReviewEnabled()) return studioReviewStaging.cpuOrigin;
   const config = getFikaRuntimeConfig();
   const host = request.headers.get("host") || new URL(request.url).host;
   if (config.mode !== "local" || config.projectId !== "demo-fika-os" || !loopback.test(config.firestoreHost)

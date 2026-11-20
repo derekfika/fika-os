@@ -63,11 +63,13 @@ export default function Studio({
   actor,
   demo,
   safetyAvailable,
+  publishedKitchenAvailable,
   checkerOrigin,
 }: {
   actor: StudioActor;
   demo: boolean;
   safetyAvailable: boolean;
+  publishedKitchenAvailable: boolean;
   checkerOrigin?: string;
 }) {
   const [page, setPage] = useState<Page>("home");
@@ -1009,7 +1011,7 @@ export default function Studio({
                 versions={draftVersions}
                 history={history}
                 historyLoaded={historyLoaded}
-                canPreviewPublishedKitchen={safetyAvailable}
+                canPreviewPublishedKitchen={publishedKitchenAvailable}
                 loadVersions={() => void loadHistory("versions")}
                 loadHistory={() => void loadHistory("history")}
                 compare={compareDrafts}

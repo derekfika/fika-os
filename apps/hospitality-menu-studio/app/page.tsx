@@ -1,7 +1,8 @@
 import { cookies, headers } from "next/headers";
+import { studioReviewStaging } from "../../shared/hospitality-menu-studio-staging";
 import { authoriseStudio, assertStudioRequestHost, studioSignIn } from "../lib/auth";
 import { StudioProblem } from "../lib/problem";
-import { localStudioCheckerOrigin, localStudioSafetyAvailable, studioRuntime } from "../lib/runtime";
+import { localStudioCheckerOrigin, localStudioSafetyAvailable, stagedStudioSafetyAvailable, studioRuntime } from "../lib/runtime";
 import Studio from "../components/studio";
 
 export const dynamic = "force-dynamic";
@@ -11,8 +12,11 @@ export default async function Home() {
     const runtime = studioRuntime();
     assertStudioRequestHost(runtime, (await headers()).get("host"));
     const actor = await authoriseStudio((await cookies()).get(runtime.name)?.value, runtime);
+    const localReview = localStudioSafetyAvailable();
+    const stagedReview = stagedStudioSafetyAvailable();
     return <Studio actor={actor} demo={runtime.fixture}
-      safetyAvailable={localStudioSafetyAvailable()} checkerOrigin={localStudioCheckerOrigin()} />;
+      safetyAvailable={localReview || stagedReview} publishedKitchenAvailable={localReview}
+      checkerOrigin={stagedReview ? studioReviewStaging.cpuOrigin : localStudioCheckerOrigin()} />;
   } catch (error) {
     const signIn = error instanceof StudioProblem && error.status === 401 ? studioSignIn(studioRuntime(), error) : null;
     const message = error instanceof StudioProblem ? error.message : "Studio could not be opened.";

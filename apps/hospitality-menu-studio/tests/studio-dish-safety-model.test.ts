@@ -6,9 +6,10 @@ import { localStudioCheckerOrigin, localStudioSafetyAvailable } from "../lib/run
 const local = { NODE_ENV: "test" as const, FIKA_RUNTIME_MODE: "local", FIREBASE_PROJECT_ID: "demo-fika-os", FIRESTORE_EMULATOR_HOST: "127.0.0.1:8896" };
 const subject = { dishId: "dish-1", revision: 3, sourceHash: "a".repeat(64) };
 
-test("review links bind an exact saved subject to a loopback CPU origin", () => {
+test("review links bind an exact saved subject to a loopback or the pinned staging CPU origin", () => {
   assert.equal(checkerLink("http://127.0.0.1:3400", subject, "dish-1", 3), "http://127.0.0.1:3400/allergens/studio/dish-1/3");
-  for (const origin of [undefined, "https://example.com", "http://localhost:3400/path", "http://127.0.0.1:99999"]) {
+  assert.equal(checkerLink("https://cpu-staging.fikacatering.com", subject, "dish-1", 3), "https://cpu-staging.fikacatering.com/allergens/studio/dish-1/3");
+  for (const origin of [undefined, "https://example.com", "https://cpu.fikacatering.com", "http://localhost:3400/path", "http://127.0.0.1:99999"]) {
     assert.equal(checkerLink(origin, subject, "dish-1", 3), undefined);
   }
   assert.equal(checkerLink("http://localhost:3400", subject, "dish-1", 4), undefined);
