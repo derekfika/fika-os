@@ -214,6 +214,10 @@ export function SectionEditor({
   back,
   preview,
   editDish,
+  browseDishes,
+  createDish,
+  active,
+  focusName,
   loadMore,
   catalogue,
   loadCatalogue,
@@ -235,6 +239,10 @@ export function SectionEditor({
   back: () => void;
   preview: () => void;
   editDish: (dish: Dish) => void;
+  browseDishes: () => void;
+  createDish: () => void;
+  active: boolean;
+  focusName: boolean;
   loadMore?: () => void;
   catalogue: { id: string; name: string }[];
   loadCatalogue: () => void;
@@ -260,10 +268,20 @@ export function SectionEditor({
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [view, setView] = useState<"overview" | "week">("week");
   const [adding, setAdding] = useState(false);
+  const [showName] = useState(focusName);
+  const sectionName = useRef<HTMLInputElement>(null);
+  const focusedName = useRef(false);
   const dishSearch = useRef<HTMLInputElement>(null);
   useEffect(() => {
-    if (adding) dishSearch.current?.focus();
-  }, [adding]);
+    if (active && showName && sectionName.current && !focusedName.current) {
+      sectionName.current.focus();
+      sectionName.current.select();
+      focusedName.current = true;
+    }
+  }, [active, showName]);
+  useEffect(() => {
+    if (active && adding) dishSearch.current?.focus();
+  }, [active, adding]);
 
   const byId = new Map(dishes.map((dish) => [dish.id, dish]));
   const grouped = groups.map(([id, name]) => ({
@@ -343,6 +361,18 @@ export function SectionEditor({
           <Icon name="eye" /> Customer preview
         </Button>
       </PageHeading>
+      {showName && (
+        <label className="fika-field">
+          Section name
+          <input
+            ref={sectionName}
+            className="fika-input"
+            value={section.name}
+            disabled={!canManage}
+            onChange={(event) => update({ name: event.target.value })}
+          />
+        </label>
+      )}
       <div className={styles.sectionControls}>
         {isRotation && (
           <div className={styles.fieldGroup}>
@@ -393,15 +423,17 @@ export function SectionEditor({
               </button>
             </div>
           </div>
-          <label className="fika-field">
-            Section name
-            <input
-              className="fika-input"
-              value={section.name}
-              disabled={!canManage}
-              onChange={(event) => update({ name: event.target.value })}
-            />
-          </label>
+          {!showName && (
+            <label className="fika-field">
+              Section name
+              <input
+                className="fika-input"
+                value={section.name}
+                disabled={!canManage}
+                onChange={(event) => update({ name: event.target.value })}
+              />
+            </label>
+          )}
           <label className="fika-field">
             Hub catalogue item
             <select
@@ -751,7 +783,31 @@ export function SectionEditor({
                   </div>
                 ))}
                 {!eligible.length && (
-                  <p>No available dishes match these filters.</p>
+                  <div>
+                    <p role="status">
+                      No available dishes match these filters.
+                    </p>
+                    <div className={styles.actions}>
+                      {(search || group !== "all" || temperature !== "all") && (
+                        <Button
+                          onClick={() => {
+                            setSearch("");
+                            setGroup("all");
+                            setTemperature("all");
+                            dishSearch.current?.focus();
+                          }}
+                        >
+                          Clear search and filters
+                        </Button>
+                      )}
+                      <Button onClick={browseDishes}>
+                        Browse dish collection
+                      </Button>
+                      <Button onClick={createDish} disabled={!canManage}>
+                        Create dish
+                      </Button>
+                    </div>
+                  </div>
                 )}
                 {loadMore && (
                   <Button disabled={busy} onClick={loadMore}>
