@@ -30,6 +30,7 @@ export type FulfilmentRequirement = {
   sourceEntityId: string;
   sourceVersion: number;
   sourceContentHash?: string;
+  studioRehearsal?: true;
   /** Explicit upstream classification; optional for pre-classification records. */
   workstream?: FulfilmentWorkstream;
   productionLocationId?: string;
@@ -92,6 +93,7 @@ export function productionOrderFulfilmentContentHash(order: ProductionOrderFulfi
     sourceDomain,
     sourceEntityId: order.sourceEntityId || order.canonicalId,
     canonicalId: order.canonicalId,
+    ...(order.studioRehearsal ? { studioRehearsal: true } : {}),
     productionLocationId: order.productionLocationId,
     destinationOplocId: order.destinationOplocId,
     ...(order.destination?.kind === "one-off" ? { destination: order.destination } : {}),
@@ -210,6 +212,7 @@ export function fulfilmentRequirementContentEqual(left: FulfilmentRequirement, r
 
 export type ProductionOrderFulfilmentSource = {
   canonicalId: string;
+  studioRehearsal?: true;
   version: number;
   sourceEntityId?: string;
   /** Menu day retained when the adapter uses the canonical order as its source entity. */
@@ -231,7 +234,7 @@ export type ProductionOrderFulfilmentSource = {
   lines: Array<{ canonicalId: string; sourceMenuItemId?: string; sourceOfferingId?: string; itemName: string; customerQuantity: number; customerUnit: string; productionQuantity?: number; productionUnit?: string; sortOrder: number } & MenuOrderMetadata>;
 };
 
-export function fulfilmentFromProductionOrder(order: ProductionOrderFulfilmentSource, by: string, at = new Date().toISOString(), previous?: FulfilmentRequirement) {
+export function fulfilmentFromProductionOrder(order: ProductionOrderFulfilmentSource, by: string, at = new Date().toISOString(), previous?: FulfilmentRequirement): FulfilmentRequirement {
   const destinationOplocId = requireDestination(order.destinationOplocId, order.canonicalId);
   if (order.destination?.kind === "one-off") {
     assertOneOffMenuDestination(order.destination, order.sourceDayId || order.sourceEntityId || "");
@@ -239,7 +242,8 @@ export function fulfilmentFromProductionOrder(order: ProductionOrderFulfilmentSo
   }
   const isGrabAndGo = order.origin === "grab_and_go";
   const source: SourceProjection = { sourceDomain: isGrabAndGo ? "grab-and-go" : "cpu-production", sourceEntityId: isGrabAndGo ? (order.sourceEntityId || order.canonicalId) : order.canonicalId, sourceVersion: isGrabAndGo ? (order.sourceVersion || order.version) : order.version, sourceContentHash: isGrabAndGo ? sourceContentHash(order) : productionOrderFulfilmentContentHash(order), ...(isGrabAndGo ? {} : { legacySourceContentHash: sourceContentHash(order) }), destinationOplocId, destinationLabelSnapshot: order.destinationLabel || destinationOplocId, ...(order.destination ? { destination: order.destination } : {}), serviceDate: order.serviceDate || order.requiredBy.slice(0, 10), lines: order.lines.map(productionLineFulfilmentProjection), status: isGrabAndGo ? (order.status === "cancelled" || order.status === "withdrawn" ? "withdrawn" : "ready_for_planning") : productionStatusToFulfilmentStatus(order.status, order.supersededBy), workstream: fulfilmentWorkstream({ sourceDomain: isGrabAndGo ? "grab-and-go" : "cpu-production", origin: order.origin, productionCategory: order.productionCategory }), context: { at, by, productionLocationId: isGrabAndGo ? undefined : order.productionLocationId, readyAt: isGrabAndGo || order.destination?.kind === "one-off" && !order.serviceWindow ? undefined : order.requiredBy, requiredDeliveryWindow: isGrabAndGo ? undefined : order.serviceWindow } };
-  return materialiseFulfilmentRequirement(source, previous);
+  const requirement = materialiseFulfilmentRequirement(source, previous);
+  return order.studioRehearsal || previous?.studioRehearsal ? { ...requirement, studioRehearsal: true } : requirement;
 }
 
 export type PublishedMenuDayFulfilmentSource = { publicationDayId: string; sourceDayId: string; version: number; contentHash: string; date: string; status: "published" | "superseded" | "withdrawn"; entries: Array<{ sourceEntryId: string; canonicalDishId?: string; dishName: string; slot: string } & MenuOrderMetadata & { allocations: Array<{ destinationId?: string; destination?: MenuDestination; destinationLabel: string; quantity: number }> }> };

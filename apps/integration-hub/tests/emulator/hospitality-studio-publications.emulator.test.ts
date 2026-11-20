@@ -154,9 +154,9 @@ test("emulator: Hub freezes accepted Studio selections across a new publication 
   const order: CanonicalBooking["order"] = { currency: "GBP", netTotal: 40, vatTotal: 0, grossTotal: 40, items: [{ itemId, itemName: "Pastry boxes", quantity: 4,
     servingInfo: "boxes", unitPrice: 10, lineTotal: 40, choices: [marker] }] };
   const booking: CanonicalBooking = {
-    canonicalId, entityType: "Booking", schemaVersion: "0.1.0", version: 1, commercialVersion: 1, lifecycleStatus: "Approved",
+    canonicalId, entityType: "Booking", schemaVersion: "0.1.0", version: 1, commercialVersion: 1, lifecycleStatus: "Quoted",
     createdAt: now, updatedAt: now, createdBy: actor.uid, updatedBy: actor.uid,
-    source: { provider: "rcoa-booking-platform", sourceBookingId: id, submissionTimestamp: now,
+    source: { provider: "rcoa-booking-platform", sourceBookingId: "STUDIO-UAT-" + id.toUpperCase(), submissionTimestamp: now,
       contractVersion: RCOA_BOOKING_INGESTION_CONTRACT_VERSION, originalPayload: { bookingId: id, submittedAt: now, client, event: service, order } },
     client, service, order: structuredClone(order), deliveryChargeRequired: true, dietaries: {}, acknowledgements: {}, attachments: [],
     statusHistory: [], audit: [],
@@ -201,6 +201,8 @@ test("emulator: Hub freezes accepted Studio selections across a new publication 
     await db.collection("integrationHubHospitalityMenuProductionRouting").doc(stableDocumentId(itemId)).create({ menuItemId: itemId, workstreams: ["hospitality"] });
     const created = await createProductionFromApprovedBookingTransaction(actor, canonicalId, `synthetic:${id}`);
     assert.equal(created.status, "created");
+    assert.equal((await ref.get()).get("lifecycleStatus"), "Sent to CPU");
+    assert.equal(created.order?.studioRehearsal, true);
     const spec = created.order?.lines[0].studioKitchenSpec?.selections[0];
     assert.equal(spec?.kitchenDescription, "Private kitchen instructions");
     assert.equal(spec?.publication.publicationId, first.manifest.id);
@@ -209,6 +211,10 @@ test("emulator: Hub freezes accepted Studio selections across a new publication 
     const retry = await createProductionFromApprovedBookingTransaction(actor, canonicalId, `synthetic:${id}`);
     assert.equal(retry.status, "already_exists");
     assert.deepEqual(retry.order?.lines, created.order?.lines);
-    assert.equal((await db.collection("fikaFulfilmentRequirementsV1").where("sourceEntityId", "==", created.order?.canonicalId).get()).size, 1);
+    const requirements = await db.collection("fikaFulfilmentRequirementsV1").where("sourceEntityId", "==", created.order?.canonicalId).get();
+    assert.equal(requirements.size, 1);
+    assert.equal(requirements.docs[0].get("studioRehearsal"), true);
+    assert.equal((await db.collection("fikaLogisticsProjectionOutboxV1").where("sourceAggregateId", "==", requirements.docs[0].get("canonicalId")).get()).size, 0);
+    assert.equal((await db.collection("fikaBookingNotifications").where("bookingId", "==", canonicalId).get()).size, 0);
   } finally { await deleteApp(app); }
 });
