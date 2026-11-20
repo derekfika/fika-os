@@ -958,16 +958,15 @@
     min-height: 0;
   }
   .nav {
-    flex-direction: row;
-    overflow-x: auto;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     padding: var(--space-2) var(--space-3);
     border-right: 0;
     border-bottom: 1px solid var(--studio-line);
   }
   .nav button {
-    flex: 0 0 auto;
-    width: auto;
-    white-space: nowrap;
+    min-width: 0;
+    width: 100%;
   }
   .main {
     padding: var(--space-4);
