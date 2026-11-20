@@ -29,6 +29,8 @@ export type HospitalityAdminAuthority = {
   grantVersion: number;
 };
 
+type CompanyHospitalityAdminAuthority = Omit<HospitalityAdminAuthority, "oplocId">;
+
 function isDirectCompanyGrant(grant: AuthorityGrant, identityId: string) {
   return grant.id === idempotentId("authority", "interactive", identityId, "hospitality-booking", HOSPITALITY_BOOKING_ADMIN, "Manage", "organisation") &&
     grant.appId === "hospitality-booking" && grant.resource === HOSPITALITY_BOOKING_ADMIN && grant.action === "Manage" &&
@@ -60,6 +62,14 @@ export async function resolveHospitalityBookingAdmin(
   }
   if (!oplocId || !await repository.getActiveOploc(oplocId)) return;
 
+  const authority = await resolveCompanyHospitalityBookingAdmin(repository, principal);
+  return authority && { ...authority, oplocId };
+}
+
+async function resolveCompanyHospitalityBookingAdmin(
+  repository: AuthModRepository, principal: AuthPrincipal,
+): Promise<CompanyHospitalityAdminAuthority | undefined> {
+  if (principal.type !== "interactive") return;
   const identity = await repository.getIdentity(principal.id);
   // Legend linkage is separate from the authenticated Firebase-to-AUTHMOD binding.
   // A live interactive principal already resolves to this identity through the session.
@@ -80,7 +90,14 @@ export async function resolveHospitalityBookingAdmin(
   const grantId = idempotentId("authority", "interactive", identity.id, "hospitality-booking", HOSPITALITY_BOOKING_ADMIN, "Manage", "organisation");
   const grant = await repository.getAuthorityGrant(grantId);
   if (!grant || !isDirectCompanyGrant(grant, identity.id)) return;
-  return { source: "explicit-company-grant", identityId: identity.id, identityVersion: identity.version, oplocId, grantId: grant.id, grantVersion: grant.version };
+  return { source: "explicit-company-grant", identityId: identity.id, identityVersion: identity.version, grantId: grant.id, grantVersion: grant.version };
+}
+
+/** A company-wide report needs the same direct company grant as the established Admin path. */
+export async function requireCompanyHospitalityBookingAdmin(repository: AuthModRepository, principal: AuthPrincipal) {
+  const authority = await resolveCompanyHospitalityBookingAdmin(repository, principal);
+  if (!authority) throw Object.assign(new Error("An effective company-wide Hospitality Admin authority is required."), { status: 403, code: "AUTHMOD_HOSPITALITY_ADMIN_DENIED" });
+  return authority;
 }
 
 export async function assertHospitalityBookingReadAccess(repository: AuthModRepository, principal: AuthPrincipal, booking: Pick<CanonicalBooking, "service">, elevated = false) {
