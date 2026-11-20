@@ -32,3 +32,25 @@ export function localDraftKey(
 ): string {
   return `fika-studio:${actor}:${kind}:${id}:${editor}`;
 }
+
+/** Timestamp metadata is trusted only for the exact retained payload. */
+export function retainedTimestamp(
+  raw: string | null,
+  metadata: string | null,
+): string | null {
+  if (!raw || !metadata) return null;
+  try {
+    const parsed = JSON.parse(metadata) as { value?: string; at?: string };
+    return parsed.value === raw &&
+      typeof parsed.at === "string" &&
+      Number.isFinite(Date.parse(parsed.at))
+      ? parsed.at
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export function retainedMetadataKey(key: string): string {
+  return `fika-studio-time:${key}`;
+}

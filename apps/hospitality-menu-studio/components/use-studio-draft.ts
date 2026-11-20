@@ -3,6 +3,8 @@ import type { Dish, Menu, StudioActor } from "../lib/contract";
 import {
   localDraftKey as localKey,
   retainedDraftMatchesRequest,
+  retainedMetadataKey,
+  retainedTimestamp,
 } from "./studio-model";
 import type { SaveState } from "./studio-ui";
 
@@ -38,6 +40,7 @@ export function useDraft<T extends Entity>(
   const [item, setItem] = useState<T | null>(initial);
   const [state, setState] = useState<SaveState>("saved");
   const [error, setError] = useState("");
+  const [retainedAt, setRetainedAt] = useState<string | null>(null);
   const current = useRef<T | null>(initial);
   const generation = useRef(0);
   const busy = useRef(false);
@@ -129,6 +132,7 @@ export function useDraft<T extends Entity>(
     (next: T | null) => {
       if (timer.current) clearTimeout(timer.current);
       recoveredFrom.current = null;
+      setRetainedAt(null);
       generation.current++;
       if (!next) {
         current.current = null;
@@ -178,10 +182,15 @@ export function useDraft<T extends Entity>(
       generation.current++;
       setItem(next);
       try {
+        const key = localKey(actor.id, kind, next.id, editor.current);
+        const value = JSON.stringify(next);
+        localStorage.setItem(key, value);
+        const at = new Date().toISOString();
         localStorage.setItem(
-          localKey(actor.id, kind, next.id, editor.current),
-          JSON.stringify(next),
+          retainedMetadataKey(key),
+          JSON.stringify({ value, at }),
         );
+        setRetainedAt(at);
       } catch {
         setError(
           "Device storage is unavailable. Keep this page open until your edits are saved.",
@@ -224,6 +233,9 @@ export function useDraft<T extends Entity>(
         return;
       }
       recoveredFrom.current = { key, value: raw };
+      setRetainedAt(
+        retainedTimestamp(raw, localStorage.getItem(retainedMetadataKey(key))),
+      );
       current.current = next;
       setItem(next);
       try {
@@ -248,5 +260,56 @@ export function useDraft<T extends Entity>(
     },
     [actor.id, kind],
   );
-  return { item, state, error, open, recover, change, retry: save };
+  const openLatest = useCallback(async () => {
+    const retained = current.current;
+    if (!retained) return;
+    try {
+      // Preserve the exact current edits before switching, even if device storage failed earlier.
+      const preservationKey = localKey(
+        actor.id,
+        kind,
+        retained.id,
+        crypto.randomUUID(),
+      );
+      const raw = JSON.stringify(retained);
+      localStorage.setItem(preservationKey, raw);
+      if (localStorage.getItem(preservationKey) !== raw)
+        throw new Error("Storage unavailable");
+      if (retainedAt)
+        localStorage.setItem(
+          retainedMetadataKey(preservationKey),
+          JSON.stringify({ value: raw, at: retainedAt }),
+        );
+      const query = new URLSearchParams({
+        [kind === "menu" ? "menuId" : "dishId"]: retained.id,
+      });
+      const result = await request(undefined, `?${query}`);
+      if (current.current !== retained) return;
+      // A new editor key prevents subsequent edits from replacing the retained copy.
+      editor.current = crypto.randomUUID();
+      recoveredFrom.current = null;
+      generation.current++;
+      current.current = result.item as T;
+      setItem(current.current);
+      setState("saved");
+      setError("");
+      setRetainedAt(null);
+      onSavedRef.current(current.current);
+    } catch {
+      setError(
+        "The latest saved draft could not be opened. Your edits are still here; try again.",
+      );
+    }
+  }, [actor.id, kind, retainedAt]);
+  return {
+    item,
+    state,
+    error,
+    open,
+    recover,
+    change,
+    retry: save,
+    openLatest,
+    retainedAt,
+  };
 }
