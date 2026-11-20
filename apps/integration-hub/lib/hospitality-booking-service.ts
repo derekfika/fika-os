@@ -140,6 +140,8 @@ export type CanonicalBooking = {
   entityType: "Booking";
   schemaVersion: "0.1.0";
   version: number;
+  /** Set by verified Studio acceptance together with the quote-bound private record. */
+  studioKitchenEvidenceVersion?: 1;
   lifecycleStatus:
     | "New"
     | "Reviewed"
