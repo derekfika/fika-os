@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   adoptionPrice,
   defaultAssessment,
+  governanceReceipt,
   linkedStudioSections,
   mergeSelection,
 } from "../components/catalogue-governance-model";
@@ -60,6 +61,15 @@ test("duplicate review sends only the reviewed canonical IDs and their current v
     ),
     null,
   );
+});
+
+test("governance actions require a receipt for the requested target and newer Item version", () => {
+  const command = { action: "link-provider-item", itemId: "item:product-a", expectedVersion: 5 };
+  const result = { message: "Saved", package: "published" as const };
+  assert.equal(governanceReceipt(command, { ...result, rows: [row("item:product-a", 6)] }), true);
+  assert.equal(governanceReceipt(command, { ...result, rows: [row("item:product-a", 5)] }), false);
+  assert.equal(governanceReceipt(command, { ...result, rows: [row("item:product-b", 6)] }), false);
+  assert.equal(governanceReceipt(command, result), false);
 });
 
 test("default adoption uses reviewed Hub findings, explicit price and fractional VAT", () => {
