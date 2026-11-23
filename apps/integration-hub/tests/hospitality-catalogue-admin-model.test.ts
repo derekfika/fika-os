@@ -43,6 +43,30 @@ test("a site price equal to the company default is flagged redundant, not silent
   assert.equal(row.offerings[0].price.redundant, true);
 });
 
+test("admin read model exposes stored quote mode, constraints and sparse configurations", () => {
+  const product = item("item:box", "Lunch Box", {
+    defaultOfferingMode: "quote_only",
+    defaultMinimumGuests: 10,
+    defaultNoticeRequiredDays: 3,
+    configuration: { rules: { salesUnit: "box" } },
+  });
+  const [row] = build({
+    items: [product],
+    offerings: [offering("offering:box", product.canonicalId, "oploc:a", {
+      offeringMode: "quote_only",
+      noticeRequiredDays: 0,
+      configuration: { displayName: "Site Lunch Box" },
+    })],
+  }).rows;
+  assert.equal(row.defaultMode, "quote_only");
+  assert.equal(row.defaultMinimumGuests, 10);
+  assert.equal(row.defaultNoticeRequiredDays, 3);
+  assert.deepEqual(row.defaultConfiguration, { rules: { salesUnit: "box" } });
+  assert.equal(row.offerings[0].minimumGuestsOverride, undefined);
+  assert.equal(row.offerings[0].noticeRequiredDaysOverride, 0);
+  assert.deepEqual(row.offerings[0].configurationOverride, { displayName: "Site Lunch Box" });
+});
+
 test("routing states fail closed: missing, unknown, superseded and conflicting records are never treated as In house", () => {
   assert.equal(routingStateOf(undefined).state, "routing_required");
   assert.equal(routingStateOf({ menuItemId: "x", workstreams: ["bogus"] }).state, "routing_required");
