@@ -22,6 +22,7 @@ import { deliverCpuPropagation, replayCpuPropagation, type CpuDurableDeliveryInp
 import { stampAllergenReviews } from "../../lib/allergen-review-stamp";
 import { allergenMatrixContentHash, buildCpuAllergenRelease, revokeCpuAllergenRelease } from "../../../lib/cpu-allergen-release";
 import { releaseMaterializationDelivery, retryCommittedCpuMaterialization } from "../../../lib/cpu-retry-materialization";
+import { adHocAllergenCheckerDelivery } from "../../../lib/adhoc-allergen-checker-delivery";
 import { cpuMasterReviewId } from "../../../lib/cpu-master-review";
 import { ExpectedLineage, MasterReviewOperation, MasterSignCommand, MenuItem, SubItem } from "../../../lib/production-plan-command-schema";
 import { isCpuWithdrawn } from "../../../lib/production-presentation";
@@ -264,7 +265,10 @@ function invalidateSignedAllergenAuthorityForNewSourceLineage(plan: ProductionPl
   return hasAuthority;
 }
 function revokedReleaseDeliveries(release: ProductionPlan["currentAllergenRelease"], order: ProductionOrder | undefined): CpuDurableDeliveryInput[] {
-  if (!release?.packetArtifacts?.[0]?.contentHash || !order?.destinationOplocId) return [];
+  if (!release || !order) return [];
+  const checkerDelivery = adHocAllergenCheckerDelivery(release, order, "revoked");
+  if (checkerDelivery) return [checkerDelivery];
+  if (!release.packetArtifacts?.[0]?.contentHash || !order.destinationOplocId) return [];
   const releaseEvent = buildCpuAllergenReleaseEvent({ eventType: "revoked", release, oplocId: order.destinationOplocId });
   return [{ eventId: `${releaseEvent.eventId}:delivered-in:${order.destinationOplocId}`, sourceAggregateId: releaseEvent.releaseId, sourceVersion: releaseEvent.sourceVersion, occurredAt: release.signedAt, consumer: "delivered-in", route: "/api/internal/cpu-release-event", body: releaseEvent as unknown as Record<string, unknown> }];
 }
@@ -513,12 +517,14 @@ async function applyMatrixOperation(request: NextRequest, actor: Awaited<ReturnT
       await persistPlan(plan, planRevisionToken(storedPlan));
       return { orderId: operation.orderId, plan, serviceDate: undefined, sequence: undefined, changed: true };
     }
-    const releaseDeliveries = (releaseBeforeReopen?.packetArtifacts || [])[0]?.contentHash && changedOrder.destinationOplocId
+    const releaseDeliveries: CpuDurableDeliveryInput[] = (releaseBeforeReopen?.packetArtifacts || [])[0]?.contentHash && changedOrder.destinationOplocId
       ? (() => {
           const releaseEvent = buildCpuAllergenReleaseEvent({ eventType: "revoked", release: revokedRelease!, oplocId: changedOrder.destinationOplocId! });
           return [{ eventId: `${releaseEvent.eventId}:delivered-in:${changedOrder.destinationOplocId}`, sourceAggregateId: releaseEvent.releaseId, sourceVersion: releaseEvent.sourceVersion, occurredAt: revokedRelease!.signedAt, consumer: "delivered-in" as const, route: "/api/internal/cpu-release-event", body: releaseEvent as unknown as Record<string, unknown> }];
         })()
       : [];
+    const adHocRevocation = revokedRelease ? adHocAllergenCheckerDelivery(revokedRelease, changedOrder, "revoked") : undefined;
+    if (adHocRevocation) releaseDeliveries.push(adHocRevocation);
     const event = await planRepository.saveAndAppendCpuChange(plan, planRevisionToken(storedPlan), {
       serviceDate: changedOrder.serviceDate,
       entityType: "productionPlan",
@@ -873,9 +879,12 @@ async function handlePost(request: NextRequest) {
       const releaseEvent = buildCpuAllergenReleaseEvent({ eventType: releaseEventType, release: releaseForEvent, oplocId });
       return { eventId: `${releaseEvent.eventId}:delivered-in:${oplocId}`, sourceAggregateId: releaseEvent.releaseId, sourceVersion: releaseEvent.sourceVersion, occurredAt: releaseForEvent.signedAt, consumer: "delivered-in" as const, route: "/api/internal/cpu-release-event", body: releaseEvent as unknown as Record<string, unknown> };
     }) : [];
+    const adHocCheckerDelivery = candidateReleaseForEvent && changedOrder
+      ? adHocAllergenCheckerDelivery(candidateReleaseForEvent, changedOrder, candidateReleaseForEvent.status === "current" ? "current" : "revoked")
+      : undefined;
     const releaseNeedsMaterialization = Boolean(plan.currentAllergenRelease && ["pending", "current"].includes(plan.currentAllergenRelease.status) && plan.currentAllergenRelease.materializationStatus !== "ready");
     const materializationDelivery = releaseNeedsMaterialization && changedOrder ? releaseMaterializationDelivery(plan, plan.currentAllergenRelease!, changedOrder, timestamp) : undefined;
-    const event = changedOrder?.serviceDate ? await planRepository.saveAndAppendCpuChange(plan, expectedRevision, { serviceDate: changedOrder.serviceDate, entityType: "productionPlan", entityId: plan.id, revision: plan.audit.length, changeType: command.action, actorId: actor.uid, changedAt: timestamp, ...(command.commandId ? { idempotencyKey: command.commandId } : {}), propagation: { sourceEntityId: plan.id, serviceDate: changedOrder.serviceDate, sourceVersion: plan.audit.length, changedAt: timestamp, changeType: eventTypeForConsumers(command.action), order: changedOrder, logistics: false }, deliveries: [...releaseDeliveries, ...(materializationDelivery ? [materializationDelivery] : [])] }) : (await persistPlan(plan, expectedRevision), undefined);
+    const event = changedOrder?.serviceDate ? await planRepository.saveAndAppendCpuChange(plan, expectedRevision, { serviceDate: changedOrder.serviceDate, entityType: "productionPlan", entityId: plan.id, revision: plan.audit.length, changeType: command.action, actorId: actor.uid, changedAt: timestamp, ...(command.commandId ? { idempotencyKey: command.commandId } : {}), propagation: { sourceEntityId: plan.id, serviceDate: changedOrder.serviceDate, sourceVersion: plan.audit.length, changedAt: timestamp, changeType: eventTypeForConsumers(command.action), order: changedOrder, logistics: false }, deliveries: [...releaseDeliveries, ...(adHocCheckerDelivery ? [adHocCheckerDelivery] : []), ...(materializationDelivery ? [materializationDelivery] : [])] }) : (await persistPlan(plan, expectedRevision), undefined);
     if (event?.duplicate) {
       if (!event.plan) throw Object.assign(new Error("This signing attempt has an incomplete idempotency receipt. Start a new signing attempt after reviewing the current matrix."), { status: 409, code: "CPU_SIGN_IDEMPOTENCY_CONFLICT" });
       Object.assign(plan, event.plan);
@@ -910,6 +919,7 @@ async function handlePost(request: NextRequest) {
       });
     }
     if (releaseForEvent && !event?.duplicate) for (const oplocId of releaseOplocIds) await notifyDeliveredInAllergenRelease({ eventType: releaseEventType, release: releaseForEvent, oplocId });
+    if (adHocCheckerDelivery && event && !event.duplicate) await deliverCpuPropagation(adHocCheckerDelivery.eventId);
     recordDeliveredInReadBudget({ stage: "plan_post_mutation", canonicalOrderDocs: changedOrder ? 1 : 0, planDocs: 1, selectedIds: 1 });
     if (changedOrder?.serviceDate && !event?.duplicate) {
       await rebuildCpuDayProjection(request, changedOrder.serviceDate, event!.sequence);

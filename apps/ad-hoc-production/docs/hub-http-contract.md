@@ -24,7 +24,8 @@ service identity (`localAdHocServiceAllowed`: `NODE_ENV !== production`, `FIKA_R
 | Method + path | Auth | Purpose |
 | --- | --- | --- |
 | `GET /api/ad-hoc-production/access[?oplocs=true]` | session + AUTHMOD | Caller identity `{principal}`; with `oplocs=true` also the caller's authorised active OPLOCs and alias `redirects`. Mirrors CPU's access route. |
-| `GET /api/ad-hoc-production/orders?requestId=` | session + AUTHMOD + service token | Authoritative status `{canonicalId, orderStatus, orderVersion, cancelled}`; `404` if no order exists. |
+| `GET /api/ad-hoc-production/orders?requestId=` | session + AUTHMOD + service token | Authoritative order status plus the live CPU-verified allergen checker state and signer details; `404` if no order exists. A CPU verification failure is shown as unavailable and never returns a PDF link. |
+| `GET /api/ad-hoc-production/orders?requestId=&download=pdf` | same | Proxies bytes only from CPU's current, lineage-matched, hash-verified Ad-Hoc master PDF. Cancelled, amended, revoked, stale, and unavailable releases are refused. |
 | `POST /api/ad-hoc-production/orders` `{action:"send"}` | same | Create-or-amend the request's single canonical Production Order. Returns `{canonicalId, orderVersion, orderStatus, outcome: created\|amended\|already_applied, destination}`. |
 | `POST /api/ad-hoc-production/orders` `{action:"cancel", requestId, reason}` | same | Governed cancellation (withdraws the Logistics requirement). `{outcome: cancelled\|already_cancelled}`; `404` if no order. |
 
@@ -39,6 +40,9 @@ Request bodies are strictly validated (unknown fields rejected). Errors use the 
 - Amendment is refused once CPU has moved the order beyond `draft/needs_review/needs_clarification/accepted/blocked`.
 - Allergens: Ad-Hoc sends no allergen evidence. Unchanged lines (same line id and name) keep CPU's evidence; changed or new
   lines return to CPU review. Signed Delivered-In releases are keyed to `menu_planning` orders and never include Ad-Hoc orders.
+- CPU delivers current/revoked checker metadata through its durable outbox. Hub stores a derived projection without a Drive
+  file id or URL, rejects reports for stale source versions and never lets an out-of-order current report restore the same
+  revoked release. Reads also verify the live CPU release; pending Hub delivery or CPU unavailability cannot expose stale PDF access.
 - Destinations: an OPLOC is re-validated by the Hub against the caller's authorised scope (aliases resolved; label/address
   snapshot from Hub authority). A one-off destination must carry exactly `adhoc-destination:<requestId>` plus an address
   snapshot; it can never be an OPLOC id.

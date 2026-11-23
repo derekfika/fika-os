@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AD_HOC_CATEGORIES, AD_HOC_UNITS, NOTES_LIMIT, STATUS_LABELS, blankDraft, contentKey, isArchived, isSent, newLineId, readiness, submitBlockers, type AdHocCategory, type AdHocDraft, type AdHocLine, type AdHocRequest } from "../lib/ad-hoc-domain";
 import { Icon } from "./icons";
+import type { AdHocAllergenCheckerStatus } from "../../shared/ad-hoc-production-contract";
 
 type OplocOption = { canonicalId: string; label: string; address?: string };
 const toDraft = (request: AdHocRequest): AdHocDraft => ({ eventName: request.eventName, serviceDate: request.serviceDate, requiredReadyTime: request.requiredReadyTime, category: request.category, guestCount: request.guestCount, notes: request.notes, destination: structuredClone(request.destination), lines: structuredClone(request.lines) });
@@ -21,6 +22,7 @@ export function OrderForm({ id }: { id: string }) {
   const isNew = id === "new";
   const [request, setRequest] = useState<AdHocRequest | null>(null);
   const [cpuCancelled, setCpuCancelled] = useState(false);
+  const [allergenChecker, setAllergenChecker] = useState<AdHocAllergenCheckerStatus | undefined>();
   const [draft, setDraft] = useState<AdHocDraft>(() => blankDraft());
   const [loading, setLoading] = useState(!isNew);
   const [oplocs, setOplocs] = useState<OplocOption[]>([]);
@@ -36,7 +38,7 @@ export function OrderForm({ id }: { id: string }) {
     let active = true;
     setLoading(true); setError("");
     void fetch(`/api/requests?id=${encodeURIComponent(id)}`, { cache: "no-store" })
-      .then(async response => { const body = await response.json().catch(() => ({})); if (!response.ok) throw new Error(body?.error?.message || "This order could not be loaded."); setCpuCancelled(Boolean(body.downstream?.cancelled)); return body.request as AdHocRequest; })
+      .then(async response => { const body = await response.json().catch(() => ({})); if (!response.ok) throw new Error(body?.error?.message || "This order could not be loaded."); setCpuCancelled(Boolean(body.downstream?.cancelled)); setAllergenChecker(body.downstream?.allergenChecker); return body.request as AdHocRequest; })
       .then(loaded => { if (active) { setRequest(loaded); setDraft(toDraft(loaded)); } })
       .catch(cause => { if (active) setError(cause instanceof Error ? cause.message : "This order could not be loaded."); })
       .finally(() => { if (active) setLoading(false); });
@@ -77,7 +79,7 @@ export function OrderForm({ id }: { id: string }) {
       const saved = dirty || !request ? await save() : request;
       if (kind === "send") {
         const result = await post({ action: "send", id: saved.id, expectedVersion: saved.version });
-        setRequest(result.request); setDraft(toDraft(result.request)); setNotice(result.request.status === "SENT_TO_CPU" ? "Sent to CPU. Logistics will plan dispatch from your ready time." : "Sent, but the order changed while sending. Send the update to bring CPU up to date.");
+        setRequest(result.request); setDraft(toDraft(result.request)); setAllergenChecker({ state: "pending" }); setNotice(result.request.status === "SENT_TO_CPU" ? "Sent to CPU. Logistics will plan dispatch from your ready time." : "Sent, but the order changed while sending. Send the update to bring CPU up to date.");
       } else setNotice(request && isSent(request) ? "Changes saved. CPU and Logistics still hold the last version you sent." : "Draft saved.");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "That action could not be completed."); }
     finally { setBusy(""); }
@@ -101,6 +103,7 @@ export function OrderForm({ id }: { id: string }) {
       <div aria-live="polite">{notice && <p className="banner ok" role="status">{notice}</p>}{error && <p className="banner error" role="alert">{error}</p>}
         {cpuCancelled && request && isSent(request) && <p className="banner error" role="status">CPU has cancelled this order, so it is no longer being produced or delivered. Cancel the request from the overview to record that here, or duplicate it to start again.</p>}
         {status === "NEEDS_UPDATE" && <p className="banner warn" role="status">This order changed after it was sent. CPU and Logistics still hold the previous version until you send the update.</p>}
+        {request && isSent(request) && <section className="card" aria-labelledby="allergen-checker-heading"><div className="card-head"><div><h2 id="allergen-checker-heading">Allergen checker</h2><p>CPU status is checked against the current signed release whenever this order opens.</p></div></div><p role="status">{allergenChecker?.state === "ready" ? `Current and dual signed by ${allergenChecker.signatures?.map(signature => `${signature.printedName} (${signature.role === "production_chef" ? "Production Chef" : "Head Chef / Site Manager"})`).join(" and ") || "both required chefs"}.` : allergenChecker?.state === "unsigned" ? "Not signed yet. The checker appears here after both required chefs sign." : allergenChecker?.state === "pending" ? "The current signed checker is being prepared or verified." : allergenChecker?.state === "failed" ? "Both signatures are recorded, but the signed checker could not be materialized." : allergenChecker?.state === "revoked" || allergenChecker?.state === "stale" ? "The previous checker is no longer current and cannot be opened." : allergenChecker?.state === "unavailable" ? "Current checker status is unavailable. Try reopening this order." : "Checking current CPU signing status…"}</p>{allergenChecker?.state === "ready" && <a className="btn" href={`/api/requests/allergen-checker?id=${encodeURIComponent(request.id)}`} target="_blank" rel="noreferrer">Open current signed PDF</a>}</section>}
         {readOnly && <p className="banner warn" role="status">{status === "CANCELLED" ? "This order was cancelled and withdrawn from CPU and Logistics." : "This draft is archived."} It is read-only; duplicate it from the overview to start a new order.</p>}</div>
 
       <fieldset className="plain" disabled={readOnly || busy !== ""}>

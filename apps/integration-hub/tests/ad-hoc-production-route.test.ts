@@ -6,15 +6,16 @@ import { NextRequest } from "next/server";
 import { authoriseAdHocDestination, localAdHocServiceAllowed, scopeOplocs } from "../lib/ad-hoc-production-auth";
 import { GET as ordersGet, POST as ordersPost } from "../app/api/ad-hoc-production/orders/route";
 import { GET as accessGet } from "../app/api/ad-hoc-production/access/route";
-import { adHocOneOffDestinationId, adHocProductionOrderId, adHocSendKey, AD_HOC_HUB_API, AD_HOC_SERVICE_TOKEN_HEADER, type AdHocOrderInput, type AdHocSendCommand } from "../../shared/ad-hoc-production-contract";
+import { POST as allergenCheckerPost } from "../app/api/internal/ad-hoc-production/allergen-checker/route";
+import { adHocOneOffDestinationId, adHocProductionOrderId, adHocSendKey, AD_HOC_HUB_API, AD_HOC_SERVICE_TOKEN_HEADER, type AdHocAllergenCheckerStatus, type AdHocOrderInput, type AdHocSendCommand } from "../../shared/ad-hoc-production-contract";
 import { db } from "../lib/firebase-admin";
 
 const emulatorEnabled = process.env.FIREBASE_PROJECT_ID === "demo-fika-os" && process.env.FIRESTORE_EMULATOR_HOST === "127.0.0.1:8292" && (process.env.FIKA_RUNTIME_MODE || "local") === "local";
 
 // CPU's projection only learns of an Ad-Hoc order through the Hub's change notification; the tests stand in for CPU.
 type CpuCall = { changeType: string; entityId: string; revision: number; serviceDate: string; idempotencyKey: string };
-const cpuCalls: CpuCall[] = []; let cpuFailures = 0;
-const fakeCpu = http.createServer((req, res) => { let body = ""; req.on("data", chunk => { body += chunk; }); req.on("end", () => { if (cpuFailures > 0) { cpuFailures -= 1; res.writeHead(500); res.end("{}"); return; } cpuCalls.push(JSON.parse(body)); res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify({ applied: true })); }); });
+const cpuCalls: CpuCall[] = []; let cpuFailures = 0; let cpuCheckerState: AdHocAllergenCheckerStatus = { state: "unsigned" };
+const fakeCpu = http.createServer((req, res) => { let body = ""; req.on("data", chunk => { body += chunk; }); req.on("end", () => { if (req.method === "GET" && req.url?.startsWith("/api/internal/ad-hoc/allergen-checker")) { res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" }); res.end(JSON.stringify(cpuCheckerState)); return; } if (cpuFailures > 0) { cpuFailures -= 1; res.writeHead(500); res.end("{}"); return; } cpuCalls.push(JSON.parse(body)); res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify({ applied: true })); }); });
 await new Promise<void>(resolve => fakeCpu.listen(0, "127.0.0.1", resolve));
 const CPU_URL = `http://127.0.0.1:${(fakeCpu.address() as AddressInfo).port}`;
 after(() => { fakeCpu.closeAllConnections(); fakeCpu.close(); });
@@ -79,6 +80,15 @@ test("privileged order operations require the service token whenever one is conf
   });
 });
 
+test("CPU allergen checker reports require internal service authentication and strict release lineage", async () => {
+  await withEnv({ NODE_ENV: "test", FIKA_RUNTIME_MODE: "local", FIKA_INTERNAL_API_TOKEN: "secret" }, async () => {
+    const path = "/api/internal/ad-hoc-production/allergen-checker";
+    assert.equal((await allergenCheckerPost(call("POST", path, {}))).status, 401, "no CPU token cannot publish signer data");
+    assert.equal((await allergenCheckerPost(call("POST", path, {}, { "x-fika-internal-token": "wrong" }))).status, 401, "a wrong token cannot publish signer data");
+    assert.equal((await allergenCheckerPost(call("POST", path, { state: "current" }, { "x-fika-internal-token": "secret" }))).status, 422, "an authenticated but incomplete release cannot be projected");
+  });
+});
+
 test("emulator: send, amend, status and cancel over the route contract create exactly one order and requirement", { skip: !emulatorEnabled }, async () => {
   await withEnv({ NODE_ENV: "test", FIKA_RUNTIME_MODE: "local", FIKA_INTERNAL_API_TOKEN: undefined, CPU_PRODUCTION_BASE_URL: CPU_URL }, async () => {
     const requestId = `adhoc-request:${crypto.randomUUID()}`;
@@ -103,7 +113,16 @@ test("emulator: send, amend, status and cancel over the route contract create ex
     assert.ok(mine.every(call => call.serviceDate === "2099-03-02" && call.idempotencyKey === `cpu-projection:${created.body.canonicalId}:v${call.revision}`));
 
     const status = await ordersGet(call("GET", `${AD_HOC_HUB_API.orders}?requestId=${encodeURIComponent(requestId)}`));
-    assert.deepEqual(await status.json(), { canonicalId: created.body.canonicalId, orderStatus: "draft", orderVersion: amended.body.orderVersion, cancelled: false });
+    assert.deepEqual(await status.json(), { canonicalId: created.body.canonicalId, orderStatus: "draft", orderVersion: amended.body.orderVersion, cancelled: false, allergenChecker: { state: "unsigned" } });
+
+    cpuCheckerState = { state: "ready", releaseId: "release:current", releaseVersion: 1, sourceRevision: 2, signedAt: "2099-03-02T10:00:00.000Z", signatures: [{ role: "production_chef", printedName: "Production Chef", signedAt: "2099-03-02T09:00:00.000Z" }, { role: "head_chef_site_manager", printedName: "Head Chef", signedAt: "2099-03-02T10:00:00.000Z" }] };
+    const signed = await ordersGet(call("GET", `${AD_HOC_HUB_API.orders}?requestId=${encodeURIComponent(requestId)}`));
+    assert.equal((await signed.json()).allergenChecker.state, "ready", "Hub reads expose only the live CPU-verified dual-signed state");
+    cpuCheckerState = { state: "revoked" };
+    const revoked = await ordersGet(call("GET", `${AD_HOC_HUB_API.orders}?requestId=${encodeURIComponent(requestId)}`));
+    assert.equal((await revoked.json()).allergenChecker.state, "revoked", "a revocation is visible even without a Hub projection refresh");
+    assert.equal((await ordersGet(call("GET", `${AD_HOC_HUB_API.orders}?requestId=${encodeURIComponent(requestId)}&download=pdf`))).status, 409, "the Hub refuses a PDF when CPU no longer reports a current release");
+    cpuCheckerState = { state: "unsigned" };
 
     const cancelled = await post({ action: "cancel", requestId, reason: "Client cancelled" });
     assert.equal(cancelled.body.outcome, "cancelled");
