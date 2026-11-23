@@ -12,6 +12,7 @@ import {
   type StudioActor,
 } from "../lib/contract";
 import { kitchenQuantities } from "../lib/review";
+import { CatalogueView } from "./studio-catalogue";
 import { MenuDashboard } from "./studio-dashboard";
 import { useAssignedDishes } from "./use-assigned-dishes";
 import { MenuSetup, type NewMenuDetails } from "./menu-setup";
@@ -69,6 +70,8 @@ export default function Studio({
   publishedKitchenAvailable: boolean;
   checkerOrigin?: string;
 }) {
+  const [catalogueItemId, setCatalogueItemId] = useState("");
+  const [catalogueReturn, setCatalogueReturn] = useState(false);
   const [page, setPage] = useState<Page>("home");
   const [menus, setMenus] = useState<Menu[]>([]);
   const [dishes, setDishes] = useState<Dish[]>([]);
@@ -270,6 +273,8 @@ export default function Studio({
   }, [menu?.id]);
 
   function navigate(next: Page) {
+    setCatalogueReturn(false);
+    setCatalogueItemId("");
     setPage(next);
     setCreateKind(null);
     setSectionId("");
@@ -715,6 +720,7 @@ export default function Studio({
           />
         ) : (
           <>
+            {(page === "products" || page === "sites") && <CatalogueView area={page} initialItemId={catalogueItemId} back={catalogueReturn ? () => setPage("menus") : undefined} />}
             {page === "home" && (
               <>
                 <MenuDashboard
@@ -837,6 +843,7 @@ export default function Studio({
             {menu &&
               section &&
               (page === "menus" ||
+                (page === "products" && catalogueReturn) ||
                 page === "preview" ||
                 page === "review" ||
                 page === "impact" ||
@@ -902,6 +909,7 @@ export default function Studio({
                     }
                     catalogue={catalogueChoices}
                     loadCatalogue={() => void loadSites()}
+                    inspectItem={(id) => { setCatalogueItemId(id); setCatalogueReturn(true); setPage("products"); }}
                     openSettings={mappingSectionId === section.id}
                     openSection={openSection}
                     busy={actionBusy}
