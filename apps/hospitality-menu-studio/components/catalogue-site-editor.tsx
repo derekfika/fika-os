@@ -24,7 +24,7 @@ const money = new Intl.NumberFormat("en-GB", {
 });
 const percent = new Intl.NumberFormat("en-GB", {
   style: "percent",
-  maximumFractionDigits: 2,
+  maximumFractionDigits: 4,
 });
 
 function priceLabel(price: CataloguePrice) {
@@ -424,7 +424,7 @@ function SiteSettings({
                           type="number"
                           min="0"
                           max="100"
-                          step=".01"
+                          step=".0001"
                           value={values.vat}
                           disabled={!values.price.trim()}
                           onChange={(event) =>
