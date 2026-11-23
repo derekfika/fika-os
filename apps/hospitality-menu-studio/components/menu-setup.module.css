@@ -1,0 +1,41 @@
+.form {
+  display: grid;
+  gap: var(--space-3);
+  max-width: 46rem;
+  margin-top: var(--space-4);
+}
+
+.form p,
+.sectionSetup p {
+  margin: 0;
+}
+
+.sectionSetup,
+.sectionForm {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+  margin-block: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--fika-border-default);
+  border-radius: var(--radius-md);
+  background: var(--fika-surface-card);
+}
+
+.sectionSetup > details {
+  margin: 0;
+}
+
+.sectionSetup summary {
+  min-height: 44px;
+  overflow-wrap: anywhere;
+}
+
+.sectionSetup summary span {
+  margin-inline-start: var(--space-1);
+}
+
+.sectionSetup button[aria-pressed],
+.sectionForm button[aria-pressed] {
+  min-height: 44px;
+}

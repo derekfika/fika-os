@@ -58,7 +58,7 @@ export function catalogueUnavailable() {
 export function studioCatalogueOptions(catalogue: CataloguePackage) {
   const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name, "en-GB");
   return {
-    items: catalogue.items.map(({ id, name }) => ({ id, name })).sort(byName),
+    items: catalogue.items.map(({ id, name, category }) => ({ id, name, category })).sort(byName),
     sites: catalogue.oplocs.map(({ id, label: name }) => ({ id, name })).sort(byName),
   };
 }

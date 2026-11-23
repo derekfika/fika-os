@@ -92,4 +92,7 @@ test("catalogue resources pass Studio authorization and use the Hub package with
   const result = await handlers.GET(new Request("http://localhost:13686/api/studio?list=catalogue"));
   assert.equal(result.status, 200);
   assert.deepEqual(await result.json(), studioCatalogueOptions(catalogue));
+  assert.deepEqual(studioCatalogueOptions(catalogue).items[0], {
+    id: baseItem.id, name: baseItem.name, category: baseItem.category,
+  });
 });
