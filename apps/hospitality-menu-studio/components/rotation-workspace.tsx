@@ -29,7 +29,10 @@ export function RotationWorkspace({
   const top = useRef<HTMLHeadingElement>(null);
   const bulk = useRef<HTMLHeadingElement>(null);
   const copy = useRef<HTMLHeadingElement>(null);
-  const [notice, setNotice] = useState("");
+  const [notice, setNotice] = useState<{
+    area: "bulk" | "copy";
+    text: string;
+  } | null>(null);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
   const [temperature, setTemperature] = useState("all");
@@ -58,9 +61,10 @@ export function RotationWorkspace({
       ),
     ).length;
     update({ weeks: assignWeeks(section.weeks, picked, targets, remove) });
-    setNotice(
-      `${changed} ${changed === 1 ? "dish changed" : "dishes changed"} across ${targets.map((i) => `week ${i + 1}`).join(", ")} in this draft. See save status above.`,
-    );
+    setNotice({
+      area: "bulk",
+      text: `${changed} ${changed === 1 ? "dish changed" : "dishes changed"} across ${targets.map((i) => `week ${i + 1}`).join(", ")} in this draft. See save status above.`,
+    });
     setPicked([]);
   };
   const copyTargets = targets.filter((target) => target !== source);
@@ -80,9 +84,6 @@ export function RotationWorkspace({
           </Button>
           <Button onClick={() => copy.current?.focus()}>Copy a week</Button>
         </div>
-        <p role="status" aria-live="polite">
-          {notice}
-        </p>
         <p>
           Change a dish in one week using its checkbox. Open a week to change
           the order.
@@ -134,6 +135,7 @@ export function RotationWorkspace({
         <h2 ref={bulk} tabIndex={-1}>
           Add or remove dishes
         </h2>
+        <p role="status">{notice?.area === "bulk" ? notice.text : ""}</p>
         <Button onClick={() => top.current?.focus()}>Back to rotation</Button>
         <label className="fika-field">
           Search dishes
@@ -271,6 +273,7 @@ export function RotationWorkspace({
         <h2 ref={copy} tabIndex={-1}>
           Copy a week
         </h2>
+        <p role="status">{notice?.area === "copy" ? notice.text : ""}</p>
         <Button onClick={() => top.current?.focus()}>Back to rotation</Button>
         <p>
           Copy the source into the selected weeks above. Existing choices in
@@ -321,9 +324,10 @@ export function RotationWorkspace({
             );
             if (result) {
               update({ weeks: result });
-              setNotice(
-                `Copied week ${source + 1} to ${copyTargets.map((i) => `week ${i + 1}`).join(", ")} in this draft. See save status above.`,
-              );
+              setNotice({
+                area: "copy",
+                text: `Copied week ${source + 1} to ${copyTargets.map((i) => `week ${i + 1}`).join(", ")} in this draft. See save status above.`,
+              });
             }
             setConfirmation(null);
           }}
