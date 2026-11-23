@@ -1,0 +1,11 @@
+.workspace { display: grid; gap: 24px; }
+.panel { background: var(--fika-surface-card); border: 1px solid var(--fika-border-default); border-radius: 12px; padding: 16px; display: grid; gap: 12px; }
+.weekLinks, .actions, .weeks { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.rows { display: grid; gap: 8px; margin-top: 16px; }
+.row { border: 1px solid var(--fika-border-default); border-radius: 8px; min-width: 0; padding: 8px 12px 12px; }
+.row legend { font-weight: 600; overflow-wrap: anywhere; }
+.weeks label { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; padding: 0 8px; }
+.picker { max-height: 320px; overflow: auto; border: 1px solid var(--fika-border-default); border-radius: 8px; }
+.picker label { display: flex; gap: 8px; align-items: center; min-height: 44px; padding: 8px 12px; overflow-wrap: anywhere; }
+.confirm { display: flex; align-items: center; gap: 8px; min-height: 44px; }
+.workspace :focus-visible { outline: 3px solid var(--fika-focus-ring); outline-offset: 2px; }

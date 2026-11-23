@@ -14,6 +14,7 @@ import {
 } from "./studio-ui";
 import styles from "./studio.module.css";
 import { copyRotationChoices, rotationSource } from "./rotation-copy";
+import { RotationWorkspace } from "./rotation-workspace";
 
 const weeks = [1, 2, 3, 4, 5, 6];
 const groups = [
@@ -266,7 +267,7 @@ export function SectionEditor({
     copyConfirmation.week === week &&
     copyConfirmation.choices === JSON.stringify(selected);
   const [confirmRemove, setConfirmRemove] = useState(false);
-  const [view, setView] = useState<"overview" | "week">("week");
+  const [view, setView] = useState<"overview" | "week">("overview");
   const [adding, setAdding] = useState(false);
   const [showName] = useState(focusName);
   const sectionName = useRef<HTMLInputElement>(null);
@@ -296,8 +297,7 @@ export function SectionEditor({
       (temperature === "all" || dish?.temperature === temperature)
     );
   };
-  const visibleGroups = grouped
-    .map((entry) => ({ ...entry, ids: entry.ids.filter(matches) }))
+  const visibleGroups = [{ id: "ordered", name: "Dishes in order", ids: selected.filter(matches) }]
     .filter((entry) => entry.ids.length > 0);
   const eligible = dishes.filter(
     (dish) =>
@@ -502,22 +502,7 @@ export function SectionEditor({
         </div>
       )}
       {isRotation && view === "overview" ? (
-        <section className={styles.panel} aria-label="Rotation overview">
-          {weeks.map((number) => (
-            <button
-              className={styles.listButton}
-              key={number}
-              type="button"
-              onClick={() => chooseWeek(number - 1)}
-            >
-              <strong>Week {number}</strong>
-              <span>
-                {section.weeks[number - 1]?.length || 0} choices{" "}
-                <Icon name="forward" />
-              </span>
-            </button>
-          ))}
-        </section>
+        <RotationWorkspace section={section} dishes={dishes} week={week} canManage={canManage} update={update} chooseWeek={chooseWeek} loadMore={loadMore} busy={busy} createDish={createDish} />
       ) : (
         <>
           <details className={styles.sectionTools}>
@@ -685,7 +670,7 @@ export function SectionEditor({
                         {entry.ids.length === 1 ? "choice" : "choices"}
                       </th>
                     </tr>
-                    {entry.ids.map((id, index) => {
+                    {entry.ids.map((id) => {
                       const item = byId.get(id);
                       const name = item?.name || "Dish unavailable";
                       return (
@@ -713,18 +698,18 @@ export function SectionEditor({
                           <td>
                             <div className={styles.tableActions}>
                               <Button
-                                disabled={!canManage || !index}
+                                disabled={!canManage || selected.indexOf(id) === 0}
                                 label={"Move " + name + " up"}
-                                onClick={() => shift(id, entry.ids[index - 1]!)}
+                                onClick={() => shift(id, selected[selected.indexOf(id) - 1]!)}
                               >
                                 ↑
                               </Button>
                               <Button
                                 disabled={
-                                  !canManage || index === entry.ids.length - 1
+                                  !canManage || selected.indexOf(id) === selected.length - 1
                                 }
                                 label={"Move " + name + " down"}
-                                onClick={() => shift(id, entry.ids[index + 1]!)}
+                                onClick={() => shift(id, selected[selected.indexOf(id) + 1]!)}
                               >
                                 ↓
                               </Button>
