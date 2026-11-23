@@ -13,6 +13,7 @@ import {
 } from "../lib/contract";
 import { kitchenQuantities } from "../lib/review";
 import { MenuDashboard } from "./studio-dashboard";
+import { useAssignedDishes } from "./use-assigned-dishes";
 import { MenuSetup, type NewMenuDetails } from "./menu-setup";
 import type { CatalogueChoices, NewSectionDetails } from "./menu-setup-model";
 import {
@@ -105,7 +106,9 @@ export default function Studio({
   const [activationConfirmed, setActivationConfirmed] = useState(false);
   const [sites, setSites] = useState<{ id: string; name: string }[]>([]);
   const [siteId, setSiteId] = useState("");
-  const [catalogueChoices, setCatalogueChoices] = useState<CatalogueChoices>({ state: "unchecked" });
+  const [catalogueChoices, setCatalogueChoices] = useState<CatalogueChoices>({
+    state: "unchecked",
+  });
   const checkingCatalogue = useRef(false);
   const [sitePreview, setSitePreview] = useState<SitePreview | null>(null);
   const [previewMessage, setPreviewMessage] = useState("");
@@ -131,6 +134,13 @@ export default function Studio({
   const menu = menuDraft.item;
   const dish = dishDraft.item;
   const section = menu?.sections.find((item) => item.id === sectionId);
+  const assignedDishes = useAssignedDishes(section, dishes);
+  const sectionDishes = [...dishes, ...assignedDishes.items];
+  const unresolvedDishLabel = assignedDishes.loading
+    ? "Loading dish name�"
+    : assignedDishes.error
+      ? "Dish name could not be loaded"
+      : "Dish unavailable";
   const selected =
     section?.mode === "static"
       ? section.staticDishIds
@@ -139,10 +149,10 @@ export default function Studio({
   const anchor = calendarDay(menu?.anchorMonday || "");
   const previewValid = Boolean(
     menu &&
-      day >= calendarDay(menu.startDate) &&
-      day <= calendarDay(menu.endDate) &&
-      (!menu.sections.some((item) => item.mode === "rotation") ||
-        (Number.isFinite(anchor) && new Date(anchor).getUTCDay() === 1)),
+    day >= calendarDay(menu.startDate) &&
+    day <= calendarDay(menu.endDate) &&
+    (!menu.sections.some((item) => item.mode === "rotation") ||
+      (Number.isFinite(anchor) && new Date(anchor).getUTCDay() === 1)),
   );
   const kitchenCollection =
     page === "kitchen" &&
@@ -840,11 +850,34 @@ export default function Studio({
                     (page === "kitchen" &&
                       kitchenReturn !== "activation")))) && (
                 <div hidden={page !== "menus"}>
+                  {assignedDishes.loading && (
+                    <p role="status">Loading assigned dish names�</p>
+                  )}
+                  {assignedDishes.error && (
+                    <div role="alert">
+                      <p>{assignedDishes.error}</p>
+                      <Button onClick={assignedDishes.retry}>
+                        Retry loading assigned dishes
+                      </Button>
+                    </div>
+                  )}
+                  {!assignedDishes.loading &&
+                    !assignedDishes.error &&
+                    assignedDishes.missing.length > 0 && (
+                      <p role="status">
+                        {assignedDishes.missing.length} assigned{" "}
+                        {assignedDishes.missing.length === 1
+                          ? "dish is"
+                          : "dishes are"}{" "}
+                        unavailable. Their assignments are retained.
+                      </p>
+                    )}
                   <SectionEditor
                     key={section.id}
                     menu={menu}
                     section={section}
-                    dishes={dishes}
+                    dishes={sectionDishes}
+                    unresolvedDishLabel={unresolvedDishLabel}
                     selected={selected}
                     week={week}
                     setWeek={setWeek}
