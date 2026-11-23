@@ -1,0 +1,123 @@
+.libraryFilters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(10rem, 100%), 1fr));
+  align-items: end;
+  gap: var(--space-3);
+}
+
+.resultBar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
+  margin-block: var(--space-3) var(--space-2);
+}
+
+.resultBar p {
+  margin: 0;
+  color: var(--fika-text-secondary);
+}
+
+.dishList,
+.componentList {
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  list-style: none;
+}
+
+.dishList {
+  border: 1px solid var(--fika-border-default);
+  border-radius: var(--radius-md);
+  background: var(--fika-surface-card);
+}
+
+.dishList li + li {
+  border-block-start: 1px solid var(--fika-border-default);
+}
+
+.dishRow {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(0, 0.85fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: var(--fika-control-height);
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--fika-surface-card);
+  color: var(--fika-text-primary);
+  text-align: start;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.dishRow:hover {
+  background: var(--fika-surface-subtle);
+}
+
+.dishRow:focus-visible {
+  z-index: 1;
+  outline: 3px solid var(--fika-focus-ring);
+  outline-offset: -3px;
+}
+
+.classification {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+}
+
+.usage {
+  color: var(--fika-text-secondary);
+  font-size: var(--text-xs);
+}
+
+.assortmentDisclosure summary {
+  min-height: var(--fika-control-height);
+}
+
+.assortmentDisclosure[open] .assortmentStatus {
+  display: none;
+}
+
+.componentRow {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--space-2);
+  padding-block: var(--space-2);
+}
+
+.componentRow + .componentRow {
+  border-block-start: 1px solid var(--fika-border-default);
+}
+
+@media (max-width: 760px) {
+  .dishRow {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-1) var(--space-2);
+  }
+
+  .dishRow > :not(svg) {
+    grid-column: 1;
+  }
+
+  .dishRow > svg {
+    grid-column: 2;
+    grid-row: 1 / span 3;
+  }
+}
+
+@media (max-width: 480px) {
+  .componentRow {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .componentRow > :first-child {
+    grid-column: 1 / -1;
+  }
+}

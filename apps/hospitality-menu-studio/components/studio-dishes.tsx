@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useMemo, useRef, useState, type Ref } from "react";
 import { categories, type Dish, type Menu } from "../lib/contract";
 import { assortmentIsComplete, type kitchenQuantities } from "../lib/review";
 import { assortmentTotal } from "./studio-model";
@@ -8,7 +8,6 @@ import {
   Button,
   Icon,
   PageHeading,
-  Pill,
   SaveNotice,
   Temperature,
   title,
@@ -16,6 +15,14 @@ import {
 } from "./studio-ui";
 import styles from "./studio.module.css";
 import { DishSafety } from "./studio-dish-safety";
+import {
+  dishUsage,
+  emptyDishFilters,
+  filterDishes,
+  sectionDishIds,
+  type DishFilters,
+} from "./studio-dish-collection-model";
+import dishStyles from "./studio-dishes.module.css";
 
 export function DishCollection({
   dishes,
@@ -38,30 +45,30 @@ export function DishCollection({
   busy: boolean;
   error: string;
 }) {
-  const [search, setSearch] = useState("");
-  const [category, setCategory] = useState("all");
-  const [temperature, setTemperature] = useState("all");
-  const filtered = dishes.filter(
-    (dish) =>
-      (category === "all" ||
-        (category === "veg"
-          ? ["vegetarian", "vegan"].includes(dish.category)
-          : category === dish.category)) &&
-      (temperature === "all" || dish.temperature === temperature) &&
-      dish.name
-        .toLocaleLowerCase("en-GB")
-        .includes(search.trim().toLocaleLowerCase("en-GB")),
+  const [filters, setFilters] = useState(emptyDishFilters);
+  const [menuId, setMenuId] = useState("");
+  const [sectionId, setSectionId] = useState("");
+  const resultId = useId();
+  const search = useRef<HTMLInputElement>(null);
+  const { byMenu, menuCounts } = useMemo(() => dishUsage(menus), [menus]);
+  const menu = menus.find((item) => item.id === menuId);
+  const section = menu?.sections.find((item) => item.id === sectionId);
+  const filtered = useMemo(() => {
+    const assignmentIds = sectionId
+      ? new Set(section ? sectionDishIds(section) : [])
+      : menuId ? (byMenu.get(menuId) ?? new Set<string>()) : undefined;
+    return filterDishes(dishes, filters, assignmentIds);
+  }, [dishes, filters, section, sectionId, menuId, byMenu]);
+  const filtering = Boolean(
+    filters.search.trim() || filters.category !== "all" ||
+    filters.temperature !== "all" || menuId,
   );
-  const usage = new Map<string, number>();
-  for (const menu of menus) {
-    const menuDishes = new Set(
-      menu.sections.flatMap((section) =>
-        section.mode === "static"
-          ? section.staticDishIds
-          : section.weeks.flat(),
-      ),
-    );
-    for (const id of menuDishes) usage.set(id, (usage.get(id) || 0) + 1);
+
+  function clearFilters() {
+    setFilters(emptyDishFilters);
+    setMenuId("");
+    setSectionId("");
+    search.current?.focus();
   }
   return (
     <>
@@ -78,23 +85,22 @@ export function DishCollection({
             </Breadcrumb>
           )
         }
-        context={<p>Your reusable Hospitality dishes</p>}
       >
         <Button primary onClick={create} disabled={!canManage}>
-          <Icon name="plus" /> Add dish
+          <Icon name="plus" /> Create dish
         </Button>
       </PageHeading>
-      <div className={styles.filterBar}>
+      <div className={dishStyles.libraryFilters}>
         <label className={"fika-field " + styles.searchField}>
           Search dishes
           <span>
             <Icon name="search" />
             <input
               type="search"
-              placeholder="Search dishes…"
               className="fika-input"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
+              ref={search}
+              value={filters.search}
+              onChange={(event) => setFilters({ ...filters, search: event.target.value })}
             />
           </span>
         </label>
@@ -102,8 +108,10 @@ export function DishCollection({
           Category
           <select
             className="fika-select"
-            value={category}
-            onChange={(event) => setCategory(event.target.value)}
+            value={filters.category}
+            onChange={(event) => setFilters({
+              ...filters, category: event.target.value as DishFilters["category"],
+            })}
           >
             <option value="all">All categories</option>
             <option value="veg">Veggie / Vegan</option>
@@ -118,65 +126,98 @@ export function DishCollection({
           Hot / cold
           <select
             className="fika-select"
-            value={temperature}
-            onChange={(event) => setTemperature(event.target.value)}
+            value={filters.temperature ?? ""}
+            onChange={(event) => setFilters({
+              ...filters, temperature: (event.target.value || null) as DishFilters["temperature"],
+            })}
           >
             <option value="all">All temperatures</option>
             <option value="hot">Hot</option>
             <option value="cold">Cold</option>
+            <option value="">Not set</option>
           </select>
         </label>
-      </div>
-      <div className={styles.tableScroll}>
-        <table className={styles.table}>
-          <caption className={styles.srOnly}>
-            Loaded dishes and their use in loaded menu drafts
-          </caption>
-          <thead>
-            <tr>
-              <th scope="col">Dish</th>
-              <th scope="col">Category</th>
-              <th scope="col">Hot / cold</th>
-              <th scope="col">Allergens</th>
-              <th scope="col">Version</th>
-              <th scope="col">Loaded menus</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((dish) => (
-              <tr key={dish.id}>
-                <th scope="row">
-                  <button
-                    type="button"
-                    className={styles.textAction}
-                    onClick={() => edit(dish)}
-                  >
-                    {dish.name || "Untitled dish"}
-                  </button>
-                </th>
-                <td>{title(dish.category)}</td>
-                <td>
-                  <Temperature value={dish.temperature} />
-                </td>
-                <td>
-                  <Pill>Unavailable</Pill>
-                </td>
-                <td>{dish.version}</td>
-                <td>{usage.get(dish.id) || 0}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {!filtered.length && (
-          <p className={styles.empty}>
-            No matching dishes. Change the filters or add a dish.
-          </p>
+        {menus.length > 0 && (
+          <label className="fika-field">
+            Menu assignment
+            <select
+              className="fika-select"
+              value={menuId}
+              onChange={(event) => {
+                setMenuId(event.target.value);
+                setSectionId("");
+              }}
+            >
+              <option value="">Any menu or unassigned</option>
+              {menus.map((item) => (
+                <option key={item.id} value={item.id}>{item.name || "Untitled menu"}</option>
+              ))}
+            </select>
+          </label>
+        )}
+        {menu && menu.sections.length > 0 && (
+          <label className="fika-field">
+            Section assignment
+            <select
+              className="fika-select"
+              value={sectionId}
+              onChange={(event) => setSectionId(event.target.value)}
+            >
+              <option value="">All sections</option>
+              {menu.sections.map((item) => (
+                <option key={item.id} value={item.id}>{item.name || "Untitled section"}</option>
+              ))}
+            </select>
+          </label>
         )}
       </div>
+      <div className={dishStyles.resultBar}>
+        <p role="status">
+          {filtering
+            ? `${filtered.length} ${filtered.length === 1 ? "match" : "matches"}${loadMore ? ` in ${dishes.length} loaded dishes` : ""}`
+            : `${dishes.length} ${dishes.length === 1 ? "dish" : "dishes"}${loadMore ? " loaded" : ""}`}
+        </p>
+        {filtering && <Button onClick={clearFilters}>Clear filters</Button>}
+      </div>
+      {filtered.length > 0 ? (
+        <ul className={dishStyles.dishList} aria-label="Dish results">
+          {filtered.map((dish) => {
+            const count = menuCounts.get(dish.id) ?? 0;
+            const itemId = `${resultId}-${dish.id}`;
+            return (
+              <li key={dish.id}>
+                <button
+                  className={dishStyles.dishRow}
+                  type="button"
+                  aria-labelledby={`${itemId}-name`}
+                  aria-describedby={`${itemId}-classification ${itemId}-usage`}
+                  onClick={() => edit(dish)}
+                >
+                  <strong id={`${itemId}-name`}>{dish.name || "Untitled dish"}</strong>
+                  <span className={dishStyles.classification} id={`${itemId}-classification`}>
+                    {title(dish.category)} <Temperature value={dish.temperature} />
+                  </span>
+                  <span className={dishStyles.usage} id={`${itemId}-usage`}>
+                    Version {dish.version} · {count} loaded {count === 1 ? "menu" : "menus"}
+                  </span>
+                  <Icon name="forward" />
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <p className={styles.empty}>
+          {filtering ? "No dishes match these filters." : "No dishes yet."}
+          {loadMore ? " Load more dishes to continue looking." : ""}
+        </p>
+      )}
       {loadMore && (
-        <Button disabled={busy} onClick={loadMore}>
-          Load more dishes
-        </Button>
+        <div className={styles.actions}>
+          <Button disabled={busy} onClick={loadMore}>
+            {busy ? "Loading dishes…" : "Load more dishes"}
+          </Button>
+        </div>
       )}
       {error && <p role="alert">{error}</p>}
     </>
@@ -197,40 +238,45 @@ export function DishEditor({
   update,
   back,
   backLabel,
-  assortment,
+  menuContext,
   kitchen,
   safetyAvailable,
   checkerOrigin,
 }: DishForm & {
   back: () => void;
   backLabel: string;
-  assortment: () => void;
+  menuContext?: { name: string; sectionName: string };
+  assortment?: () => void;
   kitchen: () => void;
   safetyAvailable: boolean;
   checkerOrigin?: string;
 }) {
+  const formId = useId();
+  const assortmentSummary = useRef<HTMLElement>(null);
+  const expectedTotal = useRef<HTMLInputElement>(null);
+  const assortment = dish.assortment;
   return (
     <>
       <PageHeading
-        title={dish.version ? "Edit dish" : "New dish"}
+        title={dish.name || (dish.version ? "Untitled dish" : "New dish")}
         eyebrow={
-          <Breadcrumb>
-            <button onClick={back}>{backLabel}</button>
-            <span>/</span>
-            <span>{dish.name || "New dish"}</span>
-          </Breadcrumb>
+          menuContext && (
+            <Breadcrumb>
+              <span>{menuContext.name || "Untitled menu"}</span>
+              <span>/</span>
+              <span>{menuContext.sectionName || "Untitled section"}</span>
+            </Breadcrumb>
+          )
         }
-        context={
-          <div className={styles.metadata}>
-            <Pill tone="info">Draft</Pill>
-            {dish.version > 0 && <span>Version {dish.version}</span>}
-          </div>
-        }
+        context={dish.version > 0 && <span>Draft version {dish.version}</span>}
       >
         <SaveNotice {...save} />
+        <Button onClick={back}>Back to {backLabel.toLowerCase()}</Button>
+        <Button onClick={kitchen}><Icon name="chef" /> Kitchen preview</Button>
       </PageHeading>
       <div className={styles.editorColumns}>
-        <section className={styles.formStack} aria-label="Dish details">
+        <section className={styles.formStack} aria-labelledby={`${formId}-details`}>
+          <h2 id={`${formId}-details`}>Dish details</h2>
           <label className="fika-field">
             Dish name
             <input
@@ -283,10 +329,13 @@ export function DishEditor({
             </select>
           </label>
         </section>
-        <section className={styles.formStack} aria-label="Dish descriptions">
-          <label className="fika-field">
-            Customer description
+        <section className={styles.formStack} aria-labelledby={`${formId}-descriptions`}>
+          <h2 id={`${formId}-descriptions`}>Descriptions</h2>
+          <div className="fika-field">
+            <label htmlFor={`${formId}-customer`}>Customer description</label>
             <textarea
+              id={`${formId}-customer`}
+              aria-describedby={`${formId}-customer-help`}
               className="fika-textarea"
               disabled={!canManage}
               maxLength={4000}
@@ -298,14 +347,16 @@ export function DishEditor({
                 }))
               }
             />
-            <span className={styles.fieldFoot}>
-              Customer-facing menu copy{" "}
+            <span className={styles.fieldFoot} id={`${formId}-customer-help`}>
+              Appears on the customer menu
               <span>{dish.customerDescription.length} / 4,000</span>
             </span>
-          </label>
-          <label className="fika-field">
-            Kitchen-only description
+          </div>
+          <div className="fika-field">
+            <label htmlFor={`${formId}-kitchen`}>Kitchen-only description</label>
             <textarea
+              id={`${formId}-kitchen`}
+              aria-describedby={`${formId}-kitchen-help`}
               className="fika-textarea"
               disabled={!canManage}
               maxLength={12000}
@@ -317,13 +368,45 @@ export function DishEditor({
                 }))
               }
             />
-            <span className={styles.fieldFoot}>
-              Kitchen specification{" "}
+            <span className={styles.fieldFoot} id={`${formId}-kitchen-help`}>
+              Instructions for the kitchen team
               <span>{dish.kitchenDescription.length} / 12,000</span>
             </span>
-          </label>
+          </div>
         </section>
       </div>
+      <details className={`${styles.disclosure} ${dishStyles.assortmentDisclosure}`}>
+        <summary ref={assortmentSummary}>
+          Fixed assortment <span className={`${dishStyles.usage} ${dishStyles.assortmentStatus}`}>
+            {assortment ? (assortmentIsComplete(dish) ? "· Totals match" : "· Needs attention") : "· Optional"}
+          </span>
+        </summary>
+        {assortment ? (
+          <AssortmentFields
+            dish={dish}
+            canManage={canManage}
+            update={update}
+            expectedTotalRef={expectedTotal}
+            onRemove={() => assortmentSummary.current?.focus()}
+          />
+        ) : (
+          <>
+            <p>Use an assortment when one box contains a fixed mix of items.</p>
+            <Button
+              disabled={!canManage}
+              onClick={() => {
+                update((item) => item.assortment ? item : {
+                  ...item,
+                  assortment: { expectedTotal: 0, unit: "", components: [] },
+                });
+                requestAnimationFrame(() => expectedTotal.current?.focus());
+              }}
+            >
+              <Icon name="plus" /> Add assortment
+            </Button>
+          </>
+        )}
+      </details>
       {safetyAvailable ? (
         <DishSafety key={`${dish.id}:${dish.version}:${save.state}`} dish={dish} saved={save.state === "saved"}
           canManage={canManage} checkerOrigin={checkerOrigin} />
@@ -333,17 +416,6 @@ export function DishEditor({
           allergen process.
         </div>
       )}
-      <div className={styles.footerActions}>
-        <Button onClick={back}>Back to {backLabel.toLowerCase()}</Button>
-        <Button onClick={kitchen}>Kitchen preview</Button>
-        <Button
-          primary
-          onClick={assortment}
-          disabled={!dish.assortment && !canManage}
-        >
-          {dish.assortment ? "Edit assortment" : "Add assortment"}
-        </Button>
-      </div>
     </>
   );
 }
@@ -359,8 +431,46 @@ export function AssortmentBuilder({
   back: () => void;
   kitchen: () => void;
 }) {
+  if (!dish.assortment) return null;
+  return (
+    <>
+      <PageHeading
+        title={"Assortment — " + (dish.name || "Untitled dish")}
+        eyebrow={
+          <Breadcrumb>
+            <span>Dishes</span>
+            <span>/</span>
+            <button onClick={back}>{dish.name || "Dish editor"}</button>
+            <span>/</span>
+            <span>Assortment</span>
+          </Breadcrumb>
+        }
+      >
+        <SaveNotice {...save} />
+      </PageHeading>
+      <AssortmentFields dish={dish} canManage={canManage} update={update} onRemove={back} />
+      <div className={styles.footerActions}>
+        <Button onClick={kitchen}>Kitchen preview</Button>
+        <Button primary onClick={back}>Done</Button>
+      </div>
+    </>
+  );
+}
+
+function AssortmentFields({
+  dish,
+  canManage,
+  update,
+  onRemove,
+  expectedTotalRef,
+}: Pick<DishForm, "dish" | "canManage" | "update"> & {
+  onRemove: () => void;
+  expectedTotalRef?: Ref<HTMLInputElement>;
+}) {
   const assortment = dish.assortment;
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const componentsHeading = useId();
+  const newComponent = useRef("");
   function revise(
     change: (
       value: NonNullable<Dish["assortment"]>,
@@ -376,21 +486,6 @@ export function AssortmentBuilder({
 
   return (
     <>
-      <PageHeading
-        title={"Assortment — " + (dish.name || "Untitled dish")}
-        eyebrow={
-          <Breadcrumb>
-            <span>Dishes</span>
-            <span>/</span>
-            <button onClick={back}>{dish.name || "Dish editor"}</button>
-            <span>/</span>
-            <span>Assortment</span>
-          </Breadcrumb>
-        }
-        context={<p>Define the quantities and contents in one box.</p>}
-      >
-        <SaveNotice {...save} />
-      </PageHeading>
       <div className={styles.assortmentColumns}>
         <section className={styles.formStack}>
           <h2>Box configuration</h2>
@@ -398,6 +493,7 @@ export function AssortmentBuilder({
             Expected total per box
             <input
               type="number"
+              ref={expectedTotalRef}
               min="0"
               step="any"
               className="fika-input"
@@ -447,102 +543,88 @@ export function AssortmentBuilder({
             )}
           </div>
         </section>
-        <section>
-          <h2>Assortment contents (per box)</h2>
-          <div className={styles.tableScroll}>
-            <table className={styles.table}>
-              <thead>
-                <tr>
-                  <th scope="col">Item / component</th>
-                  <th scope="col">Quantity</th>
-                  <th scope="col">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {assortment.components.map((component, index) => (
-                  <tr key={component.id}>
-                    <td>
-                      <input
-                        aria-label={"Component " + (index + 1)}
-                        className="fika-input"
-                        value={component.name}
-                        disabled={!canManage}
-                        maxLength={200}
-                        onChange={(event) =>
-                          revise((value) => ({
-                            ...value,
-                            components: value.components.map((item) =>
-                              item.id === component.id
-                                ? { ...item, name: event.target.value }
-                                : item,
-                            ),
-                          }))
-                        }
-                      />
-                    </td>
-                    <td>
-                      <input
-                        aria-label={"Quantity for component " + (index + 1)}
-                        className={"fika-input " + styles.quantity}
-                        type="number"
-                        min="0"
-                        step="any"
-                        disabled={!canManage}
-                        value={component.quantity}
-                        onChange={(event) =>
-                          revise((value) => ({
-                            ...value,
-                            components: value.components.map((item) =>
-                              item.id === component.id
-                                ? {
-                                    ...item,
-                                    quantity: Number(event.target.value),
-                                  }
-                                : item,
-                            ),
-                          }))
-                        }
-                      />
-                    </td>
-                    <td>
-                      <Button
-                        disabled={!canManage}
-                        label={"Remove component " + (index + 1)}
-                        onClick={() =>
-                          revise((value) => ({
-                            ...value,
-                            components: value.components.filter(
-                              (item) => item.id !== component.id,
-                            ),
-                          }))
-                        }
-                      >
-                        Remove
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {!assortment.components.length && (
-              <p className={styles.empty}>
-                Add the components that make up one box.
-              </p>
-            )}
-          </div>
+        <section aria-labelledby={componentsHeading}>
+          <h2 id={componentsHeading} tabIndex={-1}>Assortment contents (per box)</h2>
+          {assortment.components.length ? (
+            <ol className={dishStyles.componentList}>
+              {assortment.components.map((component, index) => (
+                <li className={dishStyles.componentRow} key={component.id}>
+                  <label className="fika-field">
+                    Component {index + 1}
+                    <input
+                      className="fika-input"
+                      value={component.name}
+                      disabled={!canManage}
+                      maxLength={200}
+                      ref={(field) => {
+                        if (!field || newComponent.current !== component.id) return;
+                        newComponent.current = "";
+                        field.focus();
+                      }}
+                      onChange={(event) =>
+                        revise((value) => ({
+                          ...value,
+                          components: value.components.map((item) =>
+                            item.id === component.id ? { ...item, name: event.target.value } : item,
+                          ),
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="fika-field">
+                    Quantity <span className={styles.srOnly}>for component {index + 1}</span>
+                    <input
+                      className="fika-input"
+                      type="number"
+                      min="0"
+                      step="any"
+                      disabled={!canManage}
+                      value={component.quantity}
+                      onChange={(event) =>
+                        revise((value) => ({
+                          ...value,
+                          components: value.components.map((item) =>
+                            item.id === component.id ? { ...item, quantity: Number(event.target.value) } : item,
+                          ),
+                        }))
+                      }
+                    />
+                  </label>
+                  {canManage && (
+                    <Button
+                      label={"Remove component " + (index + 1)}
+                      onClick={() => {
+                        revise((value) => ({
+                          ...value,
+                          components: value.components.filter((item) => item.id !== component.id),
+                        }));
+                        document.getElementById(componentsHeading)?.focus();
+                      }}
+                    >
+                      Remove
+                    </Button>
+                  )}
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p>Add the components that make up one box.</p>
+          )}
           <Button
             disabled={!canManage}
-            onClick={() =>
+            onClick={() => {
+              const id = crypto.randomUUID();
+              newComponent.current = id;
               revise((value) => ({
                 ...value,
                 components: [
                   ...value.components,
-                  { id: crypto.randomUUID(), name: "", quantity: 1 },
+                  { id, name: "", quantity: 1 },
                 ],
-              }))
-            }
+              }));
+            }}
           >
-            <Icon name="plus" /> Add item
+            <Icon name="plus" /> Add component
           </Button>
         </section>
       </div>
@@ -561,19 +643,13 @@ export function AssortmentBuilder({
             disabled={!confirmRemove}
             onClick={() => {
               update((item) => ({ ...item, assortment: null }));
-              back();
+              onRemove();
             }}
           >
             Remove assortment
           </Button>
         </details>
       )}
-      <div className={styles.footerActions}>
-        <Button onClick={kitchen}>Kitchen preview</Button>
-        <Button primary onClick={back}>
-          Done
-        </Button>
-      </div>
     </>
   );
 }
