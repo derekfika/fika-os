@@ -383,7 +383,7 @@ export function SectionEditor({
         </label>
       )}
       <div className={styles.sectionControls}>
-        {isRotation && (
+        {isRotation && view === "week" && (
           <div className={styles.fieldGroup}>
             <span id="rotation-week">Rotation week</span>
             <div
