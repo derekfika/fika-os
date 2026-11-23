@@ -43,3 +43,22 @@ test("the portal keeps Hub pricing, VAT and ordinary options with its event-date
     assert.equal(item.studioChoices?.dishes[0].description, "Public description");
   } finally { globalThis.fetch = original; }
 });
+
+
+test("activated Studio choices replace only the group named by Hub and retain its minimum", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => Response.json({ offerings: [{
+    itemId: "item:finger", offeringMode: "standard", name: "Finger Food", category: "Finger Food",
+    price: { amount: 3.95, vatRate: 0.2 }, constraints: { minimumQuantity: 12 },
+    configuration: { choices: [
+      { id: "variety", label: "Variety", controlType: "quantities", minimumQuantity: 12, options: [{ id: "old", label: "Old" }] },
+      { id: "service", label: "Service", options: [{ id: "standard", label: "Standard" }] },
+    ] },
+    studioChoices: { publicationHash: "a".repeat(64), minimumQuantity: 12, replacesChoiceGroupId: "variety", dishes: [{ id: "dish:new", name: "New dish" }] },
+  }] });
+  try {
+    const [item] = await loadStudioPortalMenu("2026-12-07");
+    assert.deepEqual(item.optionGroups?.map(group => group.id), ["service", studioDishChoiceId]);
+    assert.equal(item.optionGroups?.find(group => group.id === studioDishChoiceId)?.minimumQuantity, 12);
+  } finally { globalThis.fetch = original; }
+});

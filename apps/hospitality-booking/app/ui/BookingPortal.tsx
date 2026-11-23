@@ -323,7 +323,7 @@ export default function BookingPortal({
       setCatalogueWarning(catalogue.source === "cache-unverified" ? "Showing the last saved menu. Its current version could not be verified; check your connection and refresh before submitting." : "");
     }).catch(() => { if (active) setError(`The ${site.label} catalogue could not be loaded. Check your connection and try again.`); });
     return () => { active = false; };
-  }, [site.key, site.label, oplocId, studioDate, studioPilotDates]);
+  }, [site.key, site.label, oplocId, studioDate, studioPilotDates?.firstDate, studioPilotDates?.lastDate]);
   const categories = useMemo(
     () =>
       (allowed[occasion] || []).filter((category) =>
@@ -442,7 +442,7 @@ export default function BookingPortal({
       );
       if (belowMinimum) {
         const minimum = minimumQuantityFor(belowMinimum.item, minimumContext);
-        return showValidation({ [`quantity:${belowMinimum.item.id}`]: { field: `quantity:${belowMinimum.item.id}`, message: `${belowMinimum.item.name} requires at least ${minimum} ${minimum === 1 ? "box/item" : "boxes"}.`, step: 2 } }, `${belowMinimum.item.name} needs a larger quantity.`, 2);
+        return showValidation({ [`quantity:${belowMinimum.item.id}`]: { field: `quantity:${belowMinimum.item.id}`, message: `${belowMinimum.item.name} requires at least ${minimum} ${belowMinimum.item.studioChoices ? "units" : minimum === 1 ? "box/item" : "boxes"}.`, step: 2 } }, `${belowMinimum.item.name} needs a larger quantity.`, 2);
       }
     }
     if (step === 3 && !Object.values(acks).every(Boolean)) {
@@ -460,12 +460,12 @@ export default function BookingPortal({
         const picked = choices[studioDishChoiceId];
         if (!picked || typeof picked !== "object" || Array.isArray(picked) ||
             Object.values(picked).reduce((sum, count) => sum + count, 0) !== quantity ||
-            Object.keys(picked).some(id => !item.studioChoices!.dishes.some(dish => dish.id === id))) {
+            Object.entries(picked).some(([id, count]) => !item.studioChoices!.dishes.some(dish => dish.id === id) || !Number.isSafeInteger(count) || count < 0 || (count > 0 && count < (item.optionGroups?.find(group => group.id === studioDishChoiceId)?.minimumQuantity ?? 1)))) {
           throw new Error(`Choose current published dishes for ${item.name}.`);
         }
       }
       assertBookingDate(selected.map(x => x.item), details.eventDate, new Date().toISOString(), { site: site.key, occasion, startTime: details.startTime });
-      validateCatalogueRules(selected.map(x => x.item), selected.map(x => ({ itemId: x.item.id, quantity: x.quantity, choices: Object.entries(x.choices).filter(([id]) => id !== studioDishChoiceId).map(([id, value]) => typeof value === "object" && !Array.isArray(value) ? { id, quantities: value } : { id, value }) })), { gallagher, siteId: site.key, guestCount: details.guestCount, eventDate: details.eventDate, startTime: details.startTime, now: new Date().toISOString() });
+      validateCatalogueRules(selected.map(x => x.item), selected.map(x => ({ itemId: x.item.id, quantity: x.quantity, choices: Object.entries(x.choices).map(([id, value]) => typeof value === "object" && !Array.isArray(value) ? { id, quantities: value } : { id, value }) })), { gallagher, siteId: site.key, guestCount: details.guestCount, eventDate: details.eventDate, startTime: details.startTime, now: new Date().toISOString() });
       return true;
     } catch (error) { showValidation({ menu: { field: "menu", step: 2, message: (error as Error).message } }, (error as Error).message, 2); return false; }
   };
@@ -484,7 +484,7 @@ export default function BookingPortal({
     if (belowMinimum) {
       const minimum = minimumQuantityFor(belowMinimum.item, minimumContext);
       changeStep(2);
-      return showValidation({ [`quantity:${belowMinimum.item.id}`]: { field: `quantity:${belowMinimum.item.id}`, message: `${belowMinimum.item.name} requires at least ${minimum} ${minimum === 1 ? "box/item" : "boxes"}.`, step: 2 } }, `${belowMinimum.item.name} needs a larger quantity.`, 2);
+      return showValidation({ [`quantity:${belowMinimum.item.id}`]: { field: `quantity:${belowMinimum.item.id}`, message: `${belowMinimum.item.name} requires at least ${minimum} ${belowMinimum.item.studioChoices ? "units" : minimum === 1 ? "box/item" : "boxes"}.`, step: 2 } }, `${belowMinimum.item.name} needs a larger quantity.`, 2);
     }
     if (guestIssue) return showValidation({ guestCount: { field: "guestCount", message: guestIssue, step: 1 } }, "Please review the guest count before sending.", 1);
     const dietaryTotal = [
@@ -1125,9 +1125,9 @@ function Plan({
                 const saved = line?.choices[group.id];
                 if (group.selectionType === "quantities") {
                   const quantities = saved && typeof saved === "object" && !Array.isArray(saved) ? saved : {};
-                  return <fieldset className="choice-field" key={group.id}><legend>{group.label} — minimum {group.minimumQuantity} per selected variety</legend>{group.options.map(option => <label key={option.id}>{option.label}
-                    {group.id === studioDishChoiceId && <span>{item.studioChoices?.dishes.find(dish => dish.id === option.id)?.description}</span>}
-                    <input type="number" min="0" step="1" value={quantities[option.id] || ""} onChange={event => { const next: Record<string, number> = { ...quantities, [option.id]: quantityFromInput(event.target.value) }; const quantity = Object.values(next).reduce((sum, n) => sum + n, 0); setQuantity(item, quantity); setChoice(item.id, group.id, next); }} /></label>)}</fieldset>;
+                  if (group.id !== studioDishChoiceId) return <fieldset className="choice-field" key={group.id}><legend>{group.label} — minimum {group.minimumQuantity} per selected variety</legend>{group.options.map(option => <label key={option.id}>{option.label}<input type="number" min="0" step="1" value={quantities[option.id] || ""} onChange={event => { const next: Record<string, number> = { ...quantities, [option.id]: quantityFromInput(event.target.value) }; const quantity = Object.values(next).reduce((sum, n) => sum + n, 0); setQuantity(item, quantity); setChoice(item.id, group.id, next); }} /></label>)}</fieldset>;
+                  return <fieldset className="choice-field studio-dish-choices" key={group.id}><legend>{group.label} — minimum {group.minimumQuantity} per selected variety</legend><p>Enter a quantity for each dish you would like. The total updates automatically.</p>{group.options.map(option => <label className="studio-dish-row" key={option.id}><span><strong>{option.label}</strong>{group.id === studioDishChoiceId && <span>{item.studioChoices?.dishes.find(dish => dish.id === option.id)?.description}</span>}</span>
+                    <input aria-label={`${option.label} quantity`} inputMode="numeric" type="number" min="0" step="1" value={quantities[option.id] || ""} onChange={event => { const next: Record<string, number> = { ...quantities, [option.id]: quantityFromInput(event.target.value) }; const quantity = Object.values(next).reduce((sum, n) => sum + n, 0); setQuantity(item, quantity); setChoice(item.id, group.id, next); }} /></label>)}<p aria-live="polite">Total: {line?.quantity || 0} (minimum {minimumQuantityFor(item, minimumContext)} total)</p></fieldset>;
                 }
                 if (isMulti) {
                   const selectedOptions = Array.isArray(saved) ? saved : [];
@@ -1182,7 +1182,7 @@ function Plan({
                   </label>
                 );
               })}
-              {(() => {
+              {!item.studioChoices && (() => {
                 const minimum = minimumQuantityFor(item, minimumContext);
                 const minimumMessage = quantityMinimumMessage(line?.quantity || 0, minimum);
                 const showMinimum = Boolean(minimumMessage) && (touched.includes(item.id) || Boolean(errors[`quantity:${item.id}`]));
@@ -1211,7 +1211,7 @@ function Plan({
                 );
               })()}
               {line?.quantity > 0 && <BuffetMenuPicker config={buffet.config} item={item} catalogue={menu} selectedItemIds={lines.filter((value: Line) => value.quantity > 0).map((value: Line) => value.itemId)} guestCount={details.guestCount} preview={line.buffetPreview} dietaryNotes={dietaryNotes} onSave={(target, preview, notes) => onSaveBuffet(item.id, target, preview, notes)} />}
-              {minimumQuantityFor(item, minimumContext) > 1 && (
+              {!item.studioChoices && minimumQuantityFor(item, minimumContext) > 1 && (
                 <p className="minimum-quantity-note">
                   Minimum {minimumQuantityFor(item, minimumContext)} boxes
                 </p>
