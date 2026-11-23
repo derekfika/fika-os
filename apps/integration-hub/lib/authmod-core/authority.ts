@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { AuthPrincipal, AuthorityGrant, AuthModAction, DelegationRecord, EffectivePeriod } from "./model";
-import { assertValidEffectivePeriod, HOSPITALITY_BOOKING_ADMIN, idempotentId, isEffective, now } from "./model";
+import { assertValidEffectivePeriod, HOSPITALITY_BOOKING_ADMIN, HOSPITALITY_INVOICE_REPORT, idempotentId, isEffective, now } from "./model";
 import { auditEvent } from "./audit";
 import type { AuthModRepository } from "./repository";
 import { isLogisticsVehicleId } from "../../../shared/logistics-authority";
@@ -10,7 +10,7 @@ import {
   isEffectiveBeverageAccess, validBeverageOplocId,
 } from "./beverage-admission";
 
-export const PERSON_REQUIRED_AUTHORITIES = ["authmod", "authmod.admin", "menu.publish", "hospitality.rotations", "logistics.driver", HOSPITALITY_BOOKING_ADMIN] as const;
+export const PERSON_REQUIRED_AUTHORITIES = ["authmod", "authmod.admin", "menu.publish", "hospitality.rotations", "logistics.driver", HOSPITALITY_BOOKING_ADMIN, HOSPITALITY_INVOICE_REPORT] as const;
 export function isPersonRequiredAuthority(resource: string) { return (PERSON_REQUIRED_AUTHORITIES as readonly string[]).includes(resource); }
 export const ORGANISATION_AUTHORITIES = ["authmod", "menu.publish", "hospitality.rotations"] as const;
 export function isOrganisationAuthority(resource: string) { return (ORGANISATION_AUTHORITIES as readonly string[]).includes(resource); }
@@ -43,6 +43,16 @@ export async function grantAuthority(repository: AuthModRepository, input: { sub
     const target = await repository.getIdentity(input.subjectId);
     if (!target || target.identityKind !== "person" || target.status !== "active") {
       throw Object.assign(new Error("Company-wide Hospitality Admin requires an active person identity."), { status: 422, code: "AUTHMOD_PERSON_REQUIRED" });
+    }
+  }
+  if (input.resource === HOSPITALITY_INVOICE_REPORT) {
+    const validScope = input.appId === "hospitality-booking" && input.action === "Manage" && input.scope.kind === "oploc" &&
+      input.scope.ids.length === 1 && new Set(input.scope.ids).size === 1 && input.subjectType === "interactive";
+    if (!validScope) throw Object.assign(new Error("Hospitality Invoice Report authority requires one explicit OPLOC and Manage."), { status: 422, code: "AUTHMOD_HOSPITALITY_INVOICE_REPORT_SCOPE" });
+    const identity = await repository.getIdentity(input.subjectId);
+    const oploc = await repository.getActiveOploc(input.scope.ids[0]);
+    if (!identity || identity.identityKind !== "person" || identity.status !== "active" || !oploc || oploc.id !== input.scope.ids[0]) {
+      throw Object.assign(new Error("Hospitality Invoice Report authority requires an active person and an active canonical OPLOC."), { status: 422, code: "AUTHMOD_HOSPITALITY_INVOICE_REPORT_SCOPE" });
     }
   }
   const beverage = input.appId === BEVERAGE_AUTHMOD_APP_ID;

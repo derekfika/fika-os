@@ -117,10 +117,12 @@ export default function HospitalityDashboard({
   siteKey,
   oplocId,
   siteLabel,
+  showInvoiceReports = false,
 }: {
   siteKey: PortalSiteKey;
   oplocId: string;
   siteLabel: string;
+  showInvoiceReports?: boolean;
 }) {
   const site = portalSite(siteKey);
   const currentSiteLabel = siteLabel.trim() || site.theme.shortLabel;
@@ -1073,6 +1075,7 @@ export default function HospitalityDashboard({
           </div>
           <div>
             <a className="start-again" href={oplocId ? hospitalityWorkspacePath(oplocId, "booking") : site.portalPath}>View Booking platform</a>
+            {showInvoiceReports && <a className="start-again" href={`/workspace/invoice-reports?oploc=${encodeURIComponent(oplocId)}`}>Invoice Reports</a>}
             {site.key === "angel-court" && (
               <>
                 <button type="button" onClick={() => void forceAngelCourtScan()} disabled={scanBusy}>

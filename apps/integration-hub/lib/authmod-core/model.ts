@@ -1,5 +1,6 @@
 export const AUTHMOD_ACTIONS = ["View", "Contribute", "Manage", "Approve", "Publish", "Administer"] as const;
 export const HOSPITALITY_BOOKING_ADMIN = "hospitality.booking-admin";
+export const HOSPITALITY_INVOICE_REPORT = "hospitality.invoice-report";
 export type AuthModAction = (typeof AUTHMOD_ACTIONS)[number];
 export type RecordStatus = "active" | "revoked" | "expired" | "inactive";
 export type IdentityLinkStatus = "unmatched" | "matched" | "needs-review";

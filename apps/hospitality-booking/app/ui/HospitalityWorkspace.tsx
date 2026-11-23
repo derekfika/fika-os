@@ -122,7 +122,7 @@ export default function HospitalityWorkspace({ rcoaConfigured = false }: { rcoaC
     return <BookingPortal siteKey={active.portalSiteKey} oplocId={active.id} siteLabel={active.label} />;
   }
   if (surface === "operations" && active && canOperate) {
-    return <HospitalityDashboard key={active.id} siteKey={active.portalSiteKey} oplocId={active.id} siteLabel={active.label} />;
+    return <HospitalityDashboard key={active.id} siteKey={active.portalSiteKey} oplocId={active.id} siteLabel={active.label} showInvoiceReports={active.portalSiteKey === "rcoa"} />;
   }
 
   const showDestinationChoice = sites.length === 1;
