@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { ProductionLine, ProductionOrder } from "../lib/production-types";
+import type { CpuDayProjection } from "../lib/cpu-projection";
+import { cpuProjectionToOrders } from "../lib/cpu-dashboard-adapter";
 import { loadWholeDay } from "../app/ui/whole-day-production";
 import { runSheetServiceKey } from "../app/ui/run-sheet-printing";
 import {
@@ -136,6 +138,49 @@ test("production-shaped Optiver Menu Planning orders follow Run Sheet classifica
     ["dish:tart", "Leek, goat's cheese & thyme tart"],
   ]);
   assert.equal(gastroLabelEligible({ ...optiver, sourceEntityId: undefined } as ProductionOrder), false);
+
+  const projection = {
+    serviceDate: day,
+    revision: 12,
+    lastChangeSequence: 78,
+    rebuiltAt: `${day}T08:00:00.000Z`,
+    summary: { orders: 1, ready: 1, attention: 0, planned: 1, totalUnits: 62 },
+    orders: [{
+      id: optiver.canonicalId,
+      serviceDate: day,
+      requiredBy: `${day}T12:00:00.000Z`,
+      serviceWindow: { startTime: "12:00" },
+      origin: "menu_planning",
+      menuMetadataComplete: true,
+      sourceReference: optiver.sourceBookingId,
+      sourceEntityId: optiver.sourceEntityId,
+      sourcePublicationId: optiver.sourcePublicationId,
+      sourcePublicationDayId: optiver.sourcePublicationDayId,
+      sourceVersion: optiver.sourceVersion,
+      sourceContentHash: optiver.sourceContentHash,
+      destinationOplocId: "oploc:optiver",
+      destinationLabel: "Optiver",
+      priority: "normal",
+      status: "menu_available",
+      workflowStatus: "planned",
+      productionScope: "delivered_in,delivered_in",
+      quantities: [
+        { sourceLineId: "line:optiver-soup", sourceMenuItemId: "dish:soup", name: "Roasted tomato soup", quantity: 38, unit: "portions", dietaries: {} },
+        { sourceLineId: "line:optiver-tart", sourceMenuItemId: "dish:tart", name: "Leek, goat's cheese & thyme tart", quantity: 24, unit: "portions", dietaries: {} },
+      ],
+      allergenReadiness: "ready",
+      planningReadiness: "planned",
+      attention: [],
+      version: 6,
+    }],
+  } as unknown as CpuDayProjection;
+  const projectedOrder = cpuProjectionToOrders(projection)[0];
+  assert.equal(projectedOrder.productionCategory, undefined);
+  assert.deepEqual(gastroLabelDishes([projectedOrder], day).map(({ id, name }) => [id, name]), [
+    ["dish:soup", "Roasted tomato soup"],
+    ["dish:tart", "Leek, goat's cheese & thyme tart"],
+  ]);
+  assert.deepEqual(gastroLabelRowsWithQuantity(gastroLabelDishes([projectedOrder], day), {}, day).map(({ quantity }) => quantity), [0, 0]);
 });
 
 test("DIS003 PDF HTML uses central Trial C geometry, London service date, wrapped text and no operational declarations", () => {
