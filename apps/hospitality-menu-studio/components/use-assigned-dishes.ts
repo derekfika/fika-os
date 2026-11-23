@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { Dish, Section } from "../lib/contract";
+import type { Dish } from "../lib/contract";
 
 type Hydration = {
   items: Dish[];
@@ -11,14 +11,9 @@ const empty: Hydration = { items: [], missing: [], error: "", loading: false };
 
 /** Resolve only assigned IDs absent from the loaded library, in bounded read-only batches. */
 export function useAssignedDishes(
-  section: Section | undefined,
-  dishes: Dish[],
+  ids: readonly string[],
+  dishes: readonly Dish[],
 ) {
-  const ids = section
-    ? section.mode === "static"
-      ? section.staticDishIds
-      : section.weeks.flat()
-    : [];
   const known = new Set(dishes.map((dish) => dish.id));
   const key = JSON.stringify(
     [...new Set(ids.filter((id) => !known.has(id)))].sort(),

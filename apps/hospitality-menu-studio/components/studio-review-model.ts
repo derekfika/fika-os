@@ -1,11 +1,22 @@
-import type { Dish, Menu, Review } from "../lib/contract";
+import { calendarDay, type Dish, type Menu, type Publication, type Review } from "../lib/contract";
+
+export type PublicationReceipt = Pick<Publication, "id" | "menuId" | "revision" | "effectiveDate">;
+
+export function acknowledgedPublication(value: unknown, menuId: string): PublicationReceipt | null {
+  if (!value || typeof value !== "object") return null;
+  const { id, menuId: receivedId, revision, effectiveDate } = value as Partial<PublicationReceipt>;
+  if (typeof id !== "string" || !id || receivedId !== menuId ||
+    typeof revision !== "number" || !Number.isSafeInteger(revision) || revision < 1 ||
+    typeof effectiveDate !== "string" || !Number.isFinite(calendarDay(effectiveDate))) return null;
+  return { id, menuId, revision, effectiveDate };
+}
 
 const unavailableAuthorities =
   "Signed dish verification, catalogue eligibility and booking impact are unavailable.";
 
 export type ReviewIssueTarget =
   | { kind: "menu" }
-  | { kind: "section"; id: string }
+  | { kind: "section"; id: string; mapping?: true }
   | { kind: "dish"; id: string };
 
 export type PresentedReviewIssue = { text: string; target?: ReviewIssueTarget };
@@ -68,7 +79,11 @@ export function presentReviewIssues(
     });
     if (sections.length + dishMatches.length === 1) {
       const target: ReviewIssueTarget = sections.length
-        ? { kind: "section", id: sections[0]!.id }
+        ? {
+            kind: "section",
+            id: sections[0]!.id,
+            ...(issue.endsWith("catalogue mapping.") && { mapping: true }),
+          }
         : { kind: "dish", id: dishMatches[0]!.id };
       editable.push({ text: issue, target });
     } else if (sections.length + dishMatches.length > 1) {

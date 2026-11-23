@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Dish, Menu, Review } from "../lib/contract";
 import {
+  acknowledgedPublication,
   assortmentProgress,
   presentReviewIssues,
 } from "../components/studio-review-model";
@@ -56,7 +57,7 @@ test("review presentation separates only the known unavailable-authorities messa
     editable: [
       {
         text: "Canapés needs a Hub catalogue mapping.",
-        target: { kind: "section", id: "canapes" },
+        target: { kind: "section", id: "canapes", mapping: true },
       },
       {
         text: "Bite needs a name and both descriptions.",
@@ -66,6 +67,16 @@ test("review presentation separates only the known unavailable-authorities messa
     other: ["A future check returned an unfamiliar result."],
     authoritiesUnavailable: true,
   });
+});
+
+test("only a valid receipt for the current menu can show published status", () => {
+  const receipt = { id: "pub-1", menuId: menu.id, revision: 1, effectiveDate: "2027-03-01" };
+  assert.deepEqual(acknowledgedPublication(receipt, menu.id), receipt);
+  assert.equal(acknowledgedPublication(null, menu.id), null);
+  assert.equal(acknowledgedPublication({ ok: true }, menu.id), null);
+  assert.equal(acknowledgedPublication(receipt, "different-menu"), null);
+  assert.equal(acknowledgedPublication({ ...receipt, revision: 0 }, menu.id), null);
+  assert.equal(acknowledgedPublication({ ...receipt, effectiveDate: "2027-02-30" }, menu.id), null);
 });
 
 test("duplicate names never select an arbitrary editor", () => {
