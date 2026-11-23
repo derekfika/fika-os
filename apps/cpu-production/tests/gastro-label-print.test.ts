@@ -11,6 +11,9 @@ import {
   gastroLabelDateLabel,
   gastroLabelDishes,
   gastroLabelRowsWithQuantity,
+  applyGastroLabelQuantityToSelected,
+  hasSelectedGastroLabelDishes,
+  setGastroLabelQuantity,
   gastroLabelsPrintHtml,
   gastroLabelEligible,
   fitGastroLabelName,
@@ -69,6 +72,45 @@ test("manual label counts paginate 0, 1, 7, 8, 9 and 12 labels without deriving 
   assert.equal(validGastroLabelCount(Number.NaN), false);
   const dishes = gastroLabelDishes([order("order:1", { lines: [line("soup", "Tomato soup", 1)] })], day);
   assert.equal(gastroLabelRowsWithQuantity(dishes, {}, day)[0].quantity, 0);
+});
+
+test("quick quantities replace selected counts, keep unselected dishes and update totals and sheet counts locally", () => {
+  const dishes = [
+    { id: "dish:soup", name: "Tomato soup", sortOrder: 1 },
+    { id: "dish:tart", name: "Leek tart", sortOrder: 2 },
+    { id: "dish:salad", name: "Green salad", sortOrder: 3 },
+  ];
+  const starting = { "dish:soup": 2, "dish:tart": 4, "dish:salad": 0 };
+  const selected = ["dish:soup", "dish:salad"];
+  assert.equal(hasSelectedGastroLabelDishes(selected), true);
+  assert.equal(hasSelectedGastroLabelDishes([]), false);
+
+  for (const preset of [1, 2, 3]) {
+    const presetResult = applyGastroLabelQuantityToSelected(starting, selected, preset);
+    assert.deepEqual(presetResult, { "dish:soup": preset, "dish:tart": 4, "dish:salad": preset }, `${preset} each`);
+  }
+
+  const applied = applyGastroLabelQuantityToSelected(starting, selected, 3);
+  assert.deepEqual(starting, { "dish:soup": 2, "dish:tart": 4, "dish:salad": 0 }, "bulk apply must not mutate the existing state object");
+  assert.deepEqual(applied, { "dish:soup": 3, "dish:tart": 4, "dish:salad": 3 }, "unselected quantities must remain unchanged");
+
+  const individualOverride = setGastroLabelQuantity(applied, "dish:soup", 5);
+  assert.deepEqual(individualOverride, { "dish:soup": 5, "dish:tart": 4, "dish:salad": 3 }, "individual quantity editing remains available after bulk apply");
+
+  const rows = gastroLabelRowsWithQuantity(dishes, applied, day);
+  assert.equal(rows.reduce((sum, row) => sum + row.quantity, 0), 10);
+  assert.equal(gastroLabelCells(rows, 1).length, 2, "ten labels should preview as two A4 sheets");
+
+  const cleared = applyGastroLabelQuantityToSelected(applied, selected, 0);
+  assert.deepEqual(cleared, { "dish:soup": 0, "dish:tart": 4, "dish:salad": 0 }, "clear selected must set, not subtract");
+  const clearedRows = gastroLabelRowsWithQuantity(dishes, cleared, day);
+  assert.equal(clearedRows.reduce((sum, row) => sum + row.quantity, 0), 4);
+  assert.equal(gastroLabelCells(clearedRows, 1).length, 1);
+
+  assert.deepEqual(applyGastroLabelQuantityToSelected(applied, [], 3), applied, "no selection must leave counts unchanged");
+  assert.throws(() => setGastroLabelQuantity(applied, "dish:soup", 1.5), /nonnegative whole numbers/i);
+  assert.throws(() => applyGastroLabelQuantityToSelected(applied, selected, -1), /nonnegative whole numbers/i);
+  assert.throws(() => applyGastroLabelQuantityToSelected(applied, selected, Number.MAX_SAFE_INTEGER + 1), /nonnegative whole numbers/i);
 });
 
 test("first sheet start positions 1, 2 and 8 leave the exact used cells and continue full sheets", () => {

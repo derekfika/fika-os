@@ -76,6 +76,27 @@ export function validGastroLabelCount(value: number) {
   return Number.isSafeInteger(value) && value >= 0;
 }
 
+export function setGastroLabelQuantity(quantities: Readonly<Record<string, number>>, dishId: string, quantity: number): Record<string, number> {
+  if (!validGastroLabelCount(quantity)) throw new Error("Label quantities must be nonnegative whole numbers.");
+  return { ...quantities, [dishId]: quantity };
+}
+
+export function applyGastroLabelQuantityToSelected(
+  quantities: Readonly<Record<string, number>>,
+  selectedDishIds: readonly string[],
+  quantity: number,
+): Record<string, number> {
+  if (!validGastroLabelCount(quantity)) throw new Error("Label quantities must be nonnegative whole numbers.");
+  if (!selectedDishIds.length) return { ...quantities };
+  const next = { ...quantities };
+  for (const id of selectedDishIds) next[id] = quantity;
+  return next;
+}
+
+export function hasSelectedGastroLabelDishes(selectedDishIds: readonly string[]) {
+  return selectedDishIds.length > 0;
+}
+
 export const GASTRO_LABEL_FONT = { minimumPt: 12, maximumPt: 23, widthMm: 85, nameHeightMm: 34 } as const;
 
 /** Wrap with measured Arial Bold text metrics, matching the print face and CSS box. */
