@@ -1386,4 +1386,3 @@ function Summary({ occasion, selected, total, details, buffetConfig }: any) {
     </aside>
   );
 }
-
