@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { CanonicalBooking } from "../lib/hospitality-booking-service";
 import { buildRcoaInvoiceReport, rcoaServiceBusinessDate } from "../lib/rcoa-invoice-report";
-import { MemoryAuthModRepository, V1_APPLICATIONS, assignSite, createAuthIdentity, grantAuthority, grantStandardApplicationAccess, HOSPITALITY_BOOKING_ADMIN, HOSPITALITY_INVOICE_REPORT } from "../lib/authmod-core";
+import { MemoryAuthModRepository, V1_APPLICATIONS, assignSite, createAuthIdentity, createDelegation, grantAuthority, grantStandardApplicationAccess, HOSPITALITY_BOOKING_ADMIN, HOSPITALITY_INVOICE_REPORT } from "../lib/authmod-core";
 import type { AuthPrincipal } from "../lib/authmod-core";
 import { requireRcoaInvoiceReportAuthority } from "../lib/rcoa-invoice-report";
 
@@ -53,6 +53,15 @@ test("confirmed states include past, future and grouped child services once unde
   assert.equal(result.bookingCount, 5);
   assert.deepEqual(result.bookings.slice(0, 2).map(row => row.bookingReference), ["RCOA-service-a", "RCOA-service-b"]);
   assert.deepEqual(result.bookings.slice(0, 2).map(row => row.exVatPence), [12010, 12010]);
+});
+
+test("report uses a recorded RCoA meeting title and never substitutes a generic event type", () => {
+  const named = booking("named", { order: { ...booking("named").order, eventType: "lecture" }, notes: "Event: Annual Governance Lecture\n\nPlease set the room early." });
+  const unnamed = booking("unnamed", { order: { ...booking("unnamed").order, eventType: "event_catering" }, notes: "Please set the room early." });
+  const result = buildRcoaInvoiceReport({ oplocId: "oploc:rcoa", startDate: "2026-11-01", endDate: "2026-11-30", bookings: [named, unnamed] });
+  assert.equal(result.bookings[0].meetingTitle, "Annual Governance Lecture");
+  assert.equal(result.bookings[1].meetingTitle, "Meeting title not recorded");
+  assert.doesNotMatch(JSON.stringify(result.bookings), /"meetingTitle":"(?:Event Catering|Lecture)"/);
 });
 
 test("cancelled, draft and quoted bookings are excluded without affecting confirmed amounts", () => {
@@ -116,6 +125,9 @@ test("invoice report requires explicit site-scoped report authority or existing 
   assert.equal((await requireRcoaInvoiceReportAuthority(repository, principal, "oploc:rcoa")).kind, "report-grant");
   await assert.rejects(() => requireRcoaInvoiceReportAuthority(repository, principal, "oploc:other"), /Invoice Report authority/);
   await assert.rejects(() => grantAuthority(repository, { subjectId: person.id, subjectType: "interactive", actor, appId: "hospitality-booking", resource: HOSPITALITY_INVOICE_REPORT, action: "Manage", scope: { kind: "organisation", ids: [] }, reason: "Invalid broad authority." }), /one explicit OPLOC/);
+  const delegate = await createAuthIdentity(repository, { actor, displayName: "Operator", email: "operator@example.test", externalProvider: "firebase", externalUid: "uid:operator", provenance: "migration" });
+  const reportGrant = (await repository.listAuthorityGrants(person.id, "interactive")).find(grant => grant.resource === HOSPITALITY_INVOICE_REPORT)!;
+  await assert.rejects(() => createDelegation(repository, { delegatorId: person.id, delegateId: delegate.id, sourceGrantId: reportGrant.id, action: "Manage", scope: { kind: "oploc", ids: ["oploc:rcoa"] }, effectiveFrom: "2026-11-23T00:00:00.000Z", effectiveTo: "2026-11-24T00:00:00.000Z", actor, reason: "Temporary report cover." }), /must be granted directly/);
 });
 
 test("existing explicit company Hospitality Admin may run the RCoA report without a new site grant", async () => {

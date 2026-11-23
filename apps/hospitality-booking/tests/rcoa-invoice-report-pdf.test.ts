@@ -10,8 +10,8 @@ const report: RcoaInvoiceReport = {
     meetingTitle: "Board meeting <script>alert(1)</script>", bookingReference: "RCOA-123",
     client: "RCoA & Partners", lifecycleStatus: "Completed", exVatPence: 12010,
   }, {
-    canonicalId: "booking:2", serviceDate: "2026-11-11", serviceTime: "", meetingTitle: "Unresolved meeting",
-    bookingReference: "RCOA-124", client: "RCoA", lifecycleStatus: "Approved", financialIssue: "The saved quote is stale.",
+    canonicalId: "booking:2", serviceDate: "2026-11-11", serviceTime: "",
+    bookingReference: "RCOA-124", client: "RCoA", lifecycleStatus: "Approved", meetingTitle: "Meeting title not recorded", financialIssue: "The saved quote is stale.",
   }],
   bookingCount: 2, confirmedExVatPence: 12010, unresolvedCount: 1, financialCoverageComplete: false,
   excludedCancelledCount: 1, excludedUnconfirmedCount: 2, dataDigest: "a".repeat(64),
@@ -31,6 +31,7 @@ test("PDF HTML escapes booking content and labels an incomplete subtotal", () =>
   assert.match(html, /Confirmed subtotal ex VAT/);
   assert.match(html, /1 booking has no reliable current ex VAT amount/);
   assert.match(html, /RCoA &amp; Partners/);
+  assert.match(html, /Meeting title not recorded/);
   assert.match(html, /Requires review/);
   assert.match(html, /1 cancelled booking excluded/);
   assert.match(html, /2 unconfirmed or draft bookings excluded/);

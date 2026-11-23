@@ -50,7 +50,15 @@ export async function requireRcoaInvoiceReportAuthority(repository: AuthModRepos
     action: "Manage",
     scope: { kind: "oploc", ids: [canonicalOplocId] },
   });
-  if (decision.allowed) return { kind: "report-grant" as const, decision };
+  if (decision.allowed) {
+    const matchedGrants = await Promise.all(decision.matchedGrantIds.map(id => repository.getAuthorityGrant(id)));
+    const directSiteGrant = matchedGrants.some(grant => grant &&
+      grant.subjectType === "interactive" && grant.subjectId === principal.id &&
+      grant.appId === "hospitality-booking" && grant.resource === HOSPITALITY_INVOICE_REPORT && grant.action === "Manage" &&
+      grant.provenance === "explicit-special-authority" && !grant.delegationSourceGrantId && grant.accessType !== "delegated" &&
+      grant.scope.kind === "oploc" && grant.scope.ids.length === 1 && grant.scope.ids[0] === canonicalOplocId);
+    if (directSiteGrant) return { kind: "report-grant" as const, decision };
+  }
   // Existing Hospitality Admin is a separate, explicit company-wide authority.
   const administrator = await resolveHospitalityBookingAdmin(repository, principal, canonicalOplocId);
   if (administrator) return { kind: "hospitality-admin" as const, administrator };
@@ -90,9 +98,7 @@ function exactPence(value: unknown): number | undefined {
 
 function eventTitle(booking: CanonicalBooking) {
   const noteTitle = String(booking.notes || "").match(/^\s*Event:\s*(.+?)\s*$/im)?.[1]?.trim();
-  if (noteTitle) return noteTitle;
-  const eventType = String(booking.order?.eventType || "Hospitality").trim();
-  return eventType.replace(/[_-]+/g, " ").replace(/\b\w/g, letter => letter.toUpperCase());
+  return noteTitle || "Meeting title not recorded";
 }
 
 function clientLabel(booking: CanonicalBooking) {
