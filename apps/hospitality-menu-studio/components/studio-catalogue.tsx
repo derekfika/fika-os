@@ -1,7 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { isServiceId } from "@fika/server-shared/hospitality-service-layout";
 import { CatalogueProductEditor } from "./catalogue-product-editor";
+import { CatalogueSiteEditor } from "./catalogue-site-editor";
+import { CatalogueServiceEditor } from "./catalogue-service-editor";
+import { confirmsSiteCommand } from "./catalogue-site-operation";
 import { productReceipt, type ProductCommand } from "./catalogue-product-model";
 import {
   applyCatalogueReceipt,
@@ -64,8 +68,12 @@ export function CatalogueView({
   const selection = useRef("");
   selection.current = JSON.stringify([itemId, siteId, serviceId, eventDate]);
 
-  const reload = useCallback(async () => {
-    if (pendingWrite.current) return;
+  const reload = useCallback(async (requireSuccess = false) => {
+    if (pendingWrite.current) {
+      if (requireSuccess)
+        throw new Error("Wait for the catalogue change to finish.");
+      return;
+    }
     pendingRead.current?.abort();
     const controller = new AbortController();
     pendingRead.current = controller;
@@ -87,13 +95,17 @@ export function CatalogueView({
       const value: unknown = await response.json();
       if (!isCataloguePayload(value))
         throw new Error("Catalogue information is unavailable. Try again.");
-      if (!controller.signal.aborted) setData(value);
+      if (controller.signal.aborted) {
+        if (requireSuccess)
+          throw new Error("This catalogue refresh was replaced.");
+      } else setData(value);
     } catch (failure) {
       if (!controller.signal.aborted) {
         setError(
           (failure as Error).message || "Catalogue information is unavailable.",
         );
       }
+      if (requireSuccess) throw failure;
     } finally {
       if (pendingRead.current === controller) {
         pendingRead.current = null;
@@ -117,6 +129,7 @@ export function CatalogueView({
   async function send(
     command: CatalogueCommand,
     confirm?: (receipt: CatalogueCommandResult) => boolean,
+    announce = true,
   ) {
     if (data?.canManage !== true) {
       throw new CatalogueCommandError(
@@ -137,13 +150,13 @@ export function CatalogueView({
       const receipt = await requestCatalogueCommand(command);
       if (confirm && !confirm(receipt)) {
         throw new CatalogueCommandError(
-          "Hub did not confirm the target product or version.",
+          "Hub did not confirm the requested catalogue change.",
         );
       }
       setData((previous) =>
         previous ? applyCatalogueReceipt(previous, receipt) : previous,
       );
-      setNotice(receipt);
+      if (announce) setNotice(receipt);
       setVerification("");
       catalogueRevision.current++;
       return receipt;
@@ -151,6 +164,14 @@ export function CatalogueView({
       pendingWrite.current = false;
       setWriting(false);
     }
+  }
+
+  function sendSite(command: CatalogueCommand) {
+    return send(
+      command,
+      (receipt) => confirmsSiteCommand(receipt, command),
+      false,
+    );
   }
 
   async function sendProduct(command: ProductCommand) {
@@ -209,17 +230,7 @@ export function CatalogueView({
 
   const selected = data?.rows.find((row) => row.itemId === itemId);
   const sites = data?.oplocs.filter((site) => site.active) ?? [];
-  const siteWide =
-    selected?.offerings.filter(
-      (row) =>
-        row.oplocId === siteId &&
-        !row.operationalAreaId &&
-        row.status === "active",
-    ) ?? [];
-  const offering = siteWide.length === 1 ? siteWide[0] : undefined;
-  const layout = data?.serviceLayout;
-  const companyRules = layout?.company.services;
-  const siteRules = layout?.sites[siteId]?.services;
+  const companyRules = data?.serviceLayout?.company.services;
   const query = search.trim().toLocaleLowerCase("en-GB");
 
   return (
@@ -283,6 +294,7 @@ export function CatalogueView({
             <select
               className="fika-select"
               value={itemId}
+              disabled={writing}
               onChange={(event) => setItemId(event.target.value)}
             >
               <option value="">Choose a product</option>
@@ -341,6 +353,16 @@ export function CatalogueView({
               )}
             </section>
           )}
+          {area === "products" && selected && (
+            <CatalogueSiteEditor
+              key={selected.itemId}
+              row={selected}
+              oplocs={data.oplocs}
+              canManage={data.canManage}
+              send={sendSite}
+              reload={() => reload(true)}
+            />
+          )}
           {area === "sites" && (
             <>
               <label className="fika-field">
@@ -348,6 +370,7 @@ export function CatalogueView({
                 <select
                   className="fika-select"
                   value={siteId}
+                  disabled={writing}
                   onChange={(event) => setSiteId(event.target.value)}
                 >
                   <option value="">Choose a site</option>
@@ -359,45 +382,15 @@ export function CatalogueView({
                 </select>
               </label>
               {selected && siteId && (
-                <section aria-label="Site availability">
-                  <h2>Site availability</h2>
-                  <p>
-                    {selected.availableAt.includes(siteId)
-                      ? "Configured as available"
-                      : "Unavailable in site settings"}
-                  </p>
-                  {siteWide.length > 1 ? (
-                    <p>
-                      Several active site exceptions exist. Check catalogue
-                      availability for the event date.
-                    </p>
-                  ) : (
-                    <dl>
-                      <dt>Price</dt>
-                      <dd>
-                        {offering
-                          ? words(offering.price.source) +
-                            (offering.price.effective
-                              ? " · " + money(offering.price.effective)
-                              : "")
-                          : selected.defaultMode === "quote_only"
-                            ? "Quote only"
-                            : "Company default · " +
-                              money(selected.defaultPrice)}
-                      </dd>
-                      <dt>Minimum</dt>
-                      <dd>
-                        {offering
-                          ? words(offering.minimum.source) +
-                            (offering.minimum.effective != null
-                              ? " · " + offering.minimum.effective
-                              : "")
-                          : "Company default · " +
-                            (selected.defaultMinimumQuantity ?? "Not set")}
-                      </dd>
-                    </dl>
-                  )}
-                </section>
+                <CatalogueSiteEditor
+                  key={selected.itemId + ":" + siteId}
+                  row={selected}
+                  oplocs={data.oplocs}
+                  canManage={data.canManage}
+                  send={sendSite}
+                  reload={() => reload(true)}
+                  fixedSiteId={siteId}
+                />
               )}
               {selected && siteId && companyRules && (
                 <section aria-label="Verify catalogue availability">
@@ -435,46 +428,18 @@ export function CatalogueView({
                   {verification && <p role="status">{verification}</p>}
                 </section>
               )}
-              {siteId && (
-                <section aria-label="Booking service configuration">
-                  <h2>Booking services</h2>
-                  <p>
-                    These settings show configured category permissions. Check
-                    catalogue availability by product, service and event date.
-                  </p>
-                  {!companyRules ? (
-                    <p role="status">Service configuration is unavailable.</p>
-                  ) : (
-                    Object.entries(companyRules).map(([id, company]) => {
-                      const rule = siteRules?.[id] || company;
-                      return (
-                        <div key={id}>
-                          <h3>{words(id)}</h3>
-                          <p>
-                            {rule.hidden ? "Hidden" : "Visible"} ·{" "}
-                            {siteRules?.[id]
-                              ? "Site override"
-                              : "Company default"}
-                          </p>
-                          <p>
-                            Category order ·{" "}
-                            {rule.categories.join(", ") || "None"}
-                          </p>
-                          {selected && (
-                            <p>
-                              {rule.hidden
-                                ? "Service hidden"
-                                : rule.categories.includes(selected.category)
-                                  ? "Product category configured for this service"
-                                  : "Product category excluded from this service"}
-                            </p>
-                          )}
-                        </div>
-                      );
-                    })
-                  )}
-                </section>
-              )}
+              <CatalogueServiceEditor
+                key={JSON.stringify([siteId, serviceId, itemId])}
+                payload={data}
+                canManage={data.canManage}
+                send={sendSite}
+                reload={() => reload(true)}
+                initialSiteId={siteId || undefined}
+                initialServiceId={
+                  isServiceId(serviceId) ? serviceId : undefined
+                }
+                initialItemId={itemId || undefined}
+              />
             </>
           )}
         </div>
