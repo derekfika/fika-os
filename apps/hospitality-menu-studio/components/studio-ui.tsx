@@ -3,6 +3,8 @@ import type { Dish } from "../lib/contract";
 import styles from "./studio.module.css";
 
 export type Page =
+  | "products"
+  | "sites"
   | "home"
   | "menus"
   | "dishes"
@@ -61,6 +63,8 @@ const nav = [
   ["home", "Home", "home"],
   ["menus", "Menus", "menus"],
   ["dishes", "Dishes", "dishes"],
+  ["products", "Products & pricing", "menus"],
+  ["sites", "Sites & services", "home"],
   ["collections", "Collections", "collection"],
   ["review", "Publish", "publish"],
   ["history", "History", "history"],

@@ -263,6 +263,7 @@ export function SectionEditor({
   loadMore,
   catalogue,
   loadCatalogue,
+  inspectItem,
   openSettings,
   openSection,
   busy,
@@ -290,6 +291,7 @@ export function SectionEditor({
   loadMore?: () => void;
   catalogue: CatalogueChoices;
   loadCatalogue: () => void;
+  inspectItem: (id: string) => void;
   openSettings?: boolean;
   openSection: (id: string) => void;
   busy: boolean;
@@ -414,6 +416,7 @@ export function SectionEditor({
         openSection={openSection}
         catalogue={catalogue}
         loadCatalogue={loadCatalogue}
+        inspectItem={inspectItem}
         openMapping={openSettings}
         active={active}
         focusName={focusName}
