@@ -155,14 +155,17 @@ test("emulator: Hub freezes accepted Studio selections across a new publication 
   const ref = db.collection("fikaBookings").doc(canonicalId);
   const oplocId = `oploc:${id}`;
   const itemId = `hospitality-menu-item:rcoa:${id}`;
-  const menu = publication(id, itemId);
+  const menu = publication(id, itemId, 1, "seasonal", true);
+  const selected = menu.payload.dishes.slice(12, 14);
+  selected[1].dish.assortment = null;
+  selected[1].safety.subject = studioDishReviewSubject(selected[1].dish);
   const first = menu.create();
   const actor = { uid: "synthetic-actor", name: "Synthetic actor", role: "integration-admin", synthetic: true } as const;
   const client = { name: "Fictional customer", companyName: "Fictional company", email: "customer@example.test" };
   const service = { eventDate: "2027-04-05", startTime: "12:00", guestCount: 20, portalSiteId: "rcoa", oplocId };
-  const marker = { id: studioDishChoiceId, publicationHash: first.manifest.contentHash, quantities: { [menu.payload.dishes[0].dish.id]: 4 } };
-  const order: CanonicalBooking["order"] = { currency: "GBP", netTotal: 40, vatTotal: 0, grossTotal: 40, items: [{ itemId, itemName: "Pastry boxes", quantity: 4,
-    servingInfo: "boxes", unitPrice: 10, lineTotal: 40, choices: [marker] }] };
+  const marker = { id: studioDishChoiceId, publicationHash: first.manifest.contentHash, quantities: Object.fromEntries(selected.map(({ dish }) => [dish.id, 4])) };
+  const order: CanonicalBooking["order"] = { currency: "GBP", netTotal: 80, vatTotal: 0, grossTotal: 80, items: [{ itemId, itemName: "Finger Food", quantity: 8,
+    servingInfo: "pieces", unitPrice: 10, lineTotal: 80, choices: [marker] }] };
   const booking: CanonicalBooking = {
     canonicalId, entityType: "Booking", schemaVersion: "0.1.0", version: 1, commercialVersion: 1, lifecycleStatus: "Quoted",
     createdAt: now, updatedAt: now, createdBy: actor.uid, updatedBy: actor.uid,
@@ -193,7 +196,7 @@ test("emulator: Hub freezes accepted Studio selections across a new publication 
     assert.equal((await ref.get()).exists, false);
     const tooFew = structuredClone(booking);
     tooFew.order.items[0].quantity = 2;
-    tooFew.order.items[0].choices = [{ ...marker, quantities: { [menu.payload.dishes[0].dish.id]: 2 } }];
+    tooFew.order.items[0].choices = [{ ...marker, quantities: { [selected[0].dish.id]: 2 } }];
     await assert.rejects(accept(tooFew), { code: "STUDIO_DISH_MINIMUM" });
     const duplicatePicker = structuredClone(booking);
     duplicatePicker.order.items[0].choices = [marker, { id: "variety", quantities: { previous: 4 } }];
@@ -202,11 +205,11 @@ test("emulator: Hub freezes accepted Studio selections across a new publication 
     assert.equal(booking.studioKitchenEvidenceVersion, 1);
     assert.equal(booking.order.items[0].acceptedCatalogueVatRate, 0.05);
     assert.deepEqual((booking.order.items[0].choices?.[0] as { customerDescriptions?: unknown }).customerDescriptions,
-      { [menu.payload.dishes[0].dish.id]: "Customer copy" });
+      Object.fromEntries(selected.map(({ dish }) => [dish.id, "Customer copy"])));
     assert.doesNotMatch(JSON.stringify((await ref.get()).data()), /Private kitchen instructions/);
-    const update = publication(id, itemId, 2);
-    update.payload.dishes[0].dish.kitchenDescription = "Later kitchen instructions";
-    const changed = update.payload.dishes[0];
+    const update = publication(id, itemId, 2, "seasonal", true);
+    const changed = update.payload.dishes[12];
+    changed.dish.kitchenDescription = "Later kitchen instructions";
     changed.safety.subject = studioDishReviewSubject(changed.dish);
     const second = update.create();
     await hub.register(second);
@@ -217,7 +220,7 @@ test("emulator: Hub freezes accepted Studio selections across a new publication 
       snapshot: calculateQuoteSnapshot(booking, defaultDashboardQuoteSettings("rcoa")) };
     const priced = calculateQuoteSnapshot(booking, defaultDashboardQuoteSettings("rcoa"));
     assert.equal(priced.order.lines[0].acceptedCatalogueVatRate, 0.05);
-    assert.equal(priced.totals.vat.amount, 9);
+    assert.equal(priced.totals.vat.amount, 11);
     await db.runTransaction(async transaction => {
       await bindStudioQuote(transaction, ref, booking, quote);
       transaction.update(ref, { quoteState: { currentRevisionId: quote.id, revisions: [quote] } });
@@ -232,6 +235,10 @@ test("emulator: Hub freezes accepted Studio selections across a new publication 
     assert.equal(spec?.publication.publicationId, first.manifest.id);
     assert.equal(spec?.assortment?.boxCount, 4);
     assert.equal(spec?.assortment?.expectedTotal, 24);
+    const plain = created.order?.lines[0].studioKitchenSpec?.selections[1];
+    assert.equal(plain?.selectionId, selected[1].dish.id);
+    assert.equal(plain?.customerQuantity, 4);
+    assert.equal(plain?.assortment, null);
     const retry = await createProductionFromApprovedBookingTransaction(actor, canonicalId, `synthetic:${id}`);
     assert.equal(retry.status, "already_exists");
     assert.deepEqual(retry.order?.lines, created.order?.lines);
