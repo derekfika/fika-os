@@ -2,5 +2,5 @@
 
 Moved the RCoA-only Invoice Reports link into the visible Hospitality dashboard header. The prior header styling hid its container; report authorization and endpoints are unchanged.
 
-Validation: Workspace overlap check, `fika affected` (Hospitality), and `git diff --check` passed. No local tests, typecheck, or build run; protected PR CI is pending.
+Validation: Workspace overlap check, `fika affected` (Hospitality), and `git diff --check` passed. FIKA validation run 45220015736 passed for Hospitality tests, typecheck, build, and exact-head `Workflow / merge-gate`. No local test run.
 Deployment: None.
