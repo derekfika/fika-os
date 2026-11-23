@@ -21,8 +21,8 @@ import type { QuoteRevision } from "../../lib/booking-workflow";
 const enabled = process.env.FIREBASE_PROJECT_ID === "demo-fika-os" && /^127\.0\.0\.1:\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST || "");
 const now = "2026-11-20T12:00:00.000Z";
 
-function publication(menuId: string, itemId: string, revision = 1, kind: "seasonal" | "collection" = "seasonal") {
-  const dishes = Array.from({ length: 2 }, (_, index) => {
+function publication(menuId: string, itemId: string, revision = 1, kind: "seasonal" | "collection" = "seasonal", fullRotation = false) {
+  const dishes = Array.from({ length: fullRotation ? 36 : 2 }, (_, index) => {
     const dish = { id: `dish:${menuId}:${index}`, version: revision, name: `Synthetic dish ${index}`, category: "other" as const,
       updatedAt: now, temperature: "cold" as const, customerDescription: "Customer copy", kitchenDescription: "Private kitchen instructions",
       assortment: { expectedTotal: 24, unit: "pieces", components: [{ id: "fixture:piece", name: "One piece", quantity: 24 }] } };
@@ -36,7 +36,9 @@ function publication(menuId: string, itemId: string, revision = 1, kind: "season
     effectiveDate: revision === 1 ? "2027-03-22" : "2027-04-05", catalogueHash: "a".repeat(64),
     menu: { id: menuId, version: revision, name: "Fictional seasonal menu", kind, startDate: "2027-03-22", endDate: "2027-05-17",
       updatedAt: now, anchorMonday: "2027-03-22", sections: [{ id: "test:section", catalogueItemId: itemId, name: "Synthetic choices",
-        mode: "rotation", staticDishIds: [], weeks: [0, 1, 0, 1, 0, 1].map(index => [dishes[index].dish.id]) }] },
+        mode: "rotation", staticDishIds: [], weeks: fullRotation
+          ? Array.from({ length: 6 }, (_, week) => dishes.slice(week * 6, week * 6 + 6).map(item => item.dish.id))
+          : [0, 1, 0, 1, 0, 1].map(index => [dishes[index].dish.id]) }] },
     dishes,
   };
   const create = () => {
@@ -73,7 +75,7 @@ test("emulator: Hub needs explicit site activation and resolves the current sign
   const id = randomUUID();
   const site = `oploc:${id}`;
   const item = `hospitality-menu-item:${id}`;
-  const first = publication(id, item);
+  const first = publication(id, item, 1, "seasonal", true);
   const second = publication(id, item, 2);
   const input = first.create();
   const command: ActivationCommand = { publicationId: input.manifest.id, oplocId: site, expectedGeneration: 0,
@@ -99,8 +101,16 @@ test("emulator: Hub needs explicit site activation and resolves the current sign
       { code: "STUDIO_ACTIVATION_COMMAND_CONFLICT" });
     assert.equal((await choices("2027-03-21")).items.size, 0);
     assert.equal((await choices("2027-03-28", "oploc:other")).items.size, 0);
+    const outsidePilot = await db.runTransaction(tx => hub.choices(tx, site, "2027-03-28", [item], "other-menu"), { readOnly: true });
+    assert.equal(outsidePilot.items.size, 0);
+    assert.equal(outsidePilot.managedItems.size, 0);
     assert.equal((await choices("2027-03-28")).items.get(item)?.dishes[0].dish.id, first.payload.dishes[0].dish.id);
-    assert.equal((await choices("2027-03-29")).items.get(item)?.dishes[0].dish.id, first.payload.dishes[1].dish.id);
+    const mondays = ["2027-03-22", "2027-03-29", "2027-04-05", "2027-04-12", "2027-04-19", "2027-04-26"];
+    for (const [week, monday] of mondays.entries()) {
+      const current = (await choices(monday)).items.get(item);
+      assert.deepEqual(current?.dishes.map(({ dish }) => dish.id), first.payload.menu.sections[0].weeks[week]);
+    }
+    assert.deepEqual((await choices("2027-05-03")).items.get(item)?.dishes.map(({ dish }) => dish.id), first.payload.menu.sections[0].weeks[0]);
     const update = second.create();
     await hub.register(update);
     await seedSafety(db, second.payload);
@@ -132,7 +142,7 @@ test("emulator: a staff-only collection uses separate activation without exposin
     }, async () => {});
     const current = await db.runTransaction(tx => hub.choices(tx, command.oplocId, "2027-03-23", [item]), { readOnly: true });
     assert.equal(current.items.size, 0);
-    assert.equal(current.managedItems.has(item), true);
+    assert.equal(current.managedItems.has(item), false, "staff activation preserves the ordinary customer item");
   } finally { await deleteApp(app); }
 });
 
@@ -145,14 +155,17 @@ test("emulator: Hub freezes accepted Studio selections across a new publication 
   const ref = db.collection("fikaBookings").doc(canonicalId);
   const oplocId = `oploc:${id}`;
   const itemId = `hospitality-menu-item:rcoa:${id}`;
-  const menu = publication(id, itemId);
+  const menu = publication(id, itemId, 1, "seasonal", true);
+  const selected = menu.payload.dishes.slice(12, 14);
+  selected[1].dish.assortment = null;
+  selected[1].safety.subject = studioDishReviewSubject(selected[1].dish);
   const first = menu.create();
   const actor = { uid: "synthetic-actor", name: "Synthetic actor", role: "integration-admin", synthetic: true } as const;
   const client = { name: "Fictional customer", companyName: "Fictional company", email: "customer@example.test" };
   const service = { eventDate: "2027-04-05", startTime: "12:00", guestCount: 20, portalSiteId: "rcoa", oplocId };
-  const marker = { id: studioDishChoiceId, publicationHash: first.manifest.contentHash, quantities: { [menu.payload.dishes[0].dish.id]: 4 } };
-  const order: CanonicalBooking["order"] = { currency: "GBP", netTotal: 40, vatTotal: 0, grossTotal: 40, items: [{ itemId, itemName: "Pastry boxes", quantity: 4,
-    servingInfo: "boxes", unitPrice: 10, lineTotal: 40, choices: [marker] }] };
+  const marker = { id: studioDishChoiceId, publicationHash: first.manifest.contentHash, quantities: Object.fromEntries(selected.map(({ dish }) => [dish.id, 4])) };
+  const order: CanonicalBooking["order"] = { currency: "GBP", netTotal: 80, vatTotal: 0, grossTotal: 80, items: [{ itemId, itemName: "Finger Food", quantity: 8,
+    servingInfo: "pieces", unitPrice: 10, lineTotal: 80, choices: [marker] }] };
   const booking: CanonicalBooking = {
     canonicalId, entityType: "Booking", schemaVersion: "0.1.0", version: 1, commercialVersion: 1, lifecycleStatus: "Quoted",
     createdAt: now, updatedAt: now, createdBy: actor.uid, updatedBy: actor.uid,
@@ -167,7 +180,8 @@ test("emulator: Hub freezes accepted Studio selections across a new publication 
   }, async () => actor.uid, async () => {});
   const accept = (candidate: CanonicalBooking) => db.runTransaction(async transaction => {
     const stage = await prepareStudioBooking(transaction, ref, candidate, { allowed: true,
-      publications: hub, offerings: () => [{ itemId, offeringMode: "standard", price: { amount: 10 } }],
+      publications: hub, offerings: () => [{ itemId, offeringMode: "standard", price: { amount: 10, vatRate: 0.05 },
+        configuration: { rules: { salesUnit: "piece" }, choices: [{ id: "variety", controlType: "quantities", minimumQuantity: 3 }] } }],
     });
     stage();
     transaction.create(ref, candidate);
@@ -180,12 +194,22 @@ test("emulator: Hub freezes accepted Studio selections across a new publication 
     forged.order.items[0].choices = [{ ...marker, publicationHash: "f".repeat(64) }];
     await assert.rejects(accept(forged), { code: "STUDIO_BOOKING_SELECTION_CHANGED" });
     assert.equal((await ref.get()).exists, false);
+    const tooFew = structuredClone(booking);
+    tooFew.order.items[0].quantity = 2;
+    tooFew.order.items[0].choices = [{ ...marker, quantities: { [selected[0].dish.id]: 2 } }];
+    await assert.rejects(accept(tooFew), { code: "STUDIO_DISH_MINIMUM" });
+    const duplicatePicker = structuredClone(booking);
+    duplicatePicker.order.items[0].choices = [marker, { id: "variety", quantities: { previous: 4 } }];
+    await assert.rejects(accept(duplicatePicker), { code: "STUDIO_BOOKING_SELECTION_CHANGED" });
     await accept(booking);
     assert.equal(booking.studioKitchenEvidenceVersion, 1);
+    assert.equal(booking.order.items[0].acceptedCatalogueVatRate, 0.05);
+    assert.deepEqual((booking.order.items[0].choices?.[0] as { customerDescriptions?: unknown }).customerDescriptions,
+      Object.fromEntries(selected.map(({ dish }) => [dish.id, "Customer copy"])));
     assert.doesNotMatch(JSON.stringify((await ref.get()).data()), /Private kitchen instructions/);
-    const update = publication(id, itemId, 2);
-    update.payload.dishes[0].dish.kitchenDescription = "Later kitchen instructions";
-    const changed = update.payload.dishes[0];
+    const update = publication(id, itemId, 2, "seasonal", true);
+    const changed = update.payload.dishes[12];
+    changed.dish.kitchenDescription = "Later kitchen instructions";
     changed.safety.subject = studioDishReviewSubject(changed.dish);
     const second = update.create();
     await hub.register(second);
@@ -194,6 +218,9 @@ test("emulator: Hub freezes accepted Studio selections across a new publication 
     const quote: QuoteRevision = { id: `quote:${canonicalId}:r1`, revision: 1, createdAt: now, createdBy: actor.uid,
       commercialVersion: 1, stale: false, pdfStatus: "saved", driveFileId: "fictional-pdf", documentReference: "fixture-quote",
       snapshot: calculateQuoteSnapshot(booking, defaultDashboardQuoteSettings("rcoa")) };
+    const priced = calculateQuoteSnapshot(booking, defaultDashboardQuoteSettings("rcoa"));
+    assert.equal(priced.order.lines[0].acceptedCatalogueVatRate, 0.05);
+    assert.equal(priced.totals.vat.amount, 11);
     await db.runTransaction(async transaction => {
       await bindStudioQuote(transaction, ref, booking, quote);
       transaction.update(ref, { quoteState: { currentRevisionId: quote.id, revisions: [quote] } });
@@ -203,11 +230,16 @@ test("emulator: Hub freezes accepted Studio selections across a new publication 
     assert.equal(created.status, "created");
     assert.equal((await ref.get()).get("lifecycleStatus"), "Sent to CPU");
     assert.equal(created.order?.studioRehearsal, true);
+    assert.equal(created.order?.lines[0].customerUnit, "piece");
     const spec = created.order?.lines[0].studioKitchenSpec?.selections[0];
     assert.equal(spec?.kitchenDescription, "Private kitchen instructions");
     assert.equal(spec?.publication.publicationId, first.manifest.id);
     assert.equal(spec?.assortment?.boxCount, 4);
     assert.equal(spec?.assortment?.expectedTotal, 24);
+    const plain = created.order?.lines[0].studioKitchenSpec?.selections[1];
+    assert.equal(plain?.selectionId, selected[1].dish.id);
+    assert.equal(plain?.customerQuantity, 4);
+    assert.equal(plain?.assortment, null);
     const retry = await createProductionFromApprovedBookingTransaction(actor, canonicalId, `synthetic:${id}`);
     assert.equal(retry.status, "already_exists");
     assert.deepEqual(retry.order?.lines, created.order?.lines);

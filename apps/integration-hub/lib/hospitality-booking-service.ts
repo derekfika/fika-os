@@ -11,9 +11,10 @@ import { assertHospitalityBookingDate, prepareHospitalityAdminOrder, priceHistor
 import type { HospitalityAdminAuthority } from "./hospitality-booking-authorization";
 import { trustedPublicOrder } from "./hospitality-price-trust";
 import { hospitalityPortalReadFromRecords } from "./hospitality-catalogue-service";
-import { assertFrozenStudioAmendment, bindStudioQuote, isStudioBookingPilot, isStudioRehearsalBooking, prepareStudioBooking, studioPublicationsForBooking } from "./hospitality-studio-booking";
-import { angelCourtBookingConstraintRecords, loadAngelCourtBookingCatalogue, loadMnkBookingCatalogue, loadRcoaBookingCatalogue, mnkBookingPricingRecords, rcoaBookingConstraintRecords } from "./mnk-booking-catalogue";
+import { assertFrozenStudioAmendment, bindStudioQuote, studioBookingPilotFor, isStudioRehearsalBooking, prepareStudioBooking, studioPublicationsForBooking } from "./hospitality-studio-booking";
+import { angelCourtBookingConstraintRecords, loadAngelCourtBookingCatalogue, loadMnkBookingCatalogue, loadRcoaBookingCatalogue, mnkBookingPricingRecords, mnkStudioBookingPricingRecords, rcoaBookingConstraintRecords } from "./mnk-booking-catalogue";
 import { hospitalityMenuDate } from "../../shared/hospitality-menu-date";
+import { isStudioDishChoice } from "../../shared/hospitality-menu-studio-selection";
 import { isHotForkBuffetBooking } from "../../shared/hot-fork-buffet";
 import { assertHotForkBuffetAmendment, buffetPackageForItem, hotForkBuffetChoice, validateBuffetDietaryCounts } from "@fika/server-shared/hospitality-buffet-selection";
 import { db } from "./firebase-admin";
@@ -175,7 +176,7 @@ export type CanonicalBooking = {
   order: {
     eventType?: string;
     items: Array<
-      MnkBookingPayload["order"]["items"][number] & { menuItemId?: string }
+      MnkBookingPayload["order"]["items"][number] & { menuItemId?: string; acceptedCatalogueVatRate?: number; acceptedCatalogueSalesUnit?: string }
     >;
     netTotal: number;
     vatNote?: string;
@@ -760,6 +761,9 @@ export async function ingestMnkBooking(
     if (existingSnapshot.exists) {
       recordDataAccess({ app: "integration-hub", operation: "hospitality.ingest.transaction-reads", source: "FIRESTORE", dataset: "hospitality-ingest", documents: 1, estimatedBillableReads: 1, firestoreReadKind: "transaction" });
       const existing = existingSnapshot.data() as CanonicalBooking;
+      if (!existing.studioKitchenEvidenceVersion && payload.order.items.some(line => line.choices?.some(isStudioDishChoice))) {
+        throw conflict("This booking ID already belongs to a booking without verified Studio selections.");
+      }
       if (existing.studioKitchenEvidenceVersion) {
         if (!authoriseStudioPilotBooking) throw conflict("This Studio booking requires its authorised operator.");
         await authoriseStudioPilotBooking(transaction);
@@ -790,6 +794,7 @@ export async function ingestMnkBooking(
     if (!destinationOplocId) throw conflict(portalSiteId === "rcoa"
       ? "RCoA has no confirmed canonical destination OPLOC. Configure the governed source mapping for rcoa before submission."
       : "This delivery-requiring Hospitality Booking has no confirmed canonical destination OPLOC; resolve the governed site mapping before submission.");
+    const studioPilot = portalSiteId === "mnk" ? studioBookingPilotFor(payload.bookingId.trim(), destinationOplocId, payload.event.eventDate) : undefined;
     let pricingRecords = canonicalRecords;
     let studioCatalogueRecords: CanonicalRecord[] | undefined;
     if (portalSiteId === "mnk") {
@@ -801,6 +806,7 @@ export async function ingestMnkBooking(
       });
       studioCatalogueRecords = catalogue;
       pricingRecords = mnkBookingPricingRecords(catalogue, { oplocId: destinationOplocId, serviceDate: hospitalityMenuDate(new Date(now)) });
+      if (studioPilot) pricingRecords = mnkStudioBookingPricingRecords(catalogue, pricingRecords, payload, destinationOplocId);
     } else if (portalSiteId === "angel-court") {
       const catalogue = await loadAngelCourtBookingCatalogue(canonicalRecords, payload, destinationOplocId, async (field, ids) => {
         const snapshot = await transaction.get(canonical().where(field, "in", ids).limit(501));
@@ -841,14 +847,22 @@ export async function ingestMnkBooking(
     if (!result.created) return result;
     if (isRcoa) await assertRcoaBookingServiceVisibility(transaction, result.booking, canonicalRecords);
     await assertHospitalityBookingDate(transaction, result.booking, now, canonicalRecords);
-    const studioPilot = isStudioBookingPilot(result.booking);
     if (studioPilot && !authoriseStudioPilotBooking) throw conflict("This Studio booking requires its authorised operator.");
     if (studioPilot && (!result.booking.client.email.endsWith("@example.test") ||
         (result.booking.client.requester?.email && !result.booking.client.requester.email.endsWith("@example.test")))) {
       throw conflict("Use fictional contact details for the Studio rehearsal.");
     }
+    const studioLines = studioPilot ? result.booking.order.items.filter(line => line.choices?.some(isStudioDishChoice)) : [];
+    if (studioLines.length) {
+      const layout = await readBookingServiceLayout(transaction, destinationOplocId);
+      const categories = resolveServiceCategories(layout, destinationOplocId, result.booking.order.eventType || "");
+      if (studioLines.some(line => !categories?.includes(line.category || ""))) {
+        throw conflict("A selected Studio item is not offered for this service. Refresh the menu and choose an available service.");
+      }
+    }
     const stageStudioEvidence = await prepareStudioBooking(transaction, bookingRef, result.booking, {
-      allowed: studioPilot,
+      allowed: Boolean(studioPilot),
+      menuId: studioPilot?.menuId,
       actorId: studioPilot ? await authoriseStudioPilotBooking!(transaction) : undefined,
       publications: studioPublicationsForBooking(db),
       offerings: () => {
