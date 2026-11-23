@@ -11,6 +11,9 @@ import {
   gastroLabelsPrintHtml,
   fitGastroLabelName,
   GASTRO_LABEL_FONT,
+  applyGastroLabelQuantityToSelected,
+  hasSelectedGastroLabelDishes,
+  setGastroLabelQuantity,
   validGastroLabelCount,
   type GastroLabelFit,
   type GastroLabelFontSize,
@@ -38,6 +41,8 @@ export function GastroLabelPrintDialog({ productionDate, selectedSiteIds }: Prop
   const [announcement, setAnnouncement] = useState("");
   const [dishes, setDishes] = useState<ReturnType<typeof gastroLabelDishes>>([]);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
+  const [selectedDishIds, setSelectedDishIds] = useState<string[]>([]);
+  const [labelsPerDish, setLabelsPerDish] = useState(2);
   const [fontOverrides, setFontOverrides] = useState<Record<string, GastroLabelFontSize>>({});
   const [fittedNames, setFittedNames] = useState<Record<string, GastroLabelFit>>({});
   const [startPosition, setStartPosition] = useState(1);
@@ -66,12 +71,14 @@ export function GastroLabelPrintDialog({ productionDate, selectedSiteIds }: Prop
       const next = gastroLabelDishes(orders, productionDate, selectedSiteIds);
       setDishes(next);
       setQuantities(Object.fromEntries(next.map((dish) => [dish.id, 0])));
+      setSelectedDishIds(next.map((dish) => dish.id));
       setFontOverrides({});
       setAnnouncement(next.length ? `${next.length} eligible dishes loaded. Label counts start at zero.` : "No current published Delivered-In dishes match this date and site selection.");
     } catch (cause) {
       if (version !== loadVersion.current) return;
       setDishes([]);
       setQuantities({});
+      setSelectedDishIds([]);
       setError(cause instanceof Error ? cause.message : "Production could not be verified. Nothing will be printed.");
       setAnnouncement("");
     } finally {
@@ -119,9 +126,28 @@ export function GastroLabelPrintDialog({ productionDate, selectedSiteIds }: Prop
   };
 
   const setQuantity = (id: string, value: string) => {
-    const parsed = value === "" ? 0 : Number(value);
-    setQuantities((current) => ({ ...current, [id]: parsed }));
+    if (value === "") {
+      setQuantities((current) => setGastroLabelQuantity(current, id, 0));
+      return;
+    }
+    const parsed = Number(value);
+    if (validGastroLabelCount(parsed)) setQuantities((current) => setGastroLabelQuantity(current, id, parsed));
   };
+
+  const applyToSelected = (quantity: number) => {
+    setQuantities((current) => applyGastroLabelQuantityToSelected(current, selectedDishIds, quantity));
+  };
+
+  const toggleDishSelection = (id: string, selected: boolean) => {
+    setSelectedDishIds((current) => {
+      if (selected) return current.includes(id) ? current : [...current, id];
+      return current.filter((selectedId) => selectedId !== id);
+    });
+  };
+
+  const selectedDishIdSet = useMemo(() => new Set(selectedDishIds), [selectedDishIds]);
+  const bulkActionsDisabled = loading || printing || !hasSelectedGastroLabelDishes(selectedDishIds);
+  const allDishesSelected = dishes.length > 0 && selectedDishIds.length === dishes.length;
 
   const print = async () => {
     if (printing || loading || !totalLabels || countError || fontError || !dishes.length) return;
@@ -145,6 +171,7 @@ export function GastroLabelPrintDialog({ productionDate, selectedSiteIds }: Prop
         const freshDishes = gastroLabelDishes(freshOrders, productionDate, selectedSiteIds);
         setDishes(freshDishes);
         setQuantities((current) => Object.fromEntries(freshDishes.map((dish) => [dish.id, current[dish.id] ?? 0])));
+        setSelectedDishIds(freshDishes.map((dish) => dish.id));
         throw new Error("Published Delivered-In dishes changed while this preview was open. Review the refreshed list and label counts, then print again.");
       }
       const freshRows = gastroLabelRowsWithQuantity(dishes, quantities, productionDate);
@@ -196,9 +223,30 @@ export function GastroLabelPrintDialog({ productionDate, selectedSiteIds }: Prop
             </div>
             {loading ? <p className={styles.notice} role="status">Reading and checking the complete production day…</p> : null}
             {!loading && !error && dishes.length === 0 ? <p className={styles.empty}>No eligible published Delivered-In dishes are available for this date and site selection.</p> : null}
-            {dishes.length > 0 ? <div className={styles.dishList}>
+            {dishes.length > 0 ? <>
+              <div className={styles.quickQuantities} role="group" aria-label="Quick label quantities">
+                <label className={styles.quickQuantityField}>Labels per dish<input aria-label="Labels per dish" type="number" min="0" step="1" inputMode="numeric" value={labelsPerDish} onChange={(event) => {
+                  const value = event.currentTarget.value;
+                  if (value === "") { setLabelsPerDish(0); return; }
+                  const parsed = Number(value);
+                  if (validGastroLabelCount(parsed)) setLabelsPerDish(parsed);
+                }} disabled={loading || printing} /></label>
+                <div className={styles.quickQuantityActions}>
+                  <button type="button" className={styles.quickActionPrimary} onClick={() => applyToSelected(labelsPerDish)} disabled={bulkActionsDisabled}>Apply to selected</button>
+                  <div className={styles.presetGroup} role="group" aria-label="Quick quantity presets">
+                    {[1, 2, 3].map((quantity) => <button type="button" className={styles.quickActionButton} key={quantity} onClick={() => applyToSelected(quantity)} disabled={bulkActionsDisabled}>{quantity} each</button>)}
+                  </div>
+                  <button type="button" className={styles.quickActionButton} onClick={() => applyToSelected(0)} disabled={bulkActionsDisabled}>Clear selected</button>
+                  <div className={styles.selectionActions} role="group" aria-label="Dish selection">
+                    <button type="button" className={styles.quickActionButton} onClick={() => setSelectedDishIds(dishes.map((dish) => dish.id))} disabled={loading || printing || allDishesSelected}>Select all</button>
+                    <button type="button" className={styles.quickActionButton} onClick={() => setSelectedDishIds([])} disabled={loading || printing || selectedDishIds.length === 0}>Deselect all</button>
+                  </div>
+                </div>
+              </div>
+              <div className={styles.dishList}>
               {dishes.map((dish) => (
                 <div className={styles.dishRow} key={dish.id}>
+                  <label className={styles.dishSelection}><input aria-label={`Select ${dish.name} for bulk quantity edits`} type="checkbox" checked={selectedDishIdSet.has(dish.id)} onChange={(event) => toggleDishSelection(dish.id, event.currentTarget.checked)} disabled={loading || printing} /><span className={styles.visuallyHidden}>Select {dish.name} for bulk quantity edits</span></label>
                   <span className={styles.dishName}>{dish.name}{quantities[dish.id] > 0 && fittedNames[dish.id] && !fittedNames[dish.id].fits ? <small className={styles.fitWarning}>Cannot fit at the minimum readable size of {GASTRO_LABEL_FONT.minimumPt} pt. This dish’s labels are blocked.</small> : null}</span>
                   <span className={styles.countField}><span>Labels</span><input aria-label={`Number of ${dish.name} labels`} type="number" min="0" step="1" inputMode="numeric" value={quantities[dish.id] ?? 0} onChange={(event) => setQuantity(dish.id, event.currentTarget.value)} disabled={loading || printing} /></span>
                   <label className={styles.fontField}>Name size<select aria-label={`Dish name font size for ${dish.name}`} value={fontOverrides[dish.id] ?? "auto"} onChange={(event) => setFontOverrides((current) => ({ ...current, [dish.id]: event.currentTarget.value === "auto" ? "auto" : Number(event.currentTarget.value) }))} disabled={loading || printing}>
@@ -207,7 +255,8 @@ export function GastroLabelPrintDialog({ productionDate, selectedSiteIds }: Prop
                   </select></label>
                 </div>
               ))}
-            </div> : null}
+              </div>
+            </> : null}
             <label className={styles.startPosition}>Start position on first sheet
               <select value={startPosition} onChange={(event) => setStartPosition(Number(event.currentTarget.value))} disabled={printing}>
                 {Array.from({ length: 8 }, (_, index) => <option value={index + 1} key={index + 1}>{index + 1}</option>)}
