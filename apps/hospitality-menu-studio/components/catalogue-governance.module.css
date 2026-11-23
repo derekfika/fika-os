@@ -1,0 +1,29 @@
+.section {
+  display: grid;
+  gap: var(--space-3);
+  overflow-wrap: anywhere;
+}
+
+.section p,
+.section h3 {
+  margin: 0;
+}
+
+.form {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.form button {
+  justify-self: start;
+}
+
+.comparison {
+  display: grid;
+  gap: var(--space-2);
+  align-content: start;
+  padding: var(--space-3);
+  border: 1px solid var(--fika-border-default);
+  border-radius: var(--radius-md);
+  background: var(--fika-surface-card);
+}
