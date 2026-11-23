@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { ProductionLine, ProductionOrder } from "../lib/production-types";
 import { loadWholeDay } from "../app/ui/whole-day-production";
+import { runSheetServiceKey } from "../app/ui/run-sheet-printing";
 import {
   GASTRO_LABEL_TEMPLATE,
   gastroLabelCells,
@@ -9,6 +10,9 @@ import {
   gastroLabelDishes,
   gastroLabelRowsWithQuantity,
   gastroLabelsPrintHtml,
+  gastroLabelEligible,
+  fitGastroLabelName,
+  GASTRO_LABEL_FONT,
   validGastroLabelCount,
   type GastroLabelQuantity,
 } from "../app/ui/gastro-label-print";
@@ -23,11 +27,12 @@ const order = (id: string, options: Partial<ProductionOrder> = {}) => ({
   serviceWindow: { startTime: "12:00" },
   destinationOplocId: "oploc:xchange",
   destinationLabel: "FIKA Xchange",
-  productionCategory: "delivered_in",
   origin: "menu_planning",
+  sourceEntityId: "menu-day:2026-11-23:optiver",
+  sourcePublicationId: "publication:week-2026-11-23",
   sourcePublicationDayId: "publication-day:1",
   sourceVersion: 3,
-  sourceContentHash: "sha256:current",
+  sourceContentHash: "a".repeat(64),
   lines: [],
   ...options,
 } as unknown as ProductionOrder);
@@ -101,10 +106,36 @@ test("withdrawn, cancelled, superseded, stale-date, non-Delivered-In and unprove
   const wrongCategory = order("order:wrong-category", { productionCategory: "hospitality", lines: [line("wrong", "Wrong route", 1)] });
   const staleDay = order("order:stale-day", { serviceDate: "2026-11-22", lines: [line("stale", "Stale date", 1)] });
   const missingLineage = order("order:unproven", { sourcePublicationDayId: undefined, lines: [line("unproven", "Unproven source", 1)] });
+  const missingCanonicalSource = order("order:missing-source", { sourceEntityId: undefined, lines: [line("source", "Missing source", 1)] });
+  const missingHash = order("order:missing-hash", { sourceContentHash: undefined, lines: [line("hash", "Missing hash", 1)] });
+  const wrongOrigin = order("order:wrong-origin", { origin: "grab_and_go", lines: [line("grab", "Grab and Go", 1)] });
   const nonDeliveredLine = order("order:line-route", { lines: [line("other", "Other workstream", 1, "other", { workstream: "hospitality" })] });
   const withdrawn = order("order:withdrawn", { workflowStatus: "cancelled", lines: [line("withdrawn", "Withdrawn dish", 1)] } as Partial<ProductionOrder>);
-  const eligible = gastroLabelDishes([current, cancelled, superseded, wrongCategory, staleDay, missingLineage, nonDeliveredLine, withdrawn], day);
+  const eligible = gastroLabelDishes([current, cancelled, superseded, wrongCategory, staleDay, missingLineage, missingCanonicalSource, missingHash, wrongOrigin, nonDeliveredLine, withdrawn], day);
   assert.deepEqual(eligible.map((dish) => dish.name), ["Eligible dish"]);
+});
+
+test("production-shaped Optiver Menu Planning orders follow Run Sheet classification when optional category and line workstream are absent", () => {
+  const optiver = order("production-order:v1:menu-planning:optiver", {
+    destinationLabel: "Optiver",
+    origin: "menu_planning",
+    productionCategory: undefined,
+    sourceEntityId: "menu-day:2026-11-23:optiver",
+    sourcePublicationId: "menu-publication:2026-w48",
+    sourcePublicationDayId: "menu-publication:2026-w48:v6:day:0",
+    sourceVersion: 6,
+    sourceContentHash: "b".repeat(64),
+    lines: [
+      line("optiver-soup", "Roasted tomato soup", 1, "dish:soup", { workstream: undefined }),
+      line("optiver-tart", "Leek, goat's cheese & thyme tart", 2, "dish:tart", { workstream: undefined }),
+    ],
+  });
+  assert.equal(runSheetServiceKey(optiver), "delivered_in");
+  assert.deepEqual(gastroLabelDishes([optiver], day).map(({ id, name }) => [id, name]), [
+    ["dish:soup", "Roasted tomato soup"],
+    ["dish:tart", "Leek, goat's cheese & thyme tart"],
+  ]);
+  assert.equal(gastroLabelEligible({ ...optiver, sourceEntityId: undefined } as ProductionOrder), false);
 });
 
 test("DIS003 PDF HTML uses central Trial C geometry, London service date, wrapped text and no operational declarations", () => {
@@ -115,7 +146,7 @@ test("DIS003 PDF HTML uses central Trial C geometry, London service date, wrappe
   });
   assert.equal(gastroLabelDateLabel(day), "23 November 2026");
   const longName = "A very long dish name with safely wrapping content & a second part that stays readable";
-  const html = gastroLabelsPrintHtml([{ id: "dish:long", name: longName, sortOrder: 1, quantity: 1, date: day }], 1);
+  const html = gastroLabelsPrintHtml([{ id: "dish:long", name: longName, sortOrder: 1, quantity: 1, date: day }], 1, { "dish:long": { fontSizePt: 18, lineCount: 2, fits: true } });
   assert.match(html, /@page\{size:A4 portrait;margin:0\}/);
   assert.match(html, /grid-template-columns:repeat\(2,95mm\)/);
   assert.match(html, /grid-template-rows:repeat\(4,62mm\)/);
@@ -126,9 +157,37 @@ test("DIS003 PDF HTML uses central Trial C geometry, London service date, wrappe
   assert.match(html, /SITE:/);
   assert.match(html, /23 November 2026/);
   assert.match(html, /FIKA X/);
+  assert.match(html, /--dish-font-size:18pt/);
   assert.match(html, /&amp;/);
   assert.doesNotMatch(html, /allergen|contains|may contain|use by|91 pieces|38 portions/i);
-  assert.throws(() => gastroLabelsPrintHtml(quantityRows(0), 1), /at least one/i);
+  assert.throws(() => gastroLabelsPrintHtml(quantityRows(0), 1, {}), /at least one/i);
+  assert.throws(() => gastroLabelsPrintHtml(quantityRows(1), 1, {}), /minimum readable size/i);
+});
+
+test("measured fitting selects the largest fitting size, wraps punctuation and long words, and blocks overflow", () => {
+  const context = {
+    font: "",
+    measureText: (text: string) => {
+      const size = Number(context.font.match(/([0-9.]+)pt/)?.[1] ?? 12);
+      return {
+        width: Array.from(text).length * size * 0.12,
+        actualBoundingBoxAscent: size * 96 / 72 * 0.75,
+        actualBoundingBoxDescent: size * 96 / 72 * 0.18,
+      };
+    },
+  } as unknown as CanvasRenderingContext2D;
+  const short = fitGastroLabelName("Soup", "auto", context);
+  assert.equal(short.fontSizePt, GASTRO_LABEL_FONT.maximumPt);
+  assert.equal(short.fits, true);
+  const punctuation = fitGastroLabelName("Chef's special: lemon, herbs & pepper! ".repeat(6), "auto", context);
+  assert.equal(punctuation.fits, true);
+  assert.ok(punctuation.lineCount > 1);
+  const longWord = fitGastroLabelName("Antidisestablishmentarianism".repeat(60), "auto", context);
+  assert.equal(longWord.fits, false);
+  const manual = fitGastroLabelName("A moderately long dish name", 12, context);
+  assert.equal(manual.fontSizePt, 12);
+  assert.equal(manual.fits, true);
+  assert.equal(fitGastroLabelName("A moderately long dish name", 23, context).fits, true);
 });
 
 test("fresh whole-day read rejects access failures, stale dates and incomplete projections", async () => {
