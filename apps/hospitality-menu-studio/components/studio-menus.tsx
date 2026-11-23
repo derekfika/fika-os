@@ -347,7 +347,7 @@ export function SectionEditor({
     (dish) =>
       !selected.includes(dish.id) &&
       matches(dish.id) &&
-      dish.name
+      (dish.name || "Untitled dish")
         .toLocaleLowerCase("en-GB")
         .includes(search.trim().toLocaleLowerCase("en-GB")),
   );
@@ -649,7 +649,9 @@ export function SectionEditor({
                         ? selected.indexOf(id)
                         : index;
                       const item = byId.get(id);
-                      const name = item?.name || unresolvedDishLabel;
+                      const name = item
+                        ? item.name || "Untitled dish"
+                        : unresolvedDishLabel;
                       return (
                         <tr key={id}>
                           <th scope="row">
@@ -731,19 +733,22 @@ export function SectionEditor({
                     onChange={(event) => setSearch(event.target.value)}
                   />
                 </label>
-                {eligible.map((item) => (
-                  <div className={styles.row} key={item.id}>
-                    <span>
-                      {item.name} <small>{title(item.category)}</small>
-                    </span>
-                    <Button
-                      label={"Add " + item.name + " to section"}
-                      onClick={() => updateSelected([...selected, item.id])}
-                    >
-                      Add dish
-                    </Button>
-                  </div>
-                ))}
+                {eligible.map((item) => {
+                  const name = item.name || "Untitled dish";
+                  return (
+                    <div className={styles.row} key={item.id}>
+                      <span>
+                        {name} <small>{title(item.category)}</small>
+                      </span>
+                      <Button
+                        label={"Add " + name + " to section"}
+                        onClick={() => updateSelected([...selected, item.id])}
+                      >
+                        Add dish
+                      </Button>
+                    </div>
+                  );
+                })}
                 {!eligible.length && (
                   <div>
                     <p role="status">

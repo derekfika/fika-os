@@ -48,7 +48,7 @@ export function RotationWorkspace({
     (dish) =>
       (category === "all" || dish.category === category) &&
       (temperature === "all" || dish.temperature === temperature) &&
-      dish.name
+      (dish.name || "Untitled dish")
         .toLocaleLowerCase("en-GB")
         .includes(search.trim().toLocaleLowerCase("en-GB")),
   );
@@ -102,7 +102,10 @@ export function RotationWorkspace({
         )}
         <div className={styles.rows}>
           {allIds.map((id) => {
-            const name = byId.get(id)?.name || unresolvedDishLabel;
+            const dish = byId.get(id);
+            const name = dish
+              ? dish.name || "Untitled dish"
+              : unresolvedDishLabel;
             return (
               <fieldset className={styles.row} key={id}>
                 <legend>{name}</legend>
@@ -205,7 +208,8 @@ export function RotationWorkspace({
                 onChange={() => setPicked(toggle(picked, dish.id))}
               />{" "}
               <span>
-                {dish.name} <small>· {title(dish.category)}</small>
+                {dish.name || "Untitled dish"}{" "}
+                <small>· {title(dish.category)}</small>
               </span>
             </label>
           ))}
