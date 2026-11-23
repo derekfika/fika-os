@@ -9,7 +9,11 @@ import {
   gastroLabelDishes,
   gastroLabelRowsWithQuantity,
   gastroLabelsPrintHtml,
+  fitGastroLabelName,
+  GASTRO_LABEL_FONT,
   validGastroLabelCount,
+  type GastroLabelFit,
+  type GastroLabelFontSize,
 } from "./gastro-label-print";
 import styles from "./GastroLabelPrintDialog.module.css";
 
@@ -24,6 +28,7 @@ const dishManifest = (orders: readonly ProductionOrder[], date: string, sites: r
 export function GastroLabelPrintDialog({ productionDate, selectedSiteIds }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
   const loadVersion = useRef(0);
   const titleId = useId();
   const [open, setOpen] = useState(false);
@@ -33,7 +38,10 @@ export function GastroLabelPrintDialog({ productionDate, selectedSiteIds }: Prop
   const [announcement, setAnnouncement] = useState("");
   const [dishes, setDishes] = useState<ReturnType<typeof gastroLabelDishes>>([]);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
+  const [fontOverrides, setFontOverrides] = useState<Record<string, GastroLabelFontSize>>({});
+  const [fittedNames, setFittedNames] = useState<Record<string, GastroLabelFit>>({});
   const [startPosition, setStartPosition] = useState(1);
+  const [previewScale, setPreviewScale] = useState(0.55);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -58,6 +66,7 @@ export function GastroLabelPrintDialog({ productionDate, selectedSiteIds }: Prop
       const next = gastroLabelDishes(orders, productionDate, selectedSiteIds);
       setDishes(next);
       setQuantities(Object.fromEntries(next.map((dish) => [dish.id, 0])));
+      setFontOverrides({});
       setAnnouncement(next.length ? `${next.length} eligible dishes loaded. Label counts start at zero.` : "No current published Delivered-In dishes match this date and site selection.");
     } catch (cause) {
       if (version !== loadVersion.current) return;
@@ -71,13 +80,36 @@ export function GastroLabelPrintDialog({ productionDate, selectedSiteIds }: Prop
   };
 
   const rows = useMemo(() => gastroLabelRowsWithQuantity(dishes, quantities, productionDate), [dishes, quantities, productionDate]);
+  useEffect(() => {
+    const context = document.createElement("canvas").getContext("2d");
+    if (!context) {
+      setFittedNames(Object.fromEntries(dishes.map((dish) => [dish.id, { fontSizePt: GASTRO_LABEL_FONT.minimumPt, lineCount: 0, fits: false }])));
+      return;
+    }
+    setFittedNames(Object.fromEntries(dishes.map((dish) => [
+      dish.id,
+      fitGastroLabelName(dish.name, fontOverrides[dish.id] ?? "auto", context),
+    ])));
+  }, [dishes, fontOverrides]);
   const totalLabels = rows.reduce((total, row) => total + row.quantity, 0);
   const pages = useMemo(() => {
     try { return gastroLabelCells(rows, startPosition); } catch { return []; }
   }, [rows, startPosition]);
+  useEffect(() => {
+    if (!pages.length || !previewRef.current) return;
+    const updateScale = () => {
+      const label = previewRef.current?.querySelector<HTMLElement>("[data-preview-label]");
+      if (label) setPreviewScale(Math.min(1, label.getBoundingClientRect().width / (95 * 96 / 25.4)));
+    };
+    updateScale();
+    const observer = new ResizeObserver(updateScale);
+    observer.observe(previewRef.current);
+    return () => observer.disconnect();
+  }, [pages.length]);
   const skippedCells = totalLabels ? startPosition - 1 : 0;
   const blankCells = Math.max(0, pages.length * 8 - totalLabels - skippedCells);
   const countError = rows.some((row) => !validGastroLabelCount(row.quantity));
+  const fontError = rows.some((row) => row.quantity > 0 && !fittedNames[row.id]?.fits);
 
   const close = () => {
     loadVersion.current += 1;
@@ -92,7 +124,7 @@ export function GastroLabelPrintDialog({ productionDate, selectedSiteIds }: Prop
   };
 
   const print = async () => {
-    if (printing || loading || !totalLabels || countError || !dishes.length) return;
+    if (printing || loading || !totalLabels || countError || fontError || !dishes.length) return;
     // Open synchronously from the user's click so browser popup rules do not
     // discard the requested preview while the authoritative freshness read runs.
     const target = window.open("about:blank", "_blank");
@@ -119,7 +151,7 @@ export function GastroLabelPrintDialog({ productionDate, selectedSiteIds }: Prop
       if (freshRows.reduce((sum, row) => sum + row.quantity, 0) < 1) {
         throw new Error("Enter at least one label before opening the print dialog.");
       }
-      const html = gastroLabelsPrintHtml(freshRows, startPosition);
+      const html = gastroLabelsPrintHtml(freshRows, startPosition, fittedNames);
       target.document.open();
       target.document.write(html);
       target.document.close();
@@ -166,10 +198,14 @@ export function GastroLabelPrintDialog({ productionDate, selectedSiteIds }: Prop
             {!loading && !error && dishes.length === 0 ? <p className={styles.empty}>No eligible published Delivered-In dishes are available for this date and site selection.</p> : null}
             {dishes.length > 0 ? <div className={styles.dishList}>
               {dishes.map((dish) => (
-                <label className={styles.dishRow} key={dish.id}>
-                  <span>{dish.name}</span>
+                <div className={styles.dishRow} key={dish.id}>
+                  <span className={styles.dishName}>{dish.name}{quantities[dish.id] > 0 && fittedNames[dish.id] && !fittedNames[dish.id].fits ? <small className={styles.fitWarning}>Cannot fit at the minimum readable size of {GASTRO_LABEL_FONT.minimumPt} pt. This dish’s labels are blocked.</small> : null}</span>
                   <span className={styles.countField}><span>Labels</span><input aria-label={`Number of ${dish.name} labels`} type="number" min="0" step="1" inputMode="numeric" value={quantities[dish.id] ?? 0} onChange={(event) => setQuantity(dish.id, event.currentTarget.value)} disabled={loading || printing} /></span>
-                </label>
+                  <label className={styles.fontField}>Name size<select aria-label={`Dish name font size for ${dish.name}`} value={fontOverrides[dish.id] ?? "auto"} onChange={(event) => setFontOverrides((current) => ({ ...current, [dish.id]: event.currentTarget.value === "auto" ? "auto" : Number(event.currentTarget.value) }))} disabled={loading || printing}>
+                    <option value="auto">Auto fit</option>
+                    {Array.from({ length: GASTRO_LABEL_FONT.maximumPt - GASTRO_LABEL_FONT.minimumPt + 1 }, (_, index) => GASTRO_LABEL_FONT.maximumPt - index).map((size) => <option key={size} value={size}>{size} pt</option>)}
+                  </select></label>
+                </div>
               ))}
             </div> : null}
             <label className={styles.startPosition}>Start position on first sheet
@@ -186,10 +222,10 @@ export function GastroLabelPrintDialog({ productionDate, selectedSiteIds }: Prop
               <div><dt>Skipped cells</dt><dd>{skippedCells}</dd></div>
               <div><dt>Blank cells</dt><dd>{blankCells}</dd></div>
             </dl>
-            {pages.length ? <div className={styles.sheetList} aria-label="A4 label layout preview">
+            {pages.length ? <div ref={previewRef} className={styles.sheetList} aria-label="A4 label layout preview" style={{ "--preview-scale": previewScale } as React.CSSProperties}>
               {pages.map((page, pageIndex) => <div className={styles.sheetPreview} key={pageIndex} aria-label={`Sheet ${pageIndex + 1}`}>
-                {page.map((cell) => <div className={cell.kind === "label" ? styles.previewLabel : styles.previewBlank} key={cell.position}>
-                  {cell.kind === "label" ? <><strong>{cell.dish.name}</strong><span>{dateLabel}</span><small>SITE: __________</small></> : <span>{cell.kind === "skipped" ? `Position ${cell.position} · already used` : `Position ${cell.position} · blank`}</span>}
+                {page.map((cell) => <div className={cell.kind === "label" ? styles.previewLabel : styles.previewBlank} key={cell.position} style={{ gridColumn: cell.position % 2 ? 2 : 4, gridRow: 2 + 2 * Math.floor((cell.position - 1) / 2) }}>
+                  {cell.kind === "label" ? <><strong data-preview-label className={styles.previewDishName} style={{ "--dish-font-size": `${fittedNames[cell.dish.id]?.fontSizePt ?? GASTRO_LABEL_FONT.minimumPt}pt` } as React.CSSProperties}>{cell.dish.name}</strong><span className={styles.previewDate}>{dateLabel}</span><span className={styles.previewSite}><b>SITE:</b><i aria-hidden="true" /></span><small className={styles.previewBrand}>FIKA X</small></> : <span>{cell.kind === "skipped" ? `Position ${cell.position} · already used` : `Position ${cell.position} · blank`}</span>}
                 </div>)}
               </div>)}
             </div> : <p className={styles.empty}>Enter one or more labels to preview the 2 × 4 layout.</p>}
@@ -200,7 +236,7 @@ export function GastroLabelPrintDialog({ productionDate, selectedSiteIds }: Prop
         </div>
         <footer className={styles.footer}>
           <button type="button" className={styles.cancelButton} onClick={close}>Cancel</button>
-          <button type="button" className="kitchen-button kitchen-print-primary" onClick={() => void print()} disabled={loading || printing || !totalLabels || countError || !dishes.length}>{printing ? "Checking production…" : "Preview PDF and print"}</button>
+          <button type="button" className="kitchen-button kitchen-print-primary" onClick={() => void print()} disabled={loading || printing || !totalLabels || countError || fontError || !dishes.length}>{printing ? "Checking production…" : "Preview PDF and print"}</button>
         </footer>
       </dialog>
     </>
