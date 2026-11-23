@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { formatGbpPence, rcoaInvoiceReportHtml } from "../lib/rcoa-invoice-report-pdf";
 import type { RcoaInvoiceReport } from "../lib/rcoa-invoice-report-contract";
+import { QUOTE_FONT_FACE_CSS, quoteMastheadHtml, resolveQuoteBranding } from "../../shared/hospitality-quote-document";
+import { FIKA_LOGO_DATA_URI, SITE_LOGO_DATA_URIS } from "../../shared/hospitality-quote-brand-assets.generated";
 
 const report: RcoaInvoiceReport = {
   startDate: "2026-11-01", endDate: "2026-11-30", generatedAt: "2026-11-23T12:00:00.000Z",
@@ -33,19 +35,58 @@ test("PDF HTML escapes booking content and labels an incomplete subtotal", () =>
   assert.match(html, /RCoA &amp; Partners/);
   assert.match(html, /Meeting title not recorded/);
   assert.match(html, /Requires review/);
-  assert.match(html, /1 cancelled booking excluded/);
-  assert.match(html, /2 unconfirmed or draft bookings excluded/);
+  assert.match(html, /Confirmed subtotal ex VAT/);
+  assert.match(html, /Incomplete financial coverage/);
+  assert.match(html, /Excluded from this report: 1 cancelled · 2 unconfirmed or draft bookings/);
+  assert.match(html, /Includes confirmed bookings with current saved quotations/);
   assert.match(html, /counter\(pages\)/);
   assert.match(html, /table-header-group/);
   assert.match(html, /page-break-inside: avoid/);
   assert.doesNotMatch(html, /contact@example\.test|Sensitive contact/);
+  assert.doesNotMatch(html, /All 2 included bookings have a verified/);
+  assert.doesNotMatch(html, /financial review required<\/span><strong>/);
 });
 
-test("PDF HTML reports verified totals and renders an empty period clearly", () => {
+test("PDF uses the canonical quote masthead, logos, fonts, title hierarchy and clean complete total", () => {
   const complete = rcoaInvoiceReportHtml({ ...report, bookings: [report.bookings[0]], bookingCount: 1, unresolvedCount: 0, financialCoverageComplete: true, excludedCancelledCount: 0, excludedUnconfirmedCount: 0 });
+  assert.ok(complete.includes(quoteMastheadHtml(resolveQuoteBranding({ portalSiteId: "rcoa", portalSiteLabel: "RCoA" }))));
+  assert.ok(complete.includes(FIKA_LOGO_DATA_URI));
+  assert.ok(complete.includes(SITE_LOGO_DATA_URIS.rcoa));
+  assert.ok(complete.includes(QUOTE_FONT_FACE_CSS));
+  assert.match(complete, /Booking Invoice Summary/);
+  assert.match(complete, /font: 900 23pt\/1 Vim, Gilroy/);
+  assert.match(complete, /Reporting period/);
+  assert.match(complete, /Generated 23 Nov 2026, 12:00 UK time/);
+  assert.match(complete, /<th>Total ex VAT<\/th>/);
+  assert.match(complete, /class="amount"[^]*?£120\.10/);
   assert.match(complete, /Total ex VAT/);
-  assert.match(complete, /All 1 included bookings have a verified current ex VAT amount/);
+  assert.match(complete, /1 booking/);
+  assert.doesNotMatch(complete, /verified current ex VAT amount|Financial review required<\/strong>/);
+});
+
+test("PDF wraps long values and renders a missing title as stored without inventing an event type", () => {
+  const long = rcoaInvoiceReportHtml({
+    ...report,
+    bookings: [{ ...report.bookings[0], meetingTitle: "An exceptionally long governance meeting title ".repeat(8), bookingReference: "RCOA-" + "20261123120000-AB12-".repeat(6) }],
+    bookingCount: 1, unresolvedCount: 0, financialCoverageComplete: true,
+  });
+  assert.match(long, /An exceptionally long governance meeting title/);
+  assert.match(long, /20261123120000-AB12/);
+  assert.match(long, /overflow-wrap: anywhere/);
+  assert.doesNotMatch(long, /Event Catering|All Day Hospitality/);
+  const missing = rcoaInvoiceReportHtml({
+    ...report,
+    bookings: [{ ...report.bookings[0], meetingTitle: "Meeting title not recorded" }],
+    bookingCount: 1, unresolvedCount: 0, financialCoverageComplete: true,
+  });
+  assert.match(missing, /Meeting title not recorded/);
+  assert.doesNotMatch(missing, /Event Catering|All Day Hospitality/);
+});
+
+test("PDF renders an empty period clearly without verification or eligibility clutter", () => {
   const empty = rcoaInvoiceReportHtml({ ...report, bookings: [], bookingCount: 0, confirmedExVatPence: 0, unresolvedCount: 0, financialCoverageComplete: true, excludedCancelledCount: 0, excludedUnconfirmedCount: 0 });
-  assert.match(empty, /No confirmed RCoA bookings matched this reporting period/);
+  assert.match(empty, /There are no confirmed RCoA bookings for this reporting period/);
   assert.match(empty, /£0\.00/);
+  assert.match(empty, /0 bookings/);
+  assert.doesNotMatch(empty, /All 0 included bookings have a verified|Excluded from this report|Includes confirmed bookings/);
 });
