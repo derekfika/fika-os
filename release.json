@@ -7,47 +7,40 @@
   "region": "europe-west4",
   "branch": "release/staging/hub",
   "validation": {
-    "id": 137758240596,
-    "url": "https://github.com/derekfika/fika-os/actions/runs/45193080543/job/137758240596",
-    "sha": "485189cd817cb77b197157e436df317a89b63b5f"
+    "id": 137931291571,
+    "url": "https://github.com/derekfika/fika-os/actions/runs/45242088265/job/137931291571",
+    "sha": "a2e123b4af1629828e4046004b74ae423161d41d"
   },
   "provenance": {
-    "number": 678,
-    "url": "https://github.com/derekfika/fika-os/pull/678",
-    "head": "7995b5d4a95f7b4dff4cd97deb454a2a5aaf3c15"
+    "number": 681,
+    "url": "https://github.com/derekfika/fika-os/pull/681",
+    "head": "952d5674b23e5c73be8aa542ad78755e27685493"
   },
-  "sourceSha": "485189cd817cb77b197157e436df317a89b63b5f",
-  "scopeHash": "a95dac61d420ede2ee524afc125ece20e2de38b3d8f696efec5f8094eb54fbcd",
+  "sourceSha": "a2e123b4af1629828e4046004b74ae423161d41d",
+  "scopeHash": "df0854629016cda846276dd19de2054094f90edc242ab37ae4710314c73d74b4",
   "rollback": false,
   "approval": {
     "actor": "derekfika",
     "method": "authenticated-repository-writer",
     "app": "hub",
     "environment": "staging",
-    "sourceSha": "485189cd817cb77b197157e436df317a89b63b5f",
+    "sourceSha": "a2e123b4af1629828e4046004b74ae423161d41d",
     "action": "deploy",
-    "instruction": "Stage the merged Hub changes for MNK Studio booking issue 676 with rehearsal configuration disabled",
+    "instruction": "Execute deploy",
     "releaseId": null,
-    "id": "151fee28498d3eb0aa3e1a8e24a596b8d210aceeca41112c4efeda2850376c3e",
+    "id": "914a2ebbdcb699bf097064e441288f8d4852c68abfd7027cde9a482693c30419",
     "explicitExecute": true,
-    "authorisedAt": "2026-11-23T15:01:43.079Z"
+    "authorisedAt": "2026-11-23T19:05:15.815Z"
   },
-  "rollout": "build-2026-11-23-003",
-  "state": "SUCCEEDED",
-  "percent": 100,
-  "kind": "deploy",
+  "kind": "intent",
+  "state": "PENDING",
+  "releaseId": "7a5335aa-ba8f-4162-9139-dc0b9fedb426",
   "previousGood": {
-    "sourceSha": "72722de9058c44aa0036b26999d376ecae0b32c2",
-    "rollout": "build-2026-11-23-002",
+    "sourceSha": "485189cd817cb77b197157e436df317a89b63b5f",
+    "rollout": "build-2026-11-23-003",
     "state": "SUCCEEDED",
     "percent": 100
   },
-  "previousGoodRecord": "e970242ab0140935d57bac1bd267ac9b18feb2d5",
-  "releaseId": "ecea4f3c-7dd0-468f-8ab2-88b0b5eb7ccb",
-  "completedAt": "2026-11-23T15:07:08.051Z",
-  "smoke": {
-    "ok": true,
-    "status": 200,
-    "url": "https://fika-os-staging--fika-os-dev.europe-west4.hosted.app/"
-  }
+  "previousGoodRecord": "294045708cd21a92f96a654eb9fd7c0c31ec6011",
+  "createdAt": "2026-11-23T19:05:19.024Z"
 }
