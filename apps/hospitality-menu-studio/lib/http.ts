@@ -15,7 +15,10 @@ import { compareMenuDrafts } from "./versions";
 const noStore = { "Cache-Control": "private, no-store" };
 const maxBytes = 700_000;
 
+const batchIds = z.string().transform(value => value.split(",")).pipe(z.array(idSchema).min(1).max(24));
+
 const readSchema = z.union([
+  z.object({ list: z.literal("assigned-dishes"), ids: batchIds }).strict(),
   z.object({ list: z.enum(["menus", "dishes"]), cursor: idSchema.optional() }).strict(),
   z.object({ list: z.literal("history"), menuId: idSchema, cursor: idSchema.optional() }).strict(),
   z.object({ list: z.literal("published-kitchen-dishes"), menuId: idSchema, publicationId: idSchema, cursor: idSchema.optional() }).strict(),
@@ -81,7 +84,9 @@ export function studioHandlers(
   return {
     GET: (request: Request) => respond(async () => {
       await authorise(request);
-      const query = readSchema.parse(Object.fromEntries(new URL(request.url).searchParams));
+      const params = new URL(request.url).searchParams;
+      if (params.getAll("ids").length > 1) throw new StudioProblem(422, "INVALID_REQUEST", "Check the details and try again.");
+      const query = readSchema.parse(Object.fromEntries(params));
       const catalogue = () => {
         if (!readCatalogue) throw catalogueUnavailable();
         return readCatalogue(request);
@@ -94,6 +99,7 @@ export function studioHandlers(
       }
       const db = store();
       if ("list" in query) {
+        if (query.list === "assigned-dishes") return { items: await db.dishes([...new Set(query.ids)]) };
         if (query.list === "history") return db.listHistory(query.menuId, query.cursor);
         if (query.list === "published-kitchen-dishes") {
           return db.listPublishedKitchenDishes(query.menuId, query.publicationId, query.cursor);
