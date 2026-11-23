@@ -12,6 +12,7 @@ import {
 import { Button, Pill } from "./studio-ui";
 import type {
   CataloguePayload,
+  CatalogueSend,
   CatalogueServiceLayout,
 } from "./catalogue-wire";
 import {
@@ -23,17 +24,14 @@ import {
   serviceUpdateCommand,
   visibleServiceRule,
 } from "./catalogue-service-editor-model";
-import {
-  useSiteOperation,
-  type CatalogueEditSend,
-} from "./catalogue-site-operation";
+import { useSiteOperation } from "./catalogue-site-operation";
 import { CatalogueCategoryRename } from "./catalogue-category-rename";
 import styles from "./catalogue-site-editor.module.css";
 
 type Props = {
   payload: CataloguePayload;
   canManage: boolean;
-  send: CatalogueEditSend;
+  send: CatalogueSend;
   reload: () => Promise<void>;
   initialSiteId?: string;
   initialServiceId?: ServiceId;

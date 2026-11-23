@@ -5,6 +5,7 @@ import { Button, Pill } from "./studio-ui";
 import type {
   CataloguePrice,
   CatalogueRow,
+  CatalogueSend,
   CatalogueSite,
 } from "./catalogue-wire";
 import {
@@ -14,10 +15,7 @@ import {
   type SiteMode,
   type SiteOverrideDraft,
 } from "./catalogue-site-editor-model";
-import {
-  useSiteOperation,
-  type CatalogueEditSend,
-} from "./catalogue-site-operation";
+import { useSiteOperation } from "./catalogue-site-operation";
 import styles from "./catalogue-site-editor.module.css";
 
 const money = new Intl.NumberFormat("en-GB", {
@@ -42,9 +40,9 @@ type Props = {
   row: CatalogueRow;
   oplocs: readonly CatalogueSite[];
   canManage: boolean;
-  send: CatalogueEditSend;
+  send: CatalogueSend;
   reload: () => Promise<void>;
-  initialSiteId?: string;
+  fixedSiteId?: string;
 };
 
 export function CatalogueSiteEditor({
@@ -53,36 +51,39 @@ export function CatalogueSiteEditor({
   canManage,
   send,
   reload,
-  initialSiteId,
+  fixedSiteId,
 }: Props) {
   const sites = oplocs.filter((site) => site.active);
-  const [siteId, setSiteId] = useState(initialSiteId ?? "");
+  const [chosenSiteId, setSiteId] = useState("");
+  const siteId = fixedSiteId ?? chosenSiteId;
   const site = sites.find((entry) => entry.oplocId === siteId);
   const operation = useSiteOperation(send, reload);
 
   return (
-    <details className={styles.panel}>
+    <details className={styles.panel} open={fixedSiteId ? true : undefined}>
       <summary>Product settings by site</summary>
       <div className={styles.stack}>
-        <label className="fika-field">
-          Site
-          <select
-            className="fika-select"
-            value={site ? siteId : ""}
-            disabled={operation.busy}
-            onChange={(event) => {
-              operation.reset();
-              setSiteId(event.target.value);
-            }}
-          >
-            <option value="">Choose a site</option>
-            {sites.map((entry) => (
-              <option key={entry.oplocId} value={entry.oplocId}>
-                {entry.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        {!fixedSiteId && (
+          <label className="fika-field">
+            Site
+            <select
+              className="fika-select"
+              value={site ? siteId : ""}
+              disabled={operation.busy}
+              onChange={(event) => {
+                operation.reset();
+                setSiteId(event.target.value);
+              }}
+            >
+              <option value="">Choose a site</option>
+              {sites.map((entry) => (
+                <option key={entry.oplocId} value={entry.oplocId}>
+                  {entry.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         {!sites.length && (
           <p role="status">No active sites were returned by Hub.</p>
         )}

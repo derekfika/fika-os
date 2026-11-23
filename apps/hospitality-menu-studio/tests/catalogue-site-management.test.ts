@@ -13,6 +13,7 @@ import {
   siteOverridePatch,
   siteValues,
 } from "../components/catalogue-site-editor-model";
+import { confirmsSiteCommand } from "../components/catalogue-site-operation";
 import type {
   CatalogueOffering,
   CataloguePayload,
@@ -349,5 +350,92 @@ test("category rename uses archived Items and exactly the affected stored layout
     {
       ["site:" + siteB]: 9,
     },
+  );
+});
+
+test("site and service saves require the matching target state and newer Hub revision", () => {
+  const envelope = { message: "Settings saved", package: "published" as const };
+  const availability = {
+    action: "set-site-availability",
+    itemId: item.itemId,
+    expectedVersion: item.version,
+    oplocId: siteB,
+    available: true,
+  };
+  assert.equal(confirmsSiteCommand(envelope, availability), false);
+  assert.equal(
+    confirmsSiteCommand({ ...envelope, rows: [item] }, availability),
+    false,
+  );
+  assert.equal(
+    confirmsSiteCommand(
+      { ...envelope, rows: [{ ...item, version: 8 }] },
+      availability,
+    ),
+    false,
+  );
+  assert.equal(
+    confirmsSiteCommand(
+      {
+        ...envelope,
+        rows: [{ ...item, version: 8, availableAt: [siteA, siteB] }],
+      },
+      availability,
+    ),
+    true,
+  );
+
+  const service = serviceUpdateCommand(
+    "finger_food",
+    siteB,
+    9,
+    "Apply seasonal hours",
+    { categories: ["Drinks"], hidden: true },
+  );
+  assert.equal(
+    confirmsSiteCommand({ ...envelope, serviceLayoutStored: layout }, service),
+    false,
+  );
+  const updatedLayout = {
+    ...layout,
+    sites: {
+      [siteB]: {
+        version: 10,
+        services: { finger_food: { categories: ["Drinks"], hidden: true } },
+      },
+    },
+  };
+  assert.equal(
+    confirmsSiteCommand(
+      { ...envelope, serviceLayoutStored: updatedLayout },
+      service,
+    ),
+    true,
+  );
+  const clear = serviceUpdateCommand(
+    "finger_food",
+    siteB,
+    9,
+    "Restore company layout",
+  );
+  assert.equal(
+    confirmsSiteCommand(
+      { ...envelope, serviceLayoutStored: updatedLayout },
+      clear,
+    ),
+    false,
+  );
+  assert.equal(
+    confirmsSiteCommand(
+      {
+        ...envelope,
+        serviceLayoutStored: {
+          ...updatedLayout,
+          sites: { [siteB]: { version: 10, services: {} } },
+        },
+      },
+      clear,
+    ),
+    true,
   );
 });

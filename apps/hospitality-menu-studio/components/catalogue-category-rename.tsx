@@ -3,16 +3,13 @@
 import { useId, useRef, useState } from "react";
 import { SERVICE_IDS } from "@fika/server-shared/hospitality-service-layout";
 import { Button } from "./studio-ui";
-import type { CataloguePayload } from "./catalogue-wire";
+import type { CataloguePayload, CatalogueSend } from "./catalogue-wire";
 import {
   BOOKING_SERVICE_LABELS,
   renameCategoryImpact,
   serviceCategoryOptions,
 } from "./catalogue-service-editor-model";
-import {
-  useSiteOperation,
-  type CatalogueEditSend,
-} from "./catalogue-site-operation";
+import { useSiteOperation } from "./catalogue-site-operation";
 import styles from "./catalogue-site-editor.module.css";
 
 export function CatalogueCategoryRename({
@@ -21,7 +18,7 @@ export function CatalogueCategoryRename({
   reload,
 }: {
   payload: CataloguePayload;
-  send: CatalogueEditSend;
+  send: CatalogueSend;
   reload: () => Promise<void>;
 }) {
   const [category, setCategory] = useState("");
