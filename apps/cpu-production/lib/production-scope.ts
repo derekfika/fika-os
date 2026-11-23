@@ -50,10 +50,13 @@ export function filterProductionOrdersForScope(
   routing: ProductionRouting,
 ): ProductionOrder[] {
   if (scope === "all") return orders;
-  return orders
-    .map((order) => isAdHocProductionOrder(order)
-      ? (scope === "hospitality" ? order : undefined)
-      : ({ ...order, lines: order.lines.filter((line) => lineTypes(order, line, routing).has(scope)) }))
-    .filter((order): order is ProductionOrder => Boolean(order))
-    .filter((order) => isAdHocProductionOrder(order) || order.lines.length > 0);
+  return orders.map((order) => {
+    const adHoc = isAdHocProductionOrder(order);
+    const lines = order.lines.filter(line => {
+      if (!adHoc) return lineTypes(order, line, routing).has(scope);
+      const routed = line.workstream === "sandwiches" || line.workstream === "delivered_in" || line.workstream === "hospitality" ? line.workstream : "hospitality";
+      return routed === scope;
+    });
+    return lines.length ? { ...order, lines } : undefined;
+  }).filter((order): order is ProductionOrder => Boolean(order));
 }

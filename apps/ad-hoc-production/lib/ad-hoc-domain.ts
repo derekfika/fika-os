@@ -1,4 +1,4 @@
-import type { AdHocOrderInput, AdHocProductionCategory as ProductionCategory } from "../../shared/ad-hoc-production-contract";
+import type { AdHocOrderInput, AdHocProductionCategory as ProductionCategory, AdHocProductionScope } from "../../shared/ad-hoc-production-contract";
 
 // Ad-Hoc Production owns only the requester's bespoke request. Production
 // Orders, allergen review and fulfilment remain owned by Hub/CPU/Logistics.
@@ -12,6 +12,8 @@ export type AdHocRequest = {
   id: string; reference: string; schemaVersion: 2; version: number;
   createdAt: string; createdBy: string; updatedAt: string; updatedBy: string;
   eventName: string; serviceDate: string; requiredReadyTime: string; category: AdHocCategory; guestCount?: number; notes?: string;
+  /** Older persisted requests omit this and continue to route to Hospitality. */
+  productionScope?: AdHocProductionScope;
   destination: AdHocDestination; lines: AdHocLine[];
   status: AdHocStatus;
   archivedAt?: string; cancelledAt?: string; cancelReason?: string; duplicatedFrom?: string;
@@ -19,7 +21,13 @@ export type AdHocRequest = {
   audit: AdHocAudit[];
 };
 /** The requester-editable part of a request. */
-export type AdHocDraft = Pick<AdHocRequest, "eventName" | "serviceDate" | "requiredReadyTime" | "category" | "guestCount" | "notes" | "destination" | "lines">;
+export type AdHocDraft = Omit<Pick<AdHocRequest, "eventName" | "serviceDate" | "requiredReadyTime" | "category" | "guestCount" | "notes" | "productionScope" | "destination" | "lines">, "productionScope"> & { productionScope: AdHocProductionScope };
+export const AD_HOC_PRODUCTION_SCOPES: ReadonlyArray<{ value: AdHocProductionScope; label: string }> = [
+  { value: "hospitality", label: "Hospitality" },
+  { value: "sandwiches", label: "Sandwiches" },
+  { value: "delivered_in", label: "Delivered-In" },
+];
+export const adHocProductionScopeLabel = (value?: AdHocProductionScope) => AD_HOC_PRODUCTION_SCOPES.find(scope => scope.value === value)?.label || "Hospitality";
 
 export const AD_HOC_CATEGORIES = [
   { value: "board_meeting", label: "Board meeting catering", production: "hospitality" },
@@ -86,7 +94,7 @@ export function toProductionInput(request: AdHocRequest, version = request.versi
   const contact = [destination.contactName, destination.contactPhone].filter(Boolean).join(" · ") || undefined;
   const oneOff = destination.mode === "one_off";
   return {
-    clientName: request.eventName, productionCategory: category.production, serviceDate: request.serviceDate,
+    clientName: request.eventName, productionCategory: category.production, productionScope: request.productionScope || "hospitality", serviceDate: request.serviceDate,
     deliveryDateTime: `${request.serviceDate}T${request.requiredReadyTime}`, requiredBy: `${request.serviceDate}T${request.requiredReadyTime}`,
     serviceWindow: { startTime: request.requiredReadyTime },
     destinationOplocId: oneOff ? destination.identity : (destination.oplocId || destination.identity), requiresDelivery: true, deliveryLocation: destination.label,
@@ -116,10 +124,10 @@ export function applySendRecord(current: AdHocRequest, sentVersion: number, orde
 
 /** Fields whose change after sending means CPU/Logistics hold out-of-date information. */
 export function contentKey(draft: AdHocDraft) {
-  const { eventName, serviceDate, requiredReadyTime, category, guestCount, notes, destination, lines } = draft;
-  return JSON.stringify({ eventName, serviceDate, requiredReadyTime, category, guestCount: guestCount ?? null, notes: notes ?? "", destination: { ...destination, contactName: destination.contactName ?? "", contactPhone: destination.contactPhone ?? "", deliveryInstructions: destination.deliveryInstructions ?? "" }, lines: lines.map(({ id, description, quantity, unit, note }) => ({ id, description, quantity, unit, note: note ?? "" })) });
+  const { eventName, serviceDate, requiredReadyTime, category, productionScope, guestCount, notes, destination, lines } = draft;
+  return JSON.stringify({ eventName, serviceDate, requiredReadyTime, category, productionScope: productionScope || "hospitality", guestCount: guestCount ?? null, notes: notes ?? "", destination: { ...destination, contactName: destination.contactName ?? "", contactPhone: destination.contactPhone ?? "", deliveryInstructions: destination.deliveryInstructions ?? "" }, lines: lines.map(({ id, description, quantity, unit, note }) => ({ id, description, quantity, unit, note: note ?? "" })) });
 }
 
 export const newLineId = () => `line:${crypto.randomUUID()}`;
 export const blankDestination = (): AdHocDestination => ({ mode: "oploc", label: "", address: "", identity: "" });
-export const blankDraft = (serviceDate = londonBusinessDate()): AdHocDraft => ({ eventName: "", serviceDate, requiredReadyTime: "12:00", category: "board_meeting", destination: blankDestination(), lines: [{ id: newLineId(), description: "", quantity: 1, unit: "portions", sortOrder: 0 }] });
+export const blankDraft = (serviceDate = londonBusinessDate()): AdHocDraft => ({ eventName: "", serviceDate, requiredReadyTime: "12:00", category: "board_meeting", productionScope: "hospitality", destination: blankDestination(), lines: [{ id: newLineId(), description: "", quantity: 1, unit: "portions", sortOrder: 0 }] });

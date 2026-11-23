@@ -18,6 +18,7 @@ export type RunSheetPrintSite = {
 
 export const RUN_SHEET_SERVICES = [
   { key: "delivered_in", label: "Delivered-In", detail: "Published and routed Delivered-In production" },
+  { key: "sandwiches", label: "Sandwiches", detail: "Production assigned to the Sandwiches workstream" },
   { key: "grab_and_go", label: "Grab & Go", detail: "Grab & Go service orders" },
   { key: "hospitality", label: "Hospitality", detail: "Hospitality bookings and production" },
   { key: "direct_cpu", label: "Ad-Hoc / direct CPU", detail: "Direct CPU-created orders" },
@@ -31,7 +32,12 @@ export type RunSheetServiceOverrides = Readonly<Record<string, Readonly<Partial<
 
 /** Service identity comes from canonical category and source routing, never the display label. */
 export function runSheetServiceKey(order: ProductionOrder): RunSheetServiceKey {
-  if (isAdHocProductionOrder(order)) return "direct_cpu";
+  if (isAdHocProductionOrder(order)) {
+    const workstream = order.lines.find(line => line.workstream)?.workstream;
+    if (workstream === "sandwiches") return "sandwiches";
+    if (workstream === "delivered_in") return "delivered_in";
+    return "hospitality";
+  }
   switch (order.productionCategory) {
     case "delivered_in": return "delivered_in";
     case "grab_and_go": return "grab_and_go";

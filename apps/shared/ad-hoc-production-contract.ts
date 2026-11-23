@@ -4,6 +4,7 @@
 // import it without bundling any Hub implementation. The Hub validates every
 // request against these shapes server-side; Ad-Hoc never trusts the Hub's
 // implementation details, only this wire format.
+import type { CpuProductionWorkstream } from "./production-workstreams";
 
 export const AD_HOC_HUB_API = {
   /** GET: the caller's identity (from the forwarded session); add `?oplocs=true` for the authorised OPLOC destinations. */
@@ -23,6 +24,7 @@ export const adHocSendKey = (requestId: string, requestVersion: number) => `adho
 export const adHocOneOffDestinationId = (requestId: string) => `adhoc-destination:${requestId}`;
 
 export type AdHocProductionCategory = "delivered_in" | "fine_dining" | "hospitality" | "events" | "grab_and_go" | "other";
+export type AdHocProductionScope = CpuProductionWorkstream;
 
 export type AdHocOrderLineInput = {
   /** Stable request line id; keeps CPU line identity (and evidence) across amendments. */
@@ -38,6 +40,8 @@ export type AdHocOrderLineInput = {
 export type AdHocOrderInput = {
   clientName: string;
   productionCategory: AdHocProductionCategory;
+  /** CPU workstream selected by the requester; omitted legacy sends default to Hospitality. */
+  productionScope?: AdHocProductionScope;
   serviceDate: string;
   deliveryDateTime: string;
   requiredBy: string;

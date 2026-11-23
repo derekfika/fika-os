@@ -16,7 +16,7 @@ async function hub(handler: (seen: Seen, res: http.ServerResponse) => void) {
 }
 const json = (res: http.ServerResponse, status: number, body: unknown) => { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(body)); };
 const local = (url: string, extra: Record<string, string> = {}) => ({ FIKA_RUNTIME_MODE: "local", FIKA_HUB_BASE_URL: url, ...extra });
-const command: AdHocSendCommand = { action: "send", requestId: "adhoc-request:1", requestVersion: 2, idempotencyKey: adHocSendKey("adhoc-request:1", 2), order: { clientName: "Board lunch", productionCategory: "hospitality", serviceDate: "2026-11-02", deliveryDateTime: "2026-11-02T12:00", requiredBy: "2026-11-02T12:00", serviceWindow: { startTime: "12:00" }, destinationOplocId: "oploc:a", requiresDelivery: true, deliveryLocation: "A", serviceType: "Ad-hoc", pax: 5, priority: "normal", sourceReference: "REQ-1", sourceEntityId: "adhoc-request:1", sourceVersion: 2, stableSourceIdentity: true, lines: [{ sourceLineId: "line:1", itemName: "Buffet", customerQuantity: 1, customerUnit: "portions", productionQuantity: 1, productionUnit: "portions" }] } };
+const command: AdHocSendCommand = { action: "send", requestId: "adhoc-request:1", requestVersion: 2, idempotencyKey: adHocSendKey("adhoc-request:1", 2), order: { clientName: "Board lunch", productionCategory: "hospitality", productionScope: "sandwiches", serviceDate: "2026-11-02", deliveryDateTime: "2026-11-02T12:00", requiredBy: "2026-11-02T12:00", serviceWindow: { startTime: "12:00" }, destinationOplocId: "oploc:a", requiresDelivery: true, deliveryLocation: "A", serviceType: "Ad-hoc", pax: 5, priority: "normal", sourceReference: "REQ-1", sourceEntityId: "adhoc-request:1", sourceVersion: 2, stableSourceIdentity: true, lines: [{ sourceLineId: "line:1", itemName: "Buffet", customerQuantity: 1, customerUnit: "portions", productionQuantity: 1, productionUnit: "portions" }] } };
 const sendOk = { canonicalId: adHocProductionOrderId("adhoc-request:1"), orderVersion: 1, orderStatus: "draft", outcome: "created", destination: { oplocId: "oploc:a", label: "A" } };
 
 test("requests forward the caller's session and the service token, with the contract paths", async () => {
@@ -33,6 +33,7 @@ test("requests forward the caller's session and the service token, with the cont
       assert.equal(entry.headers["x-request-id"], "req-1");
     }
     assert.deepEqual(JSON.parse(server.seen[1].body).idempotencyKey, adHocSendKey("adhoc-request:1", 2), "the per-version idempotency key is sent unchanged");
+    assert.equal(JSON.parse(server.seen[1].body).order.productionScope, "sandwiches", "the separate CPU scope crosses the existing Hub boundary");
   } finally { await server.close(); }
 });
 

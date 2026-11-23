@@ -69,7 +69,8 @@ test("service selection uses canonical routing evidence and per-OPLOC overrides 
   const mnkGrab = { ...order("order:mnk-grab", day, "oploc:mnk", "MNK"), productionCategory: "grab_and_go", origin: "grab_and_go", serviceType: "Hospitality" } as ProductionOrder;
   const mnkHospitality = { ...order("order:mnk-hospitality", day, "oploc:mnk", "MNK"), productionCategory: "hospitality", origin: "hospitality_booking", serviceType: "Grab & Go" } as ProductionOrder;
   const events = { ...order("order:event", day, "oploc:hall", "Example Hall"), productionCategory: "events", origin: "hospitality_booking" } as ProductionOrder;
-  const adHoc = { ...order("production-order:v1:ad-hoc:request-1", day, "oploc:hall", "Example Hall"), origin: "cpu_created", productionCategory: undefined } as ProductionOrder;
+  const adHocBase = order("production-order:v1:ad-hoc:request-1", day, "oploc:hall", "Example Hall");
+  const adHoc = { ...adHocBase, origin: "cpu_created", productionCategory: undefined, lines: [{ ...adHocBase.lines[0], workstream: "sandwiches" }] } as ProductionOrder;
   const loaded = new Map([[day, [mnkGrab, mnkHospitality, events, adHoc]]]);
   const sites = runSheetPrintSiteOptions(loaded, [day]);
   const mnk = sites.find((site) => site.key === "oploc:oploc:mnk")!;
@@ -78,8 +79,8 @@ test("service selection uses canonical routing evidence and per-OPLOC overrides 
   assert.equal(runSheetServiceKey(mnkGrab), "grab_and_go");
   assert.equal(runSheetServiceKey(mnkHospitality), "hospitality");
   assert.equal(runSheetServiceKey(events), "events");
-  assert.equal(runSheetServiceKey(adHoc), "direct_cpu");
-  assert.deepEqual(runSheetPrintServiceOptions(loaded, [day]).map((service) => service.key), ["grab_and_go", "hospitality", "direct_cpu", "events"]);
+  assert.equal(runSheetServiceKey(adHoc), "sandwiches");
+  assert.deepEqual(runSheetPrintServiceOptions(loaded, [day]).map((service) => service.key), ["sandwiches", "grab_and_go", "hospitality", "events"]);
 
   const inheritedGrabOnly = selectedRunSheetPrintOrders(loaded, [day], [mnk.key], ["grab_and_go"]);
   assert.deepEqual([...inheritedGrabOnly.values()].flat().map((row) => row.canonicalId), [mnkGrab.canonicalId]);

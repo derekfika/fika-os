@@ -3,7 +3,7 @@ import test from "node:test";
 import { addDays, blankDraft, contentKey, isDate, isTime, londonBusinessDate, readiness, submitBlockers, toProductionInput, weekStart, type AdHocDraft, type AdHocRequest } from "../lib/ad-hoc-domain";
 
 const complete = (overrides: Partial<AdHocDraft> = {}): AdHocDraft => ({
-  eventName: "Client board lunch", serviceDate: "2026-10-31", requiredReadyTime: "12:00", category: "board_meeting", guestCount: 20, notes: "Vegetarian options",
+  eventName: "Client board lunch", serviceDate: "2026-10-31", requiredReadyTime: "12:00", category: "board_meeting", productionScope: "hospitality", guestCount: 20, notes: "Vegetarian options",
   destination: { mode: "oploc", oplocId: "oploc:angel", label: "One Angel Court", address: "1 Angel Court, London EC2R", contactName: "Sarah", contactPhone: "+44 20 7123 4567", identity: "oploc:angel" },
   lines: [{ id: "line:a", description: "Sandwich platters", quantity: 5, unit: "platters", note: "Include vegetarian", sortOrder: 0 }, { id: "line:b", description: "Coffee setup", quantity: 1, unit: "setup", sortOrder: 1 }],
   ...overrides,
@@ -34,6 +34,21 @@ test("an OPLOC destination is passed by canonical id with no address snapshot ob
   assert.equal(input.destinationOplocId, "oploc:angel");
   assert.equal(input.destinationAddress, undefined);
   assert.equal(input.productionCategory, "hospitality");
+  assert.equal(input.productionScope, "hospitality");
+});
+
+test("CPU scope is independent of request category and passes through the Hub input", () => {
+  const request = asRequest(complete({ category: "private_event", productionScope: "sandwiches" }));
+  const input = toProductionInput(request);
+  assert.equal(input.productionCategory, "events");
+  assert.equal(input.productionScope, "sandwiches");
+  assert.deepEqual(input.lines.map(line => line.sourceLineId), request.lines.map(line => line.id));
+});
+
+test("legacy requests without a CPU scope default to Hospitality", () => {
+  const request = asRequest(complete());
+  delete (request as Partial<AdHocRequest>).productionScope;
+  assert.equal(toProductionInput(request).productionScope, "hospitality");
 });
 
 test("a one-off destination is a request-scoped identity and snapshot, never an OPLOC", () => {
@@ -70,6 +85,7 @@ test("content key ignores line order metadata drift but detects real edits", () 
   assert.equal(contentKey(base), contentKey(structuredClone(base)));
   assert.notEqual(contentKey(base), contentKey({ ...base, lines: base.lines.map((line, index) => index ? line : { ...line, quantity: 6 }) }));
   assert.notEqual(contentKey(base), contentKey({ ...base, requiredReadyTime: "12:30" }));
+  assert.notEqual(contentKey(base), contentKey({ ...base, productionScope: "delivered_in" }));
 });
 
 test("Europe/London business dates hold across midnight and DST changes", () => {

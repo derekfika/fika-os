@@ -41,7 +41,7 @@ export function cleanDraft(input: AdHocDraft, id: string): AdHocDraft {
     : { mode: "one_off" as const, label: text(input.destination.label), address: text(input.destination.address), contactName: optional(input.destination.contactName), contactPhone: optional(input.destination.contactPhone), deliveryInstructions: optional(input.destination.deliveryInstructions), identity: `adhoc-destination:${id}` };
   const compact = <T extends object>(value: T) => Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as T;
   return {
-    eventName: text(input.eventName), serviceDate: input.serviceDate, requiredReadyTime: input.requiredReadyTime, category: input.category,
+    eventName: text(input.eventName), serviceDate: input.serviceDate, requiredReadyTime: input.requiredReadyTime, category: input.category, productionScope: input.productionScope || "hospitality",
     ...(input.guestCount ? { guestCount: input.guestCount } : {}), ...(optional(input.notes) ? { notes: text(input.notes) } : {}),
     destination: compact(destination),
     lines: input.lines.map((line, index) => compact({ id: text(line.id) || newLineId(), description: text(line.description), quantity: line.quantity, unit: text(line.unit), note: optional(line.note), sortOrder: index })),
@@ -83,7 +83,7 @@ export async function updateRequest(id: string, expectedVersion: number, input: 
   return mutate(id, expectedVersion, actor, current => {
     if (isArchived(current)) throw httpError(409, "Cancelled or archived requests cannot be edited. Duplicate it to start a new one.");
     const draft = cleanDraft(input, current.id);
-    const changed = contentKey(draft) !== contentKey(current);
+    const changed = contentKey(draft) !== contentKey({ ...current, productionScope: current.productionScope || "hospitality" });
     // A sent request that is edited is flagged, not silently re-sent: CPU and
     // Logistics keep the last sent version until the requester sends the update.
     return { ...draft, ...(changed && isSent(current) ? { status: "NEEDS_UPDATE" as const } : {}), audit: { action: changed && isSent(current) ? "request-amended-after-send" : "request-updated", at: "", by: "", version: 0 } };
@@ -105,7 +105,7 @@ export async function duplicateRequest(id: string, actor: Actor) {
   const today = londonBusinessDate();
   const { destination } = source;
   return createRequest({
-    eventName: source.eventName, serviceDate: source.serviceDate < today ? today : source.serviceDate, requiredReadyTime: source.requiredReadyTime, category: source.category, guestCount: source.guestCount, notes: source.notes,
+    eventName: source.eventName, serviceDate: source.serviceDate < today ? today : source.serviceDate, requiredReadyTime: source.requiredReadyTime, category: source.category, productionScope: source.productionScope || "hospitality", guestCount: source.guestCount, notes: source.notes,
     destination: { ...destination }, lines: source.lines.map(line => ({ ...line, id: newLineId() })),
   }, actor, source.reference);
 }
@@ -124,7 +124,7 @@ export async function sendToCpu(id: string, expectedVersion: number, actor: Acto
   if (isArchived(request)) throw httpError(409, "A cancelled or archived request cannot be sent.");
   if (request.version !== expectedVersion) throw httpError(409, "This request changed elsewhere. Refresh and review the latest version.");
   if (request.status === "SENT_TO_CPU") return { request, sent: false as const };
-  const blockers = submitBlockers(request);
+  const blockers = submitBlockers({ ...request, productionScope: request.productionScope || "hospitality" });
   if (blockers.length) throw httpError(422, blockers.join("; "));
   const result = await hub.send({ action: "send", requestId: request.id, requestVersion: request.version, idempotencyKey: adHocSendKey(request.id, request.version), order: toProductionInput(request, request.version) });
   // The Hub write is confirmed. Converge the request on it; never fail here.
