@@ -7,9 +7,15 @@ test("bulk rotation edits preserve order, scope and independent arrays", () => {
   const ids = Array.from({ length: 15 }, (_, i) => `dish-${i}`);
   const all = assignWeeks(initial, ids, [0, 1, 2, 3, 4, 5]);
   const twice = assignWeeks(all, ids, [0, 1, 2, 3, 4, 5]);
-  assert.deepEqual(twice, Array.from({ length: 6 }, () => ids));
+  assert.deepEqual(
+    twice,
+    Array.from({ length: 6 }, () => ids),
+  );
   assert.notEqual(all[0], all[1]);
-  assert.deepEqual(initial, Array.from({ length: 6 }, () => []));
+  assert.deepEqual(
+    initial,
+    Array.from({ length: 6 }, () => []),
+  );
   const removed = assignWeeks(twice, ids.slice(0, 2), [1], true);
   const added = assignWeeks(removed, ["new"], [2, 4]);
   assert.deepEqual(added[1], ids.slice(2));

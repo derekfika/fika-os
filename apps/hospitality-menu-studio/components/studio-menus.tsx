@@ -318,8 +318,17 @@ export function SectionEditor({
       (temperature === "all" || dish?.temperature === temperature)
     );
   };
-  const visibleGroups = [{ id: "ordered", name: "Dishes in order", ids: selected.filter(matches) }]
-    .filter((entry) => entry.ids.length > 0);
+  const visibleGroups = (
+    section.mode === "rotation"
+      ? [
+          {
+            id: "ordered",
+            name: "Dishes in order",
+            ids: selected.filter(matches),
+          },
+        ]
+      : grouped.map((entry) => ({ ...entry, ids: entry.ids.filter(matches) }))
+  ).filter((entry) => entry.ids.length > 0);
   const eligible = dishes.filter(
     (dish) =>
       !selected.includes(dish.id) &&
@@ -396,7 +405,7 @@ export function SectionEditor({
         focusName={focusName}
       />
       <div className={styles.sectionControls}>
-        {isRotation && (
+        {isRotation && view === "week" && (
           <div className={styles.fieldGroup}>
             <span id="rotation-week">Rotation week</span>
             <div
@@ -438,7 +447,17 @@ export function SectionEditor({
         </div>
       )}
       {isRotation && view === "overview" ? (
-        <RotationWorkspace section={section} dishes={dishes} week={week} canManage={canManage} update={update} chooseWeek={chooseWeek} loadMore={loadMore} busy={busy} createDish={createDish} />
+        <RotationWorkspace
+          section={section}
+          dishes={dishes}
+          week={week}
+          canManage={canManage}
+          update={update}
+          chooseWeek={chooseWeek}
+          loadMore={loadMore}
+          busy={busy}
+          createDish={createDish}
+        />
       ) : (
         <>
           <details className={styles.sectionTools}>
@@ -606,7 +625,11 @@ export function SectionEditor({
                         {entry.ids.length === 1 ? "choice" : "choices"}
                       </th>
                     </tr>
-                    {entry.ids.map((id) => {
+                    {entry.ids.map((id, index) => {
+                      const order = isRotation ? selected : entry.ids;
+                      const position = isRotation
+                        ? selected.indexOf(id)
+                        : index;
                       const item = byId.get(id);
                       const name = item?.name || "Dish unavailable";
                       return (
@@ -634,18 +657,18 @@ export function SectionEditor({
                           <td>
                             <div className={styles.tableActions}>
                               <Button
-                                disabled={!canManage || selected.indexOf(id) === 0}
+                                disabled={!canManage || position === 0}
                                 label={"Move " + name + " up"}
-                                onClick={() => shift(id, selected[selected.indexOf(id) - 1]!)}
+                                onClick={() => shift(id, order[position - 1]!)}
                               >
                                 ↑
                               </Button>
                               <Button
                                 disabled={
-                                  !canManage || selected.indexOf(id) === selected.length - 1
+                                  !canManage || position === order.length - 1
                                 }
                                 label={"Move " + name + " down"}
-                                onClick={() => shift(id, selected[selected.indexOf(id) + 1]!)}
+                                onClick={() => shift(id, order[position + 1]!)}
                               >
                                 ↓
                               </Button>
