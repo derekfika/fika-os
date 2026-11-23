@@ -72,6 +72,23 @@ test("order status: 404 means no order; a malformed body is rejected rather than
   } finally { await missing.close(); await garbage.close(); }
 });
 
+test("current checker PDF access forwards the authenticated request and accepts only a PDF response", async () => {
+  const server = await hub((_seen, res) => { res.writeHead(200, { "content-type": "application/pdf", "content-disposition": 'inline; filename="checker.pdf"', "cache-control": "no-store" }); res.end("%PDF-test"); });
+  try {
+    const client = createHubClient({ cookie: "fika_session=abc", env: local(server.url, { FIKA_INTERNAL_API_TOKEN: "shared-secret" }) });
+    const response = await client.allergenPdf!("adhoc-request:one");
+    assert.equal(await response.text(), "%PDF-test");
+    assert.equal(server.seen[0].method, "GET");
+    assert.equal(server.seen[0].url, `${AD_HOC_HUB_API.orders}?requestId=adhoc-request%3Aone&download=pdf`);
+    assert.equal(server.seen[0].headers.cookie, "fika_session=abc");
+    assert.equal(server.seen[0].headers["x-fika-internal-token"], "shared-secret");
+  } finally { await server.close(); }
+
+  const invalid = await hub((_seen, res) => json(res, 200, { url: "https://drive.example.test/unsafe" }));
+  try { await assert.rejects(createHubClient({ env: local(invalid.url) }).allergenPdf!("adhoc-request:one"), (error: any) => isHubError(error) && error.kind === "invalid_response"); }
+  finally { await invalid.close(); }
+});
+
 test("redirects are refused so credentials are never replayed to another origin", async () => {
   const server = await hub((_seen, res) => { res.writeHead(302, { location: "http://127.0.0.1:1/steal" }); res.end(); });
   try { await assert.rejects(createHubClient({ cookie: "s=1", env: local(server.url, { FIKA_INTERNAL_API_TOKEN: "t" }) }).access(), (error: any) => isHubError(error)); }

@@ -19,6 +19,8 @@ import { productionOrderDetail } from "./production-http-client";
 import { cpuReleaseMaterializationReceiptId } from "./cpu-release-fanout";
 import { buildCpuPacketItems } from "./cpu-packet-identity";
 import { deliverCpuPropagation } from "./cpu-durable-outbox";
+import type { CpuDurableDeliveryInput } from "./cpu-durable-outbox";
+import { adHocAllergenCheckerDelivery } from "./adhoc-allergen-checker-delivery";
 
 const menuContentHash = (items: PlannedMenuItem[]) => allergenMatrixContentHash(items);
 export function getHospitalityMatrixBaseUrl(env: Record<string, string | undefined> = process.env) {
@@ -200,18 +202,20 @@ export async function materializeCommittedCpuRelease(request: NextRequest, order
     ready.audit.push({ action: "allergen-matrix-materialized", at: ready.updatedAt, by: ready.updatedBy, reason: `Committed CPU release ${releaseId} materialized.` });
     const release = ready.currentAllergenRelease;
     const oplocId = order.destinationOplocId;
-    const deliveries = oplocId && order.origin === "menu_planning" ? (() => {
+    const deliveries: CpuDurableDeliveryInput[] = oplocId && order.origin === "menu_planning" ? (() => {
       const published = { eventId: `cpu-allergen-release:${release.releaseId}:published:delivered-in:${oplocId}`, sourceAggregateId: release.releaseId, sourceVersion: release.sourceVersion, occurredAt: release.signedAt, consumer: "delivered-in" as const, route: "/api/internal/cpu-release-event", body: { eventId: `cpu-allergen-release:${release.releaseId}:published`, eventType: "published", serviceDate: release.serviceDate, oplocId, sourceDayId: release.sourceDayId, sourcePublicationDayId: release.sourcePublicationDayId, sourceVersion: release.sourceVersion, sourceContentHash: release.sourceContentHash, releaseId: release.releaseId, releaseVersion: `v${release.version}`, packetContentHash: release.packetArtifacts[0]?.contentHash || "", changedDishIds: release.deltaFromPrevious.map(change => change.menuItemId), delta: release.deltaFromPrevious } as Record<string, unknown> };
       const dueAt = new Date(Date.now() + CPU_RELEASE_RECONCILIATION_DELAY_MS).toISOString();
       const reconciliation = { eventId: `cpu-allergen-release:${release.releaseId}:reconcile:delivered-in:${oplocId}`, sourceAggregateId: release.releaseId, sourceVersion: release.sourceVersion, occurredAt: dueAt, consumer: "delivered-in" as const, route: "/api/delivered-in/reconcile", body: { oplocId, serviceDate: release.serviceDate } };
       return [published, reconciliation];
     })() : [];
+    const checkerDelivery = adHocAllergenCheckerDelivery(release, order, "current");
+    if (checkerDelivery) deliveries.push(checkerDelivery);
     const finalResult = await repository.saveAndAppendCpuChange(ready, planRevisionToken(preparedPlan), { serviceDate: order.serviceDate || order.requiredBy.slice(0, 10), entityType: "productionPlan", entityId: ready.id, revision: ready.audit.length, changeType: "allergen-release-materialized", actorId: ready.updatedBy, changedAt: ready.updatedAt, idempotencyKey: materializationReceiptId("final"), deliveries });
     const finalPlan = resumeCpuMaterializationPhase(finalResult, ready, "final");
     // The release is already durably current. Attempt the staged Delivered-In
     // handoff immediately, while retaining the outbox record for recovery if
     // the consumer is unavailable or times out.
-    const handoffResults = await Promise.all(deliveries.filter(delivery => delivery.route === "/api/internal/cpu-release-event").map(delivery => deliverCpuPropagation(delivery.eventId)));
+    const handoffResults = await Promise.all(deliveries.filter(delivery => delivery.route === "/api/internal/cpu-release-event" || delivery.route === "/api/internal/ad-hoc-production/allergen-checker").map(delivery => deliverCpuPropagation(delivery.eventId)));
     console.info("FIKA CPU allergen release materialization", { app: "cpu-production", serviceDate: release.serviceDate, releaseId: release.releaseId, destinationOplocId: order.destinationOplocId, expectedOplocCount: 1, materializedOplocCount: 1, failedOplocCount: 0, pendingOplocCount: 0, packetManifestKey: dailyBundleManifestKey(release.serviceDate, order.destinationOplocId || ""), handoffStatus: deliveries.length ? "staged" : "not_applicable" });
     return { plan: finalPlan, alreadyMaterialized: false, handoffResults };
   } catch (error) {

@@ -72,7 +72,32 @@ export type AdHocSendResult = {
   destination: { oplocId?: string; label: string; address?: string };
 };
 export type AdHocCancelResult = { canonicalId: string; orderStatus: string; outcome: "cancelled" | "already_cancelled" };
-export type AdHocOrderStatus = { canonicalId: string; orderStatus: string; orderVersion: number; cancelled: boolean };
+export type AdHocOrderStatus = { canonicalId: string; orderStatus: string; orderVersion: number; cancelled: boolean; allergenChecker?: AdHocAllergenCheckerStatus };
+export type AdHocAllergenCheckerStatus = {
+  state: "ready" | "unsigned" | "pending" | "failed" | "revoked" | "stale" | "unavailable";
+  releaseId?: string;
+  releaseVersion?: number;
+  sourceRevision?: number;
+  sourceVersion?: number;
+  sourceContentHash?: string;
+  signedAt?: string;
+  signatures?: Array<{ role: "production_chef" | "head_chef_site_manager"; printedName: string; signedAt: string }>;
+};
+export type AdHocAllergenCheckerProjection = Omit<AdHocAllergenCheckerStatus, "state" | "releaseVersion" | "sourceRevision" | "signatures"> & {
+  requestId: string;
+  canonicalId: string;
+  releaseId: string;
+  releaseVersion: number;
+  sourceRevision: number;
+  sourceVersion: number;
+  sourceContentHash: string;
+  eventId: string;
+  state: "current" | "revoked";
+  signedAt: string;
+  revokedAt?: string;
+  signatures: Array<{ role: "production_chef" | "head_chef_site_manager"; printedName: string; signedAt: string }>;
+  pdfAvailable: boolean;
+};
 
 export type AdHocOploc = { canonicalId: string; label: string; address?: string; lifecycleStatus?: string };
 export type AdHocAccess = {

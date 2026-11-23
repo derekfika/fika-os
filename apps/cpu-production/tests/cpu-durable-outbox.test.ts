@@ -45,6 +45,40 @@ test("durable recovery processes a T+60 reconciliation without browser involveme
   }
 });
 
+test("Hub checker delivery failure remains retryable and operator replay can reconcile it", async () => {
+  const previousFetch = globalThis.fetch;
+  const previousHub = process.env.FIKA_HUB_BASE_URL;
+  const previousToken = process.env.FIKA_INTERNAL_API_TOKEN;
+  const previousMode = process.env.FIKA_RUNTIME_MODE;
+  process.env.FIKA_HUB_BASE_URL = "http://localhost:3200";
+  process.env.FIKA_INTERNAL_API_TOKEN = "hub-token";
+  process.env.FIKA_RUNTIME_MODE = "local";
+  const calls: Array<{ url: string; token: string | null }> = [];
+  let responses = 0;
+  globalThis.fetch = (async (url, init) => {
+    calls.push({ url: String(url), token: new Headers(init?.headers).get("x-fika-internal-token") });
+    responses += 1;
+    return new Response("{}", { status: responses === 1 ? 503 : 200 });
+  }) as typeof fetch;
+  resetCpuOutboxForTests();
+  try {
+    const input = { eventId: "adhoc-checker:request:release:revoked", sourceAggregateId: "production-order", sourceVersion: 3, occurredAt: new Date(Date.now() - 1_000).toISOString(), consumer: "integration-hub" as const, route: "/api/internal/ad-hoc-production/allergen-checker", body: { state: "revoked" } };
+    const staged = await enqueueCpuDelivery(input);
+    assert.equal((await deliverCpuPropagation(staged.eventId)).status, "failed");
+    assert.equal((await replayCpuPropagation(staged.eventId))?.delivery.status, "pending");
+    assert.equal((await deliverCpuPropagation(staged.eventId)).status, "delivered");
+    assert.equal(calls.length, 2);
+    assert.deepEqual(calls.map(call => call.url), Array(2).fill("http://localhost:3200/api/internal/ad-hoc-production/allergen-checker"));
+    assert.deepEqual(calls.map(call => call.token), ["hub-token", "hub-token"]);
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousHub === undefined) delete process.env.FIKA_HUB_BASE_URL; else process.env.FIKA_HUB_BASE_URL = previousHub;
+    if (previousToken === undefined) delete process.env.FIKA_INTERNAL_API_TOKEN; else process.env.FIKA_INTERNAL_API_TOKEN = previousToken;
+    if (previousMode === undefined) delete process.env.FIKA_RUNTIME_MODE; else process.env.FIKA_RUNTIME_MODE = previousMode;
+    resetCpuOutboxForTests();
+  }
+});
+
 test("bounded recovery excludes terminal history before its 25-row page and keeps retry timing", async () => {
   const now = new Date("2026-09-16T10:00:00.000Z");
   const base = await enqueueCpuDelivery({ eventId: "cpu-starvation-template", sourceAggregateId: "aggregate", sourceVersion: 1, occurredAt: "2026-09-01T10:00:00.000Z", consumer: "delivered-in", route: "/api/delivered-in/invalidate", body: {} });

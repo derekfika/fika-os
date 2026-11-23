@@ -16,7 +16,7 @@ import { stageFulfilmentEvent } from "./fulfilment-projection";
 import { productionOrderRequiresFulfilment } from "../../shared/fulfilment-requirement";
 import { explicitMenuProductionRouting, LEGACY_HOSPITALITY_MENU_ROUTING } from "./connections-service";
 import { hospitalityPlatformOf, isGovernedRoutingPlatform, planHospitalityCpuRouting, routingBlockedMessage, routingKeys, type RoutingPlan } from "./hospitality-cpu-routing";
-import { adHocProductionOrderId } from "../../shared/ad-hoc-production-contract";
+import { adHocProductionOrderId, type AdHocAllergenCheckerProjection, type AdHocAllergenCheckerStatus } from "../../shared/ad-hoc-production-contract";
 import { adaptCpuProductionWorkstreams } from "../../shared/production-workstreams";
 import { recordDeliveredInReadBudget } from "./delivered-in-read-budget";
 import { parseExternalProductionMaterialisation, type ExternalProductionMaterialisation, type MenuOrderMetadata } from "@fika/server-shared/external-production";
@@ -42,6 +42,7 @@ export type ProductionOrder = { studioRehearsal?: true; canonicalId: string; ent
 const requirements = () => db.collection("fikaProductionRequirements");
 const orders = () => db.collection("fikaProductionOrdersV1");
 const bookings = () => db.collection("fikaBookings");
+const adHocAllergenCheckers = () => db.collection("fikaAdHocAllergenCheckerV1");
 
 function isPreparationConversionException(exception: ProductionException) {
   return exception.description.startsWith("No explicit production conversion is configured") || exception.description.startsWith("Production quantity is still required");
@@ -514,7 +515,33 @@ export async function adHocOrderStatus(requestId: string) {
   const snapshot = await orders().doc(stableDocumentId(adHocProductionOrderId(requestId))).get();
   if (!snapshot.exists) return undefined;
   const order = snapshot.data() as ProductionOrder;
-  return { canonicalId: order.canonicalId, orderStatus: order.status as string, orderVersion: order.version, cancelled: order.status === "cancelled" };
+  const checkerSnapshot = await adHocAllergenCheckers().doc(stableDocumentId(requestId)).get();
+  const projection = checkerSnapshot.exists ? checkerSnapshot.data() as AdHocAllergenCheckerProjection : undefined;
+  const allergenChecker: AdHocAllergenCheckerStatus = order.status === "cancelled" || order.supersededBy
+    ? { state: "revoked" }
+    : projection && projection.canonicalId === order.canonicalId && projection.sourceVersion === order.currentRevision
+    ? { state: projection.state === "current" && projection.pdfAvailable ? "ready" as const : "revoked" as const, releaseId: projection.releaseId, releaseVersion: projection.releaseVersion, sourceRevision: projection.sourceRevision, signedAt: projection.signedAt, signatures: projection.signatures }
+    : { state: "pending" as const };
+  return { canonicalId: order.canonicalId, orderStatus: order.status as string, orderVersion: order.version, cancelled: order.status === "cancelled", allergenChecker };
+}
+
+/** Persist only CPU-originated current/revoked lineage; out-of-order retries cannot restore a revoked PDF. */
+export async function applyAdHocAllergenCheckerProjection(projection: AdHocAllergenCheckerProjection) {
+  const orderRef = orders().doc(stableDocumentId(adHocProductionOrderId(projection.requestId)));
+  const projectionRef = adHocAllergenCheckers().doc(stableDocumentId(projection.requestId));
+  return db.runTransaction(async transaction => {
+    const [orderSnapshot, priorSnapshot] = await Promise.all([transaction.get(orderRef), transaction.get(projectionRef)]);
+    if (!orderSnapshot.exists) return { applied: false, reason: "order-not-found" as const };
+    const order = orderSnapshot.data() as ProductionOrder;
+    if (order.canonicalId !== projection.canonicalId || order.sourceEntityId !== projection.requestId || projection.sourceVersion !== order.currentRevision) return { applied: false, reason: "stale-source" as const };
+    if (projection.state === "current" && (order.status === "cancelled" || order.supersededBy || !projection.pdfAvailable || !projection.signatures.some(signature => signature.role === "production_chef") || !projection.signatures.some(signature => signature.role === "head_chef_site_manager"))) return { applied: false, reason: "not-current" as const };
+    const prior = priorSnapshot.exists ? priorSnapshot.data() as AdHocAllergenCheckerProjection : undefined;
+    if (prior && prior.releaseVersion > projection.releaseVersion) return { applied: false, reason: "older-release" as const };
+    if (prior && prior.releaseId === projection.releaseId && prior.state === "revoked" && projection.state === "current") return { applied: false, reason: "already-revoked" as const };
+    if (prior?.eventId === projection.eventId) return { applied: false, reason: "duplicate" as const };
+    transaction.set(projectionRef, projection);
+    return { applied: true as const };
+  });
 }
 
 /** Cancels the Ad-Hoc order through the governed lifecycle (which withdraws its Logistics requirement). Repeat-safe. */

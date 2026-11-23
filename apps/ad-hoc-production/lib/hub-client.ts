@@ -43,6 +43,7 @@ export type HubPort = {
   send(command: AdHocSendCommand): Promise<AdHocSendResult>;
   cancel(command: AdHocCancelCommand): Promise<AdHocCancelResult>;
   status(requestId: string): Promise<AdHocOrderStatus | null>;
+  allergenPdf?(requestId: string): Promise<Response>;
 };
 
 type ClientOptions = { cookie?: string; requestId?: string; env?: Env; fetchImpl?: typeof fetch };
@@ -88,7 +89,9 @@ export function createHubClient(options: ClientOptions = {}): HubPort {
   const isAccess = (value: unknown): value is AdHocAccess => isObject(value) && isObject(value.principal) && typeof value.principal.id === "string" && (value.oplocs === undefined || Array.isArray(value.oplocs));
   const isSend = (value: unknown): value is AdHocSendResult => isObject(value) && typeof value.canonicalId === "string" && typeof value.orderVersion === "number" && typeof value.outcome === "string" && isObject(value.destination);
   const isCancel = (value: unknown): value is AdHocCancelResult => isObject(value) && typeof value.canonicalId === "string" && typeof value.outcome === "string";
-  const isStatus = (value: unknown): value is AdHocOrderStatus => isObject(value) && typeof value.canonicalId === "string" && typeof value.cancelled === "boolean";
+  const isChecker = (value: unknown) => isObject(value) && ["ready", "unsigned", "pending", "failed", "revoked", "stale", "unavailable"].includes(String(value.state))
+    && (value.signatures === undefined || Array.isArray(value.signatures) && value.signatures.every(signature => isObject(signature) && ["production_chef", "head_chef_site_manager"].includes(String(signature.role)) && typeof signature.printedName === "string" && typeof signature.signedAt === "string"));
+  const isStatus = (value: unknown): value is AdHocOrderStatus => isObject(value) && typeof value.canonicalId === "string" && typeof value.cancelled === "boolean" && (value.allergenChecker === undefined || isChecker(value.allergenChecker));
   const required = <T>(result: { value?: T }, what: string) => { if (!result.value) throw hubError(`The Integration Hub has no ${what}.`, 404, "not_found", "AD_HOC_ORDER_NOT_FOUND"); return result.value; };
 
   return {
@@ -96,6 +99,17 @@ export function createHubClient(options: ClientOptions = {}): HubPort {
     send: async command => required(await call(AD_HOC_HUB_API.orders, { method: "POST", body: command }, true, isSend), "result for this send"),
     cancel: async command => required(await call(AD_HOC_HUB_API.orders, { method: "POST", body: command }, true, isCancel), "Production Order for this request"),
     status: async requestId => (await call(`${AD_HOC_HUB_API.orders}?requestId=${encodeURIComponent(requestId)}`, { method: "GET" }, false, isStatus)).value ?? null,
+    allergenPdf: async requestId => {
+      const token = getServiceToken(env);
+      const base = getHubBaseUrl(env);
+      let response: Response;
+      try {
+        response = await doFetch(`${base}${AD_HOC_HUB_API.orders}?requestId=${encodeURIComponent(requestId)}&download=pdf`, { method: "GET", cache: "no-store", redirect: "error", signal: AbortSignal.timeout(TIMEOUT_MS), headers: { accept: "application/pdf", "x-request-id": randomUUID(), ...(options.cookie ? { cookie: options.cookie } : {}), ...(token ? { [AD_HOC_SERVICE_TOKEN_HEADER]: token } : {}) } });
+      } catch { throw hubError("The current signed allergen PDF could not be opened because the Integration Hub is unavailable.", 503, "unavailable", "AD_HOC_PDF_HUB_UNAVAILABLE"); }
+      if (!response.ok) throw hubError("The current signed allergen PDF is not available.", response.status >= 500 ? 503 : response.status, response.status === 403 ? "forbidden" : "rejected", "AD_HOC_PDF_UNAVAILABLE");
+      if (!(response.headers.get("content-type") || "").toLowerCase().includes("application/pdf")) throw hubError("The Integration Hub returned an invalid allergen PDF response.", 502, "invalid_response", "AD_HOC_PDF_INVALID_RESPONSE");
+      return response;
+    },
   };
 }
 

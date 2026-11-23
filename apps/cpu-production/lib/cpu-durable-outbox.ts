@@ -1,6 +1,7 @@
 import { db } from "./firebase-admin";
 import { createHash } from "node:crypto";
 import type { Transaction } from "firebase-admin/firestore";
+import { approvedCredentialedUpstream } from "@fika/server-shared/credentialed-upstream";
 import {
   claimEvent,
   eventIsDue,
@@ -11,7 +12,7 @@ import {
   type DurableDomainEvent,
 } from "@fika/server-shared/durable-outbox";
 
-export type CpuPropagationConsumer = "delivered-in" | "logistics" | "cpu-production";
+export type CpuPropagationConsumer = "delivered-in" | "logistics" | "cpu-production" | "integration-hub";
 
 export type CpuConsumerInvalidationInput = {
   eventId?: string;
@@ -235,9 +236,19 @@ export function normaliseCpuBaseUrl(configured?: string) {
 
 function routeBase(consumer: CpuPropagationConsumer) {
   if (consumer === "cpu-production") return normaliseCpuBaseUrl(process.env.CPU_PUBLIC_BASE_URL || process.env.CPU_PRODUCTION_BASE_URL);
-  const configured = consumer === "delivered-in" ? (process.env.FIKA_APP_DELIVERED_IN_URL || process.env.DELIVERED_IN_BASE_URL) : (process.env.FIKA_LOGISTICS_BASE_URL || process.env.LOGISTICS_BASE_URL);
+  if (consumer === "integration-hub") {
+    const configured = process.env.FIKA_HUB_BASE_URL || process.env.INTEGRATION_HUB_BASE_URL;
+    const runtimeMode = process.env.FIKA_RUNTIME_MODE || "local";
+    if (!configured) {
+      if (runtimeMode !== "local") throw Object.assign(new Error("CPU Hub delivery base URL is not configured."), { status: 503, code: "CPU_HUB_BASE_URL_MISSING" });
+      return "http://localhost:3200";
+    }
+    return approvedCredentialedUpstream("hub", configured, runtimeMode);
+  }
+  const configured = consumer === "delivered-in" ? (process.env.FIKA_APP_DELIVERED_IN_URL || process.env.DELIVERED_IN_BASE_URL)
+    : (process.env.FIKA_LOGISTICS_BASE_URL || process.env.LOGISTICS_BASE_URL);
   if (configured) return configured.trim().replace(/\/+$/, "");
-  return consumer === "delivered-in" ? "http://localhost:3800" : "http://localhost:3900";
+  return consumer === "delivered-in" ? "http://localhost:3800" : consumer === "logistics" ? "http://localhost:3900" : "http://localhost:3200";
 }
 
 /** Keep ordinary invalidations short while allowing bounded CPU materialisation to finish. */

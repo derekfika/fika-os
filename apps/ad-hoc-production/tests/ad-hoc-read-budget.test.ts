@@ -27,12 +27,15 @@ test("Ad Hoc UI has no idle polling and loads only on window or selection change
   assert.match(await read("../app/order-form.tsx"), /api\/requests\?id=/);
 });
 
-test("Ad Hoc UI never uses native browser dialogs and carries no quote or allergen-checker surface", async () => {
+test("Ad Hoc UI never uses native dialogs or offers quote/allergen editing, and links only to the current CPU checker", async () => {
   for (const file of ["../app/overview.tsx", "../app/order-form.tsx", "../app/frame.tsx"]) {
     const source = await read(file);
     assert.doesNotMatch(source, /window\.(alert|confirm|prompt)|\b(alert|confirm|prompt)\(/);
     assert.doesNotMatch(source, />\s*(Quotes|Allergen Review)\s*</);
   }
+  const orderForm = await read("../app/order-form.tsx");
+  assert.match(orderForm, /allergenChecker\?\.state === "ready"/);
+  assert.match(orderForm, /Open current signed PDF/);
 });
 
 test("Ad-Hoc never re-filters the Hub OPLOC list on lifecycle status (staging uses \"published\", and the Hub already returns only active, permitted OPLOCs)", async () => {

@@ -5,6 +5,7 @@ import { adHocCaller, authoriseAdHocDestination, requireAdHocService } from "@/l
 import { adHocOrderStatus, cancelAdHocProductionOrder, submitAdHocProductionOrder } from "@/lib/production-domain";
 import { notifyMaterialisedCpuProjection } from "@/lib/cpu-projection-client";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
+import { currentCpuAdHocAllergenChecker, currentCpuAdHocAllergenPdf } from "@/lib/cpu-ad-hoc-allergen-checker-client";
 import type { AdHocOrderInput, AdHocSendCommand } from "../../../../../shared/ad-hoc-production-contract";
 
 const text = (max: number) => z.string().trim().min(1).max(max);
@@ -34,6 +35,16 @@ async function handleGet(request: NextRequest) {
     if (!requestId) throw unprocessable("A request id is required.");
     const status = await adHocOrderStatus(requestId);
     if (!status) return NextResponse.json({ error: { code: "AD_HOC_ORDER_NOT_FOUND", message: "No Production Order exists for this request." } }, { status: 404, headers: { "Cache-Control": "no-store" } });
+    if (!status.cancelled) {
+      try { status.allergenChecker = await currentCpuAdHocAllergenChecker(status.canonicalId); }
+      catch { status.allergenChecker = { state: "unavailable" }; }
+    } else status.allergenChecker = { state: "revoked" };
+    if (request.nextUrl.searchParams.get("download") === "pdf") {
+      if (status.cancelled || status.allergenChecker.state !== "ready") return NextResponse.json({ error: { message: "The current signed allergen PDF is not available." } }, { status: 409, headers: { "Cache-Control": "no-store" } });
+      const pdf = await currentCpuAdHocAllergenPdf(status.canonicalId);
+      const disposition = pdf.headers.get("content-disposition") || 'inline; filename="signed-allergen-checker.pdf"';
+      return new NextResponse(pdf.body, { headers: { "Cache-Control": "no-store, max-age=0", "Content-Type": "application/pdf", "Content-Disposition": disposition, "X-Content-Type-Options": "nosniff" } });
+    }
     return NextResponse.json(status, { headers: { "Cache-Control": "no-store" } });
   } catch (error) { return errorResponse(error, request.headers.get("x-request-id") || undefined); }
 }

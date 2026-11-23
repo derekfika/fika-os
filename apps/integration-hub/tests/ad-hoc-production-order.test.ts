@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { adHocOrderStatus, adHocProductionOrderId, amendAdHocProductionOrder, cancelAdHocProductionOrder, createCpuProductionOrder, submitAdHocProductionOrder, transitionProductionOrder, type CpuCreatedProductionInput } from "../lib/production-domain";
+import { adHocOrderStatus, adHocProductionOrderId, amendAdHocProductionOrder, applyAdHocAllergenCheckerProjection, cancelAdHocProductionOrder, createCpuProductionOrder, submitAdHocProductionOrder, transitionProductionOrder, type CpuCreatedProductionInput } from "../lib/production-domain";
 import { db } from "../lib/firebase-admin";
 import { stableDocumentId } from "../lib/canonical-editor";
 
@@ -119,7 +119,34 @@ test("emulator: submit creates once, replays idempotently and amends the same or
   assert.equal(amended.canonicalId, first.canonicalId);
   assert.equal(amended.orderVersion, first.orderVersion + 1);
   assert.equal((await requirementsFor(first.canonicalId)).length, 1, "one Logistics requirement across versions");
-  assert.deepEqual(await adHocOrderStatus(requestId), { canonicalId: first.canonicalId, orderStatus: "draft", orderVersion: amended.orderVersion, cancelled: false });
+  assert.deepEqual(await adHocOrderStatus(requestId), { canonicalId: first.canonicalId, orderStatus: "draft", orderVersion: amended.orderVersion, cancelled: false, allergenChecker: { state: "pending" } });
+});
+
+test("emulator: Ad-Hoc allergen checker projection retries, revokes monotonically and cannot survive amendment or cancellation", { skip: !emulatorEnabled }, async () => {
+  const requestId = `adhoc-request:${crypto.randomUUID()}`;
+  const canonicalId = adHocProductionOrderId(requestId);
+  await submitAdHocProductionOrder(actor, stable(requestId, 1), `adhoc-send:${requestId}:v1`);
+  const signatures = [
+    { role: "production_chef" as const, printedName: "Production Chef", signedAt: "2026-11-23T09:00:00.000Z" },
+    { role: "head_chef_site_manager" as const, printedName: "Head Chef", signedAt: "2026-11-23T09:02:00.000Z" },
+  ];
+  const current = { requestId, canonicalId, releaseId: "release:one", releaseVersion: 1, sourceRevision: 1, sourceVersion: 1, sourceContentHash: "a".repeat(64), eventId: `adhoc-allergen-checker:${requestId}:release:one:current`, state: "current" as const, signedAt: "2026-11-23T09:02:00.000Z", signatures, pdfAvailable: true };
+  assert.equal((await applyAdHocAllergenCheckerProjection(current)).applied, true, "a retry after failed delivery persists the committed CPU report");
+  assert.equal((await applyAdHocAllergenCheckerProjection(current)).reason, "duplicate", "delivery replay is idempotent");
+  assert.equal((await adHocOrderStatus(requestId))?.allergenChecker?.state, "ready");
+
+  const revoked = { ...current, state: "revoked" as const, pdfAvailable: false, revokedAt: "2026-11-23T09:05:00.000Z", eventId: `adhoc-allergen-checker:${requestId}:release:one:revoked` };
+  assert.equal((await applyAdHocAllergenCheckerProjection(revoked)).applied, true);
+  assert.equal((await adHocOrderStatus(requestId))?.allergenChecker?.state, "revoked");
+  assert.equal((await applyAdHocAllergenCheckerProjection(current)).reason, "already-revoked", "a delayed publish cannot restore the same revoked PDF");
+
+  await submitAdHocProductionOrder(actor, stable(requestId, 2), `adhoc-send:${requestId}:v2`);
+  assert.equal((await applyAdHocAllergenCheckerProjection(revoked)).reason, "stale-source", "an old report cannot attach to an amended order");
+  assert.equal((await adHocOrderStatus(requestId))?.allergenChecker?.state, "pending", "amendment suppresses the prior PDF until a new release is signed");
+  const amendedCurrent = { ...current, releaseId: "release:two", releaseVersion: 2, sourceRevision: 2, sourceVersion: 2, eventId: `adhoc-allergen-checker:${requestId}:release:two:current` };
+  assert.equal((await applyAdHocAllergenCheckerProjection(amendedCurrent)).applied, true);
+  await cancelAdHocProductionOrder(actor, requestId, "Requester cancelled");
+  assert.equal((await adHocOrderStatus(requestId))?.allergenChecker?.state, "revoked", "cancellation removes current checker access");
 });
 
 test("emulator: concurrent submissions, including different versions, converge on one order and one requirement", { skip: !emulatorEnabled }, async () => {
