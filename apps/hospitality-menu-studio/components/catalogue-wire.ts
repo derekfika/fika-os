@@ -141,4 +141,5 @@ export type CatalogueCommandResult = {
 };
 export type CatalogueSend = (
   command: CatalogueCommand,
+  confirm?: (receipt: CatalogueCommandResult) => boolean,
 ) => Promise<CatalogueCommandResult>;

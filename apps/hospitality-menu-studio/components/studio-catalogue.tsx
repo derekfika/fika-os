@@ -3,6 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isServiceId } from "@fika/server-shared/hospitality-service-layout";
 import { CatalogueProductEditor } from "./catalogue-product-editor";
+import { CatalogueBulk } from "./catalogue-bulk";
+import {
+  CatalogueDuplicateReview,
+  CatalogueProductGovernance,
+} from "./catalogue-governance";
+import type { StudioSectionLink } from "./catalogue-governance-model";
+import { StudioAssignmentLinks } from "./studio-assignment-links";
 import { CatalogueSiteEditor } from "./catalogue-site-editor";
 import { CatalogueServiceEditor } from "./catalogue-service-editor";
 import { confirmsSiteCommand } from "./catalogue-site-operation";
@@ -44,12 +51,18 @@ export function CatalogueView({
   area,
   initialItemId,
   back,
+  sectionsFor,
+  openSection,
 }: {
   area: "products" | "sites";
   initialItemId?: string;
   back?: () => void;
+  sectionsFor: (itemId: string) => StudioSectionLink[];
+  openSection: (menuId: string, sectionId: string) => void;
 }) {
   const [data, setData] = useState<CataloguePayload | null>(null);
+  const lastSnapshot = useRef<CataloguePayload | null>(null);
+  if (data) lastSnapshot.current = data;
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [writing, setWriting] = useState(false);
@@ -354,6 +367,19 @@ export function CatalogueView({
             </section>
           )}
           {area === "products" && selected && (
+            <>
+              <StudioAssignmentLinks
+                assignments={sectionsFor(selected.itemId)}
+                open={openSection}
+              />
+              <CatalogueProductGovernance
+                row={selected}
+                payload={data}
+                send={send}
+              />
+            </>
+          )}
+          {area === "products" && selected && (
             <CatalogueSiteEditor
               key={selected.itemId}
               row={selected}
@@ -442,7 +468,19 @@ export function CatalogueView({
               />
             </>
           )}
+          {area === "products" && (
+            <CatalogueDuplicateReview payload={data} send={send} />
+          )}
         </div>
+      )}
+      {lastSnapshot.current && (
+        <details
+          className={styles.disclosure}
+          hidden={area !== "products" || !data}
+        >
+          <summary>Bulk catalogue operations</summary>
+          <CatalogueBulk payload={data ?? lastSnapshot.current} send={send} />
+        </details>
       )}
       {area === "products" &&
         data?.canManage === true &&

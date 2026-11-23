@@ -303,7 +303,9 @@ export function SectionSetup({
           </>
         )}
         <div className={styles.actions}>
-          {section.catalogueItemId && <Button onClick={() => inspectItem(section.catalogueItemId)}>View mapped product</Button>}
+          <Button onClick={() => inspectItem(section.catalogueItemId)}>
+            {section.catalogueItemId ? "View mapped product" : "Browse catalogue products"}
+          </Button>
           <Button
             onClick={loadCatalogue}
             disabled={catalogue.state === "loading"}
