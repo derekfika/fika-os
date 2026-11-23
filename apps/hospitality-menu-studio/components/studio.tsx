@@ -137,7 +137,7 @@ export default function Studio({
   const assignedDishes = useAssignedDishes(section, dishes);
   const sectionDishes = [...dishes, ...assignedDishes.items];
   const unresolvedDishLabel = assignedDishes.loading
-    ? "Loading dish name�"
+    ? "Loading dish name..."
     : assignedDishes.error
       ? "Dish name could not be loaded"
       : "Dish unavailable";
@@ -851,7 +851,7 @@ export default function Studio({
                       kitchenReturn !== "activation")))) && (
                 <div hidden={page !== "menus"}>
                   {assignedDishes.loading && (
-                    <p role="status">Loading assigned dish names�</p>
+                    <p role="status">Loading assigned dish names...</p>
                   )}
                   {assignedDishes.error && (
                     <div role="alert">
