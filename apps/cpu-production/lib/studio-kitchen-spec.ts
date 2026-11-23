@@ -1,4 +1,5 @@
-import { readStudioKitchenSpec, type StudioKitchenAssortment } from "../../shared/hospitality-menu-studio-kitchen";
+import { readStudioKitchenSpec, type StudioKitchenSpec } from "../../shared/hospitality-menu-studio-kitchen";
+import { orderedQuantityLabel } from "./ordered-quantity";
 import type { ProductionLine, ProductionOrder } from "./production-types";
 
 export const studioKitchenSpecError = "The frozen kitchen specification could not be verified.";
@@ -17,7 +18,13 @@ export function orderHasInvalidStudioKitchenSpec(order: ProductionOrder) {
   return order.lines.some(line => studioKitchenSpecForLine(order, line) === null);
 }
 
-export function studioAssortmentQuantities(assortment: StudioKitchenAssortment) {
+export function studioKitchenQuantities(selection: StudioKitchenSpec["selections"][number], customerUnit: string) {
+  const { assortment, customerQuantity } = selection;
+  if (!assortment) {
+    if (customerQuantity === undefined) return null;
+    return { summary: "Customer ordered quantity · " + orderedQuantityLabel({ customerQuantity, customerUnit }), components: [] };
+  }
+
   const { boxCount, expectedTotal, unit } = assortment;
   const summary = `${boxCount} ${boxCount === 1 ? "box" : "boxes"} · ${expectedTotal} ${unit} per box · ${boxCount * expectedTotal} ${unit} total`;
   const components = assortment.components.map(({ id, name, quantity }) => ({

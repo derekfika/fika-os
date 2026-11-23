@@ -87,11 +87,12 @@ test("Chromium compact and full A4 keep PAX next to Order ref on every continuat
   }
 });
 
-test("Chromium A4 preserves frozen Studio instructions and box totals across continuation pages", async () => {
+test("Chromium A4 preserves frozen Studio instructions and dish quantities across continuation pages", async () => {
   const source = hospitality(3);
   source.kitchenNotes = "Booking kitchen notes are separate.";
   const line = source.lines[0];
   line.sourceBookingLineId = "line:studio";
+  line.customerQuantity = 5;
   const description = "Pack each variety separately. Keep all labels visible.\n".repeat(210).trimEnd();
   line.studioKitchenSpec = {
     version: 1,
@@ -99,6 +100,7 @@ test("Chromium A4 preserves frozen Studio instructions and box totals across con
     bookingLineId: line.sourceBookingLineId,
     selections: [{
       selectionId: "selection:pastries",
+      customerQuantity: 4,
       subject: { dishId: "dish:pastries", revision: 1, sourceHash: "a".repeat(64) },
       publication: { publicationId: "publication:autumn", publicationRevision: 1, contentHash: "b".repeat(64) },
       release: { releaseId: "release:pastries", matrixHash: "c".repeat(64) },
@@ -108,6 +110,15 @@ test("Chromium A4 preserves frozen Studio instructions and box totals across con
         boxCount: 4, unit: "pieces", expectedTotal: 24,
         components: [{ id: "pastries", name: "Mini pastries", quantity: 24 }],
       },
+    }, {
+      selectionId: "selection:fruit",
+      customerQuantity: 1,
+      subject: { dishId: "dish:fruit", revision: 1, sourceHash: "d".repeat(64) },
+      publication: { publicationId: "publication:autumn", publicationRevision: 1, contentHash: "b".repeat(64) },
+      release: { releaseId: "release:fruit", matrixHash: "e".repeat(64) },
+      name: "Fruit tray",
+      kitchenDescription: "Keep chilled.",
+      assortment: null,
     }],
   };
   const browser = await chromium.launch({ headless: true });
@@ -129,8 +140,8 @@ test("Chromium A4 preserves frozen Studio instructions and box totals across con
     });
     assert.equal(result.ready, "true");
     assert.ok(result.pages > 1);
-    assert.equal(result.description, description);
-    assert.deepEqual(result.summary, ["4 boxes · 24 pieces per box · 96 pieces total"]);
+    assert.equal(result.description, description + "Keep chilled.");
+    assert.deepEqual(result.summary, ["4 boxes · 24 pieces per box · 96 pieces total", "Customer ordered quantity · 1 tray"]);
     assert.deepEqual(result.components, ["Mini Pastries · Mini pastries · 24 pieces per box · 96 pieces total"]);
     assert.equal(result.overflow, false);
     await page.emulateMedia({ media: "print" });
