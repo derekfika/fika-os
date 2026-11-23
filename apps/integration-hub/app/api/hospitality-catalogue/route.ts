@@ -3,6 +3,7 @@ import { z } from "zod";
 import { errorResponse } from "@/lib/api";
 import { requireActor } from "@/lib/auth";
 import { assertPermission } from "@/lib/authmod";
+import { assertSameOrigin } from "@/lib/csrf";
 import { runBulkCatalogueCreate, runBulkCatalogueUpdate, runCatalogueCommand, type BulkCreateSpec, type BulkSpec, type CatalogueCommand } from "@/lib/hospitality-catalogue-admin";
 import { loadCataloguePayload, loadCatalogueRows } from "@/lib/hospitality-catalogue-loader";
 import { republishAfterMutation } from "@/lib/hospitality-catalogue-package";
@@ -56,6 +57,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    assertSameOrigin(request);
     const actor = await requireActor(request);
     assertPermission(actor, "hospitality.catalogue.manage");
     const body = await request.json();
