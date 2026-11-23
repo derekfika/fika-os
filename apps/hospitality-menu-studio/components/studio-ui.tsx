@@ -61,12 +61,12 @@ export function Icon({ name }: { name: keyof typeof paths }) {
 
 const nav = [
   ["home", "Home", "home"],
-  ["menus", "Menus", "menus"],
-  ["dishes", "Dishes", "dishes"],
+  ["menus", "Menus & rotations", "menus"],
+  ["dishes", "Dish library", "dishes"],
   ["products", "Products & pricing", "menus"],
-  ["sites", "Sites & services", "home"],
+  ["sites", "Sites & services", "layers"],
   ["collections", "Collections", "collection"],
-  ["review", "Publish", "publish"],
+  ["review", "Review & publish", "publish"],
   ["history", "History", "history"],
 ] as const;
 

@@ -15,6 +15,8 @@ import {
 } from "./studio-ui";
 import styles from "./studio.module.css";
 import { DishSafety } from "./studio-dish-safety";
+import type { StudioSectionLink } from "./catalogue-governance-model";
+import { StudioAssignmentLinks } from "./studio-assignment-links";
 import {
   dishUsage,
   emptyDishFilters,
@@ -243,6 +245,8 @@ export function DishEditor({
   back,
   backLabel,
   menuContext,
+  assignments,
+  openAssignment,
   kitchen,
   safetyAvailable,
   checkerOrigin,
@@ -250,6 +254,8 @@ export function DishEditor({
   back: () => void;
   backLabel: string;
   menuContext?: { name: string; sectionName: string };
+  assignments?: StudioSectionLink[];
+  openAssignment?: (menuId: string, sectionId: string) => void;
   kitchen: () => void;
   safetyAvailable: boolean;
   checkerOrigin?: string;
@@ -277,6 +283,7 @@ export function DishEditor({
         <Button onClick={back}>Back to {backLabel.toLowerCase()}</Button>
         <Button onClick={kitchen}><Icon name="chef" /> Kitchen preview</Button>
       </PageHeading>
+      {assignments && openAssignment && <StudioAssignmentLinks assignments={assignments} open={openAssignment} />}
       <div className={styles.editorColumns}>
         <section className={styles.formStack} aria-labelledby={`${formId}-details`}>
           <h2 id={`${formId}-details`}>Dish details</h2>

@@ -13,6 +13,7 @@ import {
 } from "../lib/contract";
 import { kitchenQuantities } from "../lib/review";
 import { CatalogueView } from "./studio-catalogue";
+import { linkedStudioSections } from "./catalogue-governance-model";
 import { MenuDashboard } from "./studio-dashboard";
 import { useAssignedDishes } from "./use-assigned-dishes";
 import { MenuSetup, type NewMenuDetails } from "./menu-setup";
@@ -72,6 +73,7 @@ export default function Studio({
 }) {
   const [catalogueItemId, setCatalogueItemId] = useState("");
   const [catalogueReturn, setCatalogueReturn] = useState(false);
+  const [catalogueArea, setCatalogueArea] = useState<"products" | "sites" | null>(null);
   const [page, setPage] = useState<Page>("home");
   const [menus, setMenus] = useState<Menu[]>([]);
   const [dishes, setDishes] = useState<Dish[]>([]);
@@ -273,6 +275,13 @@ export default function Studio({
   }, [menu?.id]);
 
   function navigate(next: Page) {
+    if (next === "products" || next === "sites") {
+      setCatalogueArea(next);
+      if (page === "products" || page === "sites") {
+        setPage(next);
+        return;
+      }
+    }
     setCatalogueReturn(false);
     setCatalogueItemId("");
     setPage(next);
@@ -299,6 +308,15 @@ export default function Studio({
     setMappingSectionId("");
     setWeek(0);
     setPreviewMessage("");
+  }
+  function openLinkedSection(menuId: string, linkedSectionId: string) {
+    const linked = menu?.id === menuId ? menu : menus.find((item) => item.id === menuId);
+    if (!linked?.sections.some((item) => item.id === linkedSectionId)) return;
+    if (menu?.id !== menuId) openMenu(linked);
+    if (menu?.id !== menuId || sectionId !== linkedSectionId) openSection(linkedSectionId);
+    setCatalogueReturn(false);
+    setDishOpen(false);
+    setPage("menus");
   }
   function reviseSection(change: Partial<Section>) {
     menuDraft.change((item) => ({
@@ -710,6 +728,17 @@ export default function Studio({
           {error} <Button onClick={() => void load()}>Try again</Button>
         </div>
       )}
+      {!loading && catalogueArea && (
+        <div hidden={Boolean(createKind) || (page !== "products" && page !== "sites")}>
+          <CatalogueView
+            area={catalogueArea}
+            initialItemId={catalogueItemId}
+            back={catalogueReturn ? () => setPage("menus") : undefined}
+            sectionsFor={(id) => linkedStudioSections(libraryMenus, (value) => value.catalogueItemId === id)}
+            openSection={openLinkedSection}
+          />
+        </div>
+      )}
       {!loading &&
         (createKind ? (
           <MenuSetup
@@ -720,7 +749,6 @@ export default function Studio({
           />
         ) : (
           <>
-            {(page === "products" || page === "sites") && <CatalogueView area={page} initialItemId={catalogueItemId} back={catalogueReturn ? () => setPage("menus") : undefined} />}
             {page === "home" && (
               <>
                 <MenuDashboard
@@ -843,7 +871,7 @@ export default function Studio({
             {menu &&
               section &&
               (page === "menus" ||
-                (page === "products" && catalogueReturn) ||
+                ((page === "products" || page === "sites") && catalogueReturn) ||
                 page === "preview" ||
                 page === "review" ||
                 page === "impact" ||
@@ -909,7 +937,12 @@ export default function Studio({
                     }
                     catalogue={catalogueChoices}
                     loadCatalogue={() => void loadSites()}
-                    inspectItem={(id) => { setCatalogueItemId(id); setCatalogueReturn(true); setPage("products"); }}
+                    inspectItem={(id) => {
+                      setCatalogueItemId(id);
+                      setCatalogueReturn(true);
+                      setCatalogueArea("products");
+                      setPage("products");
+                    }}
                     openSettings={mappingSectionId === section.id}
                     openSection={openSection}
                     busy={actionBusy}
@@ -945,6 +978,8 @@ export default function Studio({
                   name: menu.name,
                   sectionName: section.name,
                 } : undefined}
+                assignments={dish ? linkedStudioSections(libraryMenus, (value) => sectionDishIds(value).includes(dish.id)) : []}
+                openAssignment={openLinkedSection}
                 kitchen={() => showKitchen("dishes")}
               />
             )}
