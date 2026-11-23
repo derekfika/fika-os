@@ -49,6 +49,9 @@ export type CatalogueOfferingView = {
   retiredReason?: "item-archived" | "redundant-default";
   displayName?: string;
   description?: string;
+  minimumGuestsOverride?: number;
+  noticeRequiredDaysOverride?: number;
+  configurationOverride?: Record<string, unknown>;
   price: { source: PriceSource; effective?: CataloguePriceView; override?: CataloguePriceView; redundant?: boolean };
   minimum: { source: MinimumSource; effective?: number; override?: number; redundant?: boolean };
 };
@@ -64,6 +67,10 @@ export type CatalogueRow = {
   routingSuggestion?: { choice: RoutingChoice; reason: string };
   defaultPrice?: CataloguePriceView;
   defaultMinimumQuantity?: number;
+  defaultMode?: "standard" | "quote_only";
+  defaultMinimumGuests?: number;
+  defaultNoticeRequiredDays?: number;
+  defaultConfiguration?: Record<string, unknown>;
   offerings: CatalogueOfferingView[];
   /** Active OPLOC ids where the Item is available: every active OPLOC except sparse `available:false` exceptions (empty if the Item is archived). */
   availableAt: string[];
