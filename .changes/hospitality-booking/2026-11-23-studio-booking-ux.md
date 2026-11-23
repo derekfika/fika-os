@@ -4,4 +4,3 @@ Show date-resolved Studio dishes with labelled quantity inputs and an automatica
 
 Validation: Hospitality Studio catalogue tests, complete Hospitality test suite and typecheck passed; production build passed.
 Deployment: none.
-
