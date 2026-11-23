@@ -160,7 +160,8 @@ export class HubStudioPublications {
     }
     const active = [...effective.values()].filter(entry => entry.visibility === "customer");
     const managedItems = new Set(schedule.entries
-      .filter(entry => effective.has(entry.publication.menuId))
+      .filter(entry => entry.visibility === "customer" && effective.has(entry.publication.menuId) &&
+        entry.publication.effectiveDate <= eventDate)
       .flatMap(entry => entry.catalogueItemIds)
       .filter(id => itemIds.includes(id)));
     const wanted = active.filter(entry => entry.catalogueItemIds.some(id => itemIds.includes(id)));

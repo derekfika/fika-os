@@ -3,6 +3,8 @@ export const studioDishChoiceId = "studio-published-dishes";
 
 export type StudioPortalChoices = {
   publicationHash: string;
+  minimumQuantity?: number;
+  replacesChoiceGroupId?: string;
   dishes: { id: string; name: string; description: string }[];
 };
 

@@ -6,7 +6,7 @@ import { publicationDigest } from "../../shared/hospitality-menu-studio-publicat
 import { readStudioKitchenSpec, type StudioKitchenSpec } from "../../shared/hospitality-menu-studio-kitchen";
 import { isStudioDishChoice, studioDishChoiceId } from "../../shared/hospitality-menu-studio-selection";
 import { studioReviewStaging } from "../../shared/hospitality-menu-studio-staging";
-import { deliveryWeekday } from "@fika/server-shared/hospitality-effective-offering";
+import { studioChoicePolicy, studioOfferingIsBookable, type StudioCommercialOffering } from "./hospitality-studio-commercial";
 import { HubStudioPublications } from "./hospitality-studio-publications";
 import { studioPilot } from "./hospitality-studio-pilot";
 import {
@@ -19,7 +19,10 @@ const submittedChoice = z.strictObject({
   id: z.literal(studioDishChoiceId), publicationHash: publicationDigest,
   quantities: z.record(idSchema, z.int().nonnegative()),
 });
-const storedChoice = submittedChoice.extend({ quantityLabels: z.record(idSchema, z.string().min(1).max(200)) });
+const storedChoice = submittedChoice.extend({
+  quantityLabels: z.record(idSchema, z.string().min(1).max(200)),
+  customerDescriptions: z.record(idSchema, z.string().max(4000)).optional(),
+});
 const frozenSelection = z.strictObject({
   index: z.int().nonnegative(), itemId: idSchema, menuItemId: idSchema.optional(),
   customerQuantity: z.number().positive(), choice: storedChoice,
@@ -30,9 +33,6 @@ const frozenBooking = z.strictObject({
   acceptedBy: z.string().min(1), acceptedAt: z.iso.datetime(), lines: z.array(frozenSelection).min(1),
 });
 
-type CommercialOffering = { itemId: string; offeringMode: string; quoteRequired?: true;
-  price?: { amount: number }; bookingPolicy?: { fridayUnavailable?: boolean } };
-
 const stale = (message: string) => Object.assign(new Error(message), { status: 409, code: "STUDIO_BOOKING_SELECTION_CHANGED" });
 const acceptedRef = (booking: DocumentReference) => booking.collection("private").doc("studio-accepted-menu-v1");
 const rehearsalBookingId = /^STUDIO-UAT-[A-Z0-9-]+$/;
@@ -41,20 +41,20 @@ export function isStudioRehearsalBooking(booking: Pick<CanonicalBooking, "source
   return booking.studioKitchenEvidenceVersion === 1 && rehearsalBookingId.test(booking.source.sourceBookingId);
 }
 
-export function isStudioBookingPilot(booking: Pick<CanonicalBooking, "source" | "service">) {
+export function isStudioBookingPilot(sourceBookingId: string, oplocId: string, eventDate: string) {
   const pilot = studioPilot();
   const sourceId = process.env.FIKA_STUDIO_HUB_PILOT_SOURCE_BOOKING_ID;
   return Boolean(pilot && process.env.FIKA_STUDIO_HUB_PILOT_BOOKING_ENABLED === "true" &&
     process.env.FIKA_HOSPITALITY_EMAIL_DELIVERY_ENABLED === "false" &&
-    sourceId && rehearsalBookingId.test(sourceId) && sourceId === booking.source.sourceBookingId && pilot.oplocId === booking.service.oplocId &&
-    pilot.firstDate <= booking.service.eventDate && booking.service.eventDate <= pilot.lastDate);
+    sourceId && rehearsalBookingId.test(sourceId) && sourceId === sourceBookingId && pilot.oplocId === oplocId &&
+    pilot.firstDate <= eventDate && eventDate <= pilot.lastDate);
 }
 
 export async function prepareStudioBooking(transaction: Transaction, bookingRef: DocumentReference,
   booking: CanonicalBooking, acceptance: {
     allowed: boolean;
     actorId?: string;
-    offerings: () => CommercialOffering[];
+    offerings: () => StudioCommercialOffering[];
     publications: HubStudioPublications;
   }) {
   const submitted = booking.order.items.some(line => line.choices?.some(isStudioDishChoice));
@@ -75,11 +75,14 @@ export async function prepareStudioBooking(transaction: Transaction, bookingRef:
     const live = current.items.get(itemId);
     const offering = commercial.get(itemId);
     const marker = submittedChoice.safeParse(markers[0]);
-    if (!live || !offering || offering.offeringMode !== "standard" || offering.quoteRequired || !offering.price ||
-        (offering.bookingPolicy?.fridayUnavailable && deliveryWeekday(booking.service.eventDate) === 5) ||
-        line.unitPrice !== offering.price.amount || markers.length !== 1 ||
+    if (!live || !offering || !studioOfferingIsBookable(offering, booking.service.eventDate) ||
+        line.unitPrice !== offering.price?.amount || markers.length !== 1 ||
         !marker.success || marker.data.publicationHash !== live.publication.contentHash) {
       throw stale("The Studio menu or price changed. Refresh the choices for this event date.");
+    }
+    const policy = studioChoicePolicy(offering.configuration);
+    if (policy.replacesChoiceGroupId && line.choices?.some(choice => (choice as { id?: unknown } | null)?.id === policy.replacesChoiceGroupId)) {
+      throw stale("Use the published dishes for this item. Refresh and clear the earlier selection.");
     }
     const quantities = Object.entries(marker.data.quantities);
     const chosen = quantities.filter(([, quantity]) => quantity > 0);
@@ -87,6 +90,9 @@ export async function prepareStudioBooking(transaction: Transaction, bookingRef:
     if (!chosen.length || quantities.some(([id]) => !available.has(id)) ||
         chosen.reduce((sum, [, quantity]) => sum + quantity, 0) !== line.quantity) {
       throw stale("Choose available dishes whose quantities match the booked units.");
+    }
+    if (chosen.some(([, quantity]) => quantity < policy.minimumQuantity)) {
+      throw Object.assign(new Error(`Order at least ${policy.minimumQuantity} of each selected dish.`), { status: 422, code: "STUDIO_DISH_MINIMUM" });
     }
     const spec: StudioKitchenSpec = { version: 1, bookingId: booking.canonicalId,
       bookingLineId: hospitalityBookingLineId(booking.canonicalId, index),
@@ -98,7 +104,11 @@ export async function prepareStudioBooking(transaction: Transaction, bookingRef:
           assortment: dish.assortment ? { boxCount: quantity, ...dish.assortment } : null };
       }) };
     if (!readStudioKitchenSpec(spec, booking.canonicalId, spec.bookingLineId)) throw invalidStudioKitchenEvidence();
-    const choice = { ...marker.data, quantityLabels: Object.fromEntries(spec.selections.map(selection => [selection.selectionId, selection.name])) };
+    const choice = { ...marker.data,
+      quantityLabels: Object.fromEntries(spec.selections.map(selection => [selection.selectionId, selection.name])),
+      customerDescriptions: Object.fromEntries(chosen.map(([id]) => [id, available.get(id)!.dish.customerDescription])),
+    };
+    if (typeof offering.price?.vatRate === "number") line.acceptedCatalogueVatRate = offering.price.vatRate;
     line.choices = line.choices!.map(existing => isStudioDishChoice(existing) ? choice : existing);
     return [{ index, itemId: line.itemId, ...(line.menuItemId ? { menuItemId: line.menuItemId } : {}),
       customerQuantity: line.quantity, choice, spec }];
