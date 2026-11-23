@@ -32,3 +32,10 @@
 /* Narrow phones: CFC “Hospitality,” measures 316px at 56px and needs a smaller size to fit 312px at 375px. */
 @media(max-width:380px){.mnk-hero h1{font-size:clamp(2.75rem,13.5vw,3.5rem)}}
 @media(max-width:400px){.mnk-top{height:auto;min-height:72px;padding:8px 16px;flex-wrap:wrap;justify-content:flex-start;gap:4px 12px}.mnk-top .mnk-brand-lockup{flex:1 1 100%;min-width:0;gap:8px;font-size:1rem}.mnk-top .mnk-brand-lockup img{width:clamp(72px,28vw,104px);height:42px}.mnk-top .mnk-brand-lockup span{padding-left:8px;font-size:1rem;letter-spacing:.04em;white-space:nowrap}.mnk-top .mnk-top-actions{width:100%;justify-content:flex-end;gap:8px}.mnk-top-actions small{font-size:.62rem;letter-spacing:.08em}}
+
+/* Published dish quantities retain the client portal theme. */
+.studio-dish-choices { display: grid; gap: 8px; }
+.studio-dish-choices p { margin: 0; }
+.studio-dish-row { display: grid !important; grid-template-columns: minmax(0, 1fr) 72px; align-items: center; gap: 12px; padding: 10px; border: 1px solid var(--line); background: var(--fika-surface-card); }
+.studio-dish-row > span, .studio-dish-row > span > span { display: block; }
+.studio-dish-row input { width: 100%; min-height: 44px; }
