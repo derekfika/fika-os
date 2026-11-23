@@ -181,7 +181,7 @@ test("emulator: Hub freezes accepted Studio selections across a new publication 
   const accept = (candidate: CanonicalBooking) => db.runTransaction(async transaction => {
     const stage = await prepareStudioBooking(transaction, ref, candidate, { allowed: true,
       publications: hub, offerings: () => [{ itemId, offeringMode: "standard", price: { amount: 10, vatRate: 0.05 },
-        configuration: { choices: [{ id: "variety", controlType: "quantities", minimumQuantity: 3 }] } }],
+        configuration: { rules: { salesUnit: "piece" }, choices: [{ id: "variety", controlType: "quantities", minimumQuantity: 3 }] } }],
     });
     stage();
     transaction.create(ref, candidate);
@@ -230,6 +230,7 @@ test("emulator: Hub freezes accepted Studio selections across a new publication 
     assert.equal(created.status, "created");
     assert.equal((await ref.get()).get("lifecycleStatus"), "Sent to CPU");
     assert.equal(created.order?.studioRehearsal, true);
+    assert.equal(created.order?.lines[0].customerUnit, "piece");
     const spec = created.order?.lines[0].studioKitchenSpec?.selections[0];
     assert.equal(spec?.kitchenDescription, "Private kitchen instructions");
     assert.equal(spec?.publication.publicationId, first.manifest.id);

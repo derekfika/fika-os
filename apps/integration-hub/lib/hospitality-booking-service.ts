@@ -176,7 +176,7 @@ export type CanonicalBooking = {
   order: {
     eventType?: string;
     items: Array<
-      MnkBookingPayload["order"]["items"][number] & { menuItemId?: string; acceptedCatalogueVatRate?: number }
+      MnkBookingPayload["order"]["items"][number] & { menuItemId?: string; acceptedCatalogueVatRate?: number; acceptedCatalogueSalesUnit?: string }
     >;
     netTotal: number;
     vatNote?: string;

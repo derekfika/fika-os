@@ -70,8 +70,8 @@ export function trustedPublicOrder(payload: MnkBookingPayload, records: Canonica
     const unitPrice = rawPrice;
     const lineTotal = money(unitPrice * item.quantity);
     if (!Number.isSafeInteger(Math.round(lineTotal * 100))) return refuse("Booking amount is too large.");
-    const { productionConversion: _untrustedConversion, acceptedCatalogueVatRate: _untrustedVat, ...safeItem } =
-      structuredClone(item) as typeof item & { acceptedCatalogueVatRate?: unknown };
+    const { productionConversion: _untrustedConversion, acceptedCatalogueVatRate: _untrustedVat, acceptedCatalogueSalesUnit: _untrustedUnit, ...safeItem } =
+      structuredClone(item) as typeof item & { acceptedCatalogueVatRate?: unknown; acceptedCatalogueSalesUnit?: unknown };
     const conversion = (canonical?.record.configuration as { rules?: CatalogueRules } | undefined)?.rules?.productionConversion;
     const choices = item.choices?.map(raw => {
       const choice = raw as { id?: string; quantities?: Record<string, number> };

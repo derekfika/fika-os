@@ -110,6 +110,8 @@ export async function prepareStudioBooking(transaction: Transaction, bookingRef:
       customerDescriptions: Object.fromEntries(chosen.map(([id]) => [id, available.get(id)!.dish.customerDescription])),
     };
     if (typeof offering.price?.vatRate === "number") line.acceptedCatalogueVatRate = offering.price.vatRate;
+    const salesUnit = (offering.configuration?.rules as { salesUnit?: unknown } | undefined)?.salesUnit;
+    if (typeof salesUnit === "string" && salesUnit.trim()) line.acceptedCatalogueSalesUnit = salesUnit.trim();
     line.choices = line.choices!.map(existing => isStudioDishChoice(existing) ? choice : existing);
     return [{ index, itemId: line.itemId, ...(line.menuItemId ? { menuItemId: line.menuItemId } : {}),
       customerQuantity: line.quantity, choice, spec }];
