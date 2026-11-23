@@ -150,17 +150,19 @@ export class HubStudioPublications {
   }
 
   /** Resolve publication before matching items so a removed section never falls back to an earlier revision. */
-  async choices(transaction: Transaction, oplocId: string, eventDate: string, itemIds: readonly string[]) {
+  async choices(transaction: Transaction, oplocId: string, eventDate: string, itemIds: readonly string[], allowedMenuId?: string) {
     const schedule = this.schedule((await transaction.get(this.siteRef(oplocId))).data(), oplocId);
     const effective = new Map<string, ActivationEntry>();
     for (const entry of schedule.entries) {
-      if (entry.startDate <= eventDate && entry.endDate >= eventDate && entry.publication.effectiveDate <= eventDate) {
+      if ((!allowedMenuId || allowedMenuId === entry.publication.menuId) &&
+          entry.startDate <= eventDate && entry.endDate >= eventDate && entry.publication.effectiveDate <= eventDate) {
         effective.set(entry.publication.menuId, entry);
       }
     }
     const active = [...effective.values()].filter(entry => entry.visibility === "customer");
     const managedItems = new Set(schedule.entries
-      .filter(entry => effective.has(entry.publication.menuId))
+      .filter(entry => entry.visibility === "customer" && effective.has(entry.publication.menuId) &&
+        entry.publication.effectiveDate <= eventDate)
       .flatMap(entry => entry.catalogueItemIds)
       .filter(id => itemIds.includes(id)));
     const wanted = active.filter(entry => entry.catalogueItemIds.some(id => itemIds.includes(id)));

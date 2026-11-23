@@ -2,6 +2,8 @@ import { hospitalityPortalReadFromRecords, type HospitalityPortalReadRequest } f
 import type { CanonicalRecord } from "./types";
 import type { MnkBookingPayload } from "./hospitality-booking-service";
 import { hospitalityMenuDate } from "../../shared/hospitality-menu-date";
+import { isStudioDishChoice } from "../../shared/hospitality-menu-studio-selection";
+import { studioChoicePolicy, studioOfferingIsBookable } from "./hospitality-studio-commercial";
 
 /** Read only what the effective-offering resolver needs for the submitted stable Item IDs: their sparse site exceptions, company-default and exception Prices, and the one OPLOC (liveness). */
 async function loadPortalBookingCatalogue(items: CanonicalRecord[], payload: MnkBookingPayload, oplocId: string, provider: string, read: (field: string, ids: string[]) => Promise<CanonicalRecord[]>) {
@@ -110,9 +112,44 @@ export function governedBookingConstraintRecords(provider: string, siteLabel: st
   });
 }
 
+/** Resolve only explicitly Studio-marked lines on the event date. The booking transaction
+ * must subsequently verify the current publication before writing the booking. */
+export function mnkStudioBookingPricingRecords(records: CanonicalRecord[], ordinary: CanonicalRecord[], payload: MnkBookingPayload, oplocId: string) {
+  const submitted = payload.order.items.filter(line => line.choices?.some(isStudioDishChoice));
+  if (!submitted.length) return ordinary;
+  const request = { oplocId, serviceDate: payload.event.eventDate };
+  const resolved = hospitalityPortalReadFromRecords(records, request).offerings;
+  const eventRecords = new Map(mnkBookingPricingRecords(records, request, resolved).map(record => [record.canonicalId, record]));
+  const offerings = new Map(resolved.map(offering => [offering.itemId, offering]));
+  const changed = new Map<string, CanonicalRecord>();
+  for (const line of submitted) {
+    const item = eventRecords.get(line.itemId);
+    const offering = offerings.get(line.itemId);
+    if (!item || !offering || !studioOfferingIsBookable(offering, request.serviceDate) || line.unitPrice !== offering.price?.amount) {
+      throw Object.assign(new Error("The Studio menu or price changed. Refresh the choices for this event date."), { status: 409, code: "STUDIO_BOOKING_SELECTION_CHANGED" });
+    }
+    const configuration = offering.configuration;
+    const { replacesChoiceGroupId } = studioChoicePolicy(configuration);
+    if (!replacesChoiceGroupId) {
+      changed.set(item.canonicalId, item);
+      continue;
+    }
+    if (line.choices?.some(choice => (choice as { id?: unknown } | null)?.id === replacesChoiceGroupId)) {
+      throw Object.assign(new Error("Use the published dishes for this item. Refresh and clear the earlier selection."), { status: 409, code: "STUDIO_BOOKING_SELECTION_CHANGED" });
+    }
+    const withoutReplaced = (groups: unknown) => Array.isArray(groups)
+      ? groups.filter(group => group?.id !== replacesChoiceGroupId) : [];
+    changed.set(item.canonicalId, { ...item, record: { ...item.record,
+      configuration: { ...configuration, choices: withoutReplaced(configuration?.choices) },
+      optionGroups: withoutReplaced(item.record.optionGroups),
+    } });
+  }
+  return ordinary.map(item => changed.get(item.canonicalId) ?? item);
+}
+
 /** Server-owned adapter into the existing strict price validator; no client prices. */
-export function mnkBookingPricingRecords(records: CanonicalRecord[], request: HospitalityPortalReadRequest): CanonicalRecord[] {
-  const { offerings } = hospitalityPortalReadFromRecords(records, request);
+export function mnkBookingPricingRecords(records: CanonicalRecord[], request: HospitalityPortalReadRequest,
+  offerings = hospitalityPortalReadFromRecords(records, request).offerings): CanonicalRecord[] {
   return records.filter(record => record.entityType === "Hospitality Menu Item").map(item => {
     const matches = offerings.filter(offering => offering.offeringMode === "standard" && offering.itemId === item.canonicalId);
     if (matches.length > 1) throw Object.assign(new Error("Ambiguous catalogue offering."), { status: 422 });

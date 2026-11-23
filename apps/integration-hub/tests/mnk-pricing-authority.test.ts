@@ -2,15 +2,41 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import fixture from "../fixtures/mnk-legacy-menu-import.candidates.json";
 import { hospitalityPortalReadFromRecords } from "../lib/hospitality-catalogue-service";
-import { loadMnkBookingCatalogue, mnkBookingPricingRecords } from "../lib/mnk-booking-catalogue";
+import { loadMnkBookingCatalogue, mnkBookingPricingRecords, mnkStudioBookingPricingRecords } from "../lib/mnk-booking-catalogue";
 import { trustedPublicOrder } from "../lib/hospitality-price-trust";
 import { buildMnkCanonicalBooking, type MnkBookingPayload } from "../lib/hospitality-booking-service";
 import type { CanonicalRecord } from "../lib/types";
 import { hospitalityMenuDate } from "../../shared/hospitality-menu-date";
+import { studioDishChoiceId } from "../../shared/hospitality-menu-studio-selection";
 
 const records = [...fixture.items, ...fixture.offerings, ...fixture.prices].map(record => ({ canonicalId: record.canonicalId, entityType: record.entityType, record, dataHash: "fixture", lifecycleStatus: "published", publicationStatus: "published" })) as CanonicalRecord[];
 const request = { oplocId: fixture.configuration.oplocId, serviceDate: "2026-10-09" };
 const payloadFor = (id: string, choices: unknown[] = []): MnkBookingPayload => ({ order: { items: [{ itemId: id, quantity: 3, unitPrice: .01, lineTotal: .01, choices }], netTotal: .01 } }) as MnkBookingPayload;
+
+test("Studio uses event-date prices and replaces only Finger Food selection style inside the rehearsal", () => {
+  const item = records.find(record => record.entityType === "Hospitality Menu Item" && record.record.name === "Finger Food")!;
+  const offering = records.find(record => record.entityType === "Hospitality Menu Offering" && record.record.hospitalityMenuItemId === item.canonicalId)!;
+  const price = records.find(record => record.entityType === "Hospitality Menu Price" && record.record.hospitalityMenuOfferingId === offering.canonicalId)!;
+  const eventDate = "2026-10-22";
+  const choice = { id: studioDishChoiceId, publicationHash: "a".repeat(64), quantities: { "dish:one": 6 } };
+  const published = { ...payloadFor(item.canonicalId, [choice]), event: { eventDate, startTime: "12:00", guestCount: 20 } };
+  published.order.items[0] = { ...published.order.items[0], unitPrice: 8, quantity: 6 };
+  const changed = records.map(record => record === price ? { ...record, record: { ...record.record, effectiveTo: "2026-10-21" } } : record);
+  changed.push({ ...price, canonicalId: "hospitality-menu-price:finger-food-next", record: { ...price.record,
+    canonicalId: "hospitality-menu-price:finger-food-next", effectiveFrom: eventDate, amount: 8 } });
+  const ordinary = mnkBookingPricingRecords(changed, request);
+  assert.throws(() => trustedPublicOrder(published, ordinary, "mnk"), /required catalogue option/);
+  const scoped = mnkStudioBookingPricingRecords(changed, ordinary, published, request.oplocId);
+  const ordered = trustedPublicOrder(published, scoped, "mnk").items[0];
+  assert.equal(ordered.unitPrice, 8);
+  assert.deepEqual(ordered.choices, [choice]);
+  assert.equal(scoped.filter((record, index) => record !== ordinary[index]).length, 1);
+  published.order.items[0].choices = [choice, { id: "selection", value: "Mixed brochure selection" }];
+  assert.throws(() => mnkStudioBookingPricingRecords(changed, ordinary, published, request.oplocId), { code: "STUDIO_BOOKING_SELECTION_CHANGED" });
+  published.order.items[0].choices = [choice];
+  published.order.items[0].unitPrice = 3.95;
+  assert.throws(() => mnkStudioBookingPricingRecords(changed, ordinary, published, request.oplocId), { code: "STUDIO_BOOKING_SELECTION_CHANGED" });
+});
 
 test("every orderable MNK offering shares numeric canonical pricing with strict ingestion; bogus client totals never win", () => {
   const portal = hospitalityPortalReadFromRecords(records, request);
