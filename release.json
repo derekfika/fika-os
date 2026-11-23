@@ -7,50 +7,40 @@
   "region": "europe-west4",
   "branch": "release/staging/menu-studio",
   "validation": {
-    "id": 136296278994,
-    "url": "https://github.com/derekfika/fika-os/actions/runs/44738421498/job/136296278994",
-    "sha": "7d6f831e7866be5db6a9212a8770fde947841836"
+    "id": 137683208909,
+    "url": "https://github.com/derekfika/fika-os/actions/runs/45171646808/job/137683208909",
+    "sha": "0e0ec624f0f448b8e792d042187daa55040d5e6a"
   },
   "provenance": {
-    "number": 630,
-    "url": "https://github.com/derekfika/fika-os/pull/630",
-    "head": "da819763c253352b649d8f9e6d95b58765a525dc"
+    "number": 672,
+    "url": "https://github.com/derekfika/fika-os/pull/672",
+    "head": "526d14693604aa2823dff49fe8317902c7e88600"
   },
-  "sourceSha": "7d6f831e7866be5db6a9212a8770fde947841836",
-  "scopeHash": "6501fcfc8b50d3e30f82046ffb288b12400e9d6b77970d3581df9b46c57ceca4",
+  "sourceSha": "0e0ec624f0f448b8e792d042187daa55040d5e6a",
+  "scopeHash": "a7a9dd93b9afdf4392dae6a854a320040adfcb5750a419e60b4d9916099d3fab",
   "rollback": false,
   "approval": {
     "actor": "derekfika",
     "method": "authenticated-repository-writer",
     "app": "menu-studio",
     "environment": "staging",
-    "sourceSha": "7d6f831e7866be5db6a9212a8770fde947841836",
+    "sourceSha": "0e0ec624f0f448b8e792d042187daa55040d5e6a",
     "action": "deploy",
-    "instruction": "Owner authorised Menu Studio UX refinement P2 staging release after authenticated hosted P1 verification",
+    "instruction": "Owner-authorised Hospitality Menu Studio staging rollout and end-to-end acceptance, 23 November 2026",
     "releaseId": null,
-    "id": "7ef072274d9762397d9eb1cce74a6ce0b17013dfdf20072be1585584eec51cd5",
+    "id": "4d0b91518d6cb4276a87b2616c6cc4d26178abed047b523b6ef986db6ff0c058",
     "explicitExecute": true,
-    "authorisedAt": "2026-11-20T12:49:03.345Z"
+    "authorisedAt": "2026-11-23T12:25:31.037Z"
   },
-  "rollout": "build-2026-11-20-004",
-  "state": "SUCCEEDED",
-  "percent": 100,
-  "kind": "deploy",
+  "kind": "intent",
+  "state": "PENDING",
+  "releaseId": "a9e7b502-c005-447f-825d-a15e88823aa6",
   "previousGood": {
-    "sourceSha": "168b5a7b5e3840a4b5ae43f2be4effe86d6a0d24",
-    "rollout": "build-2026-11-20-003",
+    "sourceSha": "7d6f831e7866be5db6a9212a8770fde947841836",
+    "rollout": "build-2026-11-20-004",
     "state": "SUCCEEDED",
     "percent": 100
   },
-  "previousGoodRecord": "cf84d3706143f54903956c06c73a277a46436c0a",
-  "releaseId": "f91ff2c3-470a-4f4d-bb72-c3bc2ae7eceb",
-  "completedAt": "2026-11-20T12:52:15.974Z",
-  "smoke": {
-    "ok": true,
-    "status": 401,
-    "url": "https://menu-studio-staging.fikacatering.com/api/studio?list=menus",
-    "appId": "hospitality-menu-studio",
-    "buildSha": "7d6f831e7866be5db6a9212a8770fde947841836",
-    "authGate": "FIKA_SESSION_MISSING"
-  }
+  "previousGoodRecord": "08557a1a0f0cda5638c4aef39bc26097727485d7",
+  "createdAt": "2026-11-23T12:25:32.867Z"
 }
