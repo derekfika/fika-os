@@ -1072,10 +1072,10 @@ export default function HospitalityDashboard({
             </a>
             <span className="hospitality-dashboard__site-context">{currentSiteLabel}</span>
             <a className="hospitality-dashboard__workspace-link" href="/workspace">Change workspace</a>
+            {showInvoiceReports && <a className="hospitality-dashboard__workspace-link" href={`/workspace/invoice-reports?oploc=${encodeURIComponent(oplocId)}`}>Invoice Reports</a>}
           </div>
           <div>
             <a className="start-again" href={oplocId ? hospitalityWorkspacePath(oplocId, "booking") : site.portalPath}>View Booking platform</a>
-            {showInvoiceReports && <a className="start-again" href={`/workspace/invoice-reports?oploc=${encodeURIComponent(oplocId)}`}>Invoice Reports</a>}
             {site.key === "angel-court" && (
               <>
                 <button type="button" onClick={() => void forceAngelCourtScan()} disabled={scanBusy}>
