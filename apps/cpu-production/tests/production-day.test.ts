@@ -59,18 +59,19 @@ test("CPU production Totals follow canonical Menu slots, merge destinations per 
   ]);
 });
 
-test("Ad-Hoc Totals use the Hospitality dashboard classification without mutating line routing", () => {
+test("Ad-Hoc Totals follow the selected workstream without mutating line routing", () => {
   const adHoc = { ...order("Ad-Hoc site", 0), canonicalId: "production-order:v1:ad-hoc:request:totals", origin: "cpu_created" as const, productionCategory: "grab_and_go" as const, lines: [
     { ...order("Ad-Hoc site", 0).lines[0], canonicalId: "adhoc:sandwich", itemName: "Sandwich", customerQuantity: 2, customerUnit: "pieces", workstream: "sandwiches" as const },
-    { ...order("Ad-Hoc site", 0).lines[0], canonicalId: "adhoc:meal", itemName: "Meal", customerQuantity: 3, customerUnit: "portions", workstream: "grab_and_go" as const },
+    { ...order("Ad-Hoc site", 0).lines[0], canonicalId: "adhoc:meal", itemName: "Meal", customerQuantity: 3, customerUnit: "portions", workstream: "delivered_in" as const },
   ] };
   const totals = aggregateProductionTotals([adHoc]);
 
-  assert.equal(isHospitalityDayOrder(adHoc), true);
+  assert.equal(isHospitalityDayOrder(adHoc), false);
   assert.deepEqual(totals.map(({ category, orderCount, items }) => [category, orderCount, items.map(item => [item.name, item.quantity, item.unit])]), [
-    ["Hospitality", 1, [["Meal", 3, "portions"], ["Sandwich", 2, "pieces"]]],
+    ["Sandwiches", 1, [["Sandwich", 2, "pieces"]]],
+    ["Delivered-In", 1, [["Meal", 3, "portions"]]],
   ]);
-  assert.deepEqual(adHoc.lines.map(line => line.workstream), ["sandwiches", "grab_and_go"]);
+  assert.deepEqual(adHoc.lines.map(line => line.workstream), ["sandwiches", "delivered_in"]);
   assert.equal(isHospitalityDayOrder(order("Ordinary CPU", 1)), false);
 });
 

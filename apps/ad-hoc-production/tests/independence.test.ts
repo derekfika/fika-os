@@ -27,7 +27,8 @@ test("relative imports leave the app only for the dependency-free shared contrac
   }
   assert.deepEqual([...outside], ["shared/ad-hoc-production-contract"]);
   const contract = readFileSync(path.resolve(root, "../shared/ad-hoc-production-contract.ts"), "utf8");
-  assert.deepEqual(importsOf(contract), [], "the contract has no imports at all (no runtime dependencies)");
+  assert.deepEqual(importsOf(contract), ["./production-workstreams"], "the contract imports only the existing workstream type");
+  assert.match(contract, /import type \{ CpuProductionWorkstream \} from ["']\.\/production-workstreams["']/);
 });
 
 test("every bare package the app imports is declared in its own package.json", () => {

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { DELI_STYLE_PARENT_KEY, DELIVERED_IN_LUNCH_PARENT_KEY, scopeProductionItems } from "../lib/production-item-scope";
 import { filterProductionOrdersForScope, type ProductionRouting } from "../lib/production-scope";
+import type { ProductionOrder } from "../lib/production-types";
 
 test("saved sandwiches are scoped to Deli Style Sandwich Lunch", () => {
   const items = [
@@ -26,7 +27,7 @@ test("production type scope filters canonical order lines without inventing reco
   const base = { canonicalId: "order", origin: "hospitality_booking", lines: [
     { canonicalId: "line:sandwich", sourceMenuItemId: "menu:sandwich", workstream: "sandwiches" },
     { canonicalId: "line:hospitality", sourceMenuItemId: "menu:hospitality", workstream: "hospitality" },
-  ] } as never;
+  ] } as unknown as ProductionOrder;
   const routing: ProductionRouting = { "menu:sandwich": ["sandwiches"], "menu:hospitality": ["hospitality"] };
   assert.equal(filterProductionOrdersForScope([base], "all", routing).length, 1);
   assert.deepEqual(filterProductionOrdersForScope([base], "sandwiches", routing)[0].lines.map((line) => line.canonicalId), ["line:sandwich"]);
@@ -38,28 +39,30 @@ test("production type scope filters canonical order lines without inventing reco
 test("an explicit Hub Sandwiches workstream wins over a Hospitality booking origin", () => {
   const sandwich = { canonicalId: "order:deli", origin: "hospitality_booking", productionCategory: "hospitality", lines: [
     { canonicalId: "line:deli", sourceMenuItemId: "menu:deli", workstream: "sandwiches" },
-  ] } as never;
+  ] } as unknown as ProductionOrder;
   const routing: ProductionRouting = { "menu:deli": ["hospitality"] };
   assert.equal(filterProductionOrdersForScope([sandwich], "sandwiches", routing).length, 1);
   assert.equal(filterProductionOrdersForScope([sandwich], "hospitality", routing).length, 0);
   assert.equal(filterProductionOrdersForScope([sandwich], "all", routing).length, 1);
 });
 
-test("Ad-Hoc canonical orders appear whole in Hospitality only, regardless of category or line workstreams", () => {
-  const adHoc = { canonicalId: "production-order:v1:ad-hoc:request:1", origin: "cpu_created", productionCategory: "grab_and_go", status: "cancelled", workflowStatus: "cancelled", cancellationNotice: "Cancelled by requester", lines: [
+test("Ad-Hoc canonical orders use authoritative workstreams and legacy orders default to Hospitality", () => {
+  const adHoc = { canonicalId: "production-order:v1:ad-hoc:request:1", origin: "cpu_created", productionCategory: "other", status: "cancelled", workflowStatus: "cancelled", cancellationNotice: "Cancelled by requester", lines: [
     { canonicalId: "line:sandwich", sourceMenuItemId: "menu:sandwich", workstream: "sandwiches" },
-    { canonicalId: "line:delivered", sourceMenuItemId: "menu:delivered", workstream: "delivered_in" },
-    { canonicalId: "line:grab-and-go", sourceMenuItemId: "menu:grab-and-go", workstream: "grab_and_go" },
-  ] } as never;
+  ] } as unknown as ProductionOrder;
   const routing: ProductionRouting = {};
 
   assert.deepEqual(filterProductionOrdersForScope([adHoc], "all", routing), [adHoc]);
-  assert.deepEqual(filterProductionOrdersForScope([adHoc], "hospitality", routing), [adHoc]);
-  assert.deepEqual(filterProductionOrdersForScope([adHoc], "sandwiches", routing), []);
+  assert.deepEqual(filterProductionOrdersForScope([adHoc], "hospitality", routing), []);
+  assert.equal(filterProductionOrdersForScope([adHoc], "sandwiches", routing)[0].lines[0].canonicalId, "line:sandwich");
   assert.deepEqual(filterProductionOrdersForScope([adHoc], "delivered_in", routing), []);
   assert.deepEqual(filterProductionOrdersForScope([adHoc], "grab_and_go", routing), []);
 
-  const ordinaryCpu = { ...(adHoc as Record<string, unknown>), canonicalId: "production-order:v1:cpu:ordinary", status: "accepted", workflowStatus: undefined, cancellationNotice: undefined, lines: [{ canonicalId: "line:ordinary" }] } as never;
+  const legacyAdHoc = { ...adHoc, lines: [{ canonicalId: "line:legacy" }] } as unknown as ProductionOrder;
+  assert.deepEqual(filterProductionOrdersForScope([legacyAdHoc], "hospitality", routing)[0].lines.map((line) => line.canonicalId), ["line:legacy"]);
+  assert.deepEqual(filterProductionOrdersForScope([legacyAdHoc], "sandwiches", routing), []);
+
+  const ordinaryCpu = { ...adHoc, canonicalId: "production-order:v1:cpu:ordinary", status: "accepted", workflowStatus: undefined, cancellationNotice: undefined, lines: [{ canonicalId: "line:ordinary" }] } as unknown as ProductionOrder;
   assert.deepEqual(filterProductionOrdersForScope([ordinaryCpu], "hospitality", routing), []);
   assert.deepEqual(filterProductionOrdersForScope([ordinaryCpu], "delivered_in", routing).map((order) => order.canonicalId), ["production-order:v1:cpu:ordinary"]);
 });

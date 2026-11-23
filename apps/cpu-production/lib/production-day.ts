@@ -13,15 +13,27 @@ export function allergenReviewKey(order: ProductionOrder, line: ProductionLine) 
 
 export function orderDate(order: ProductionOrder) { return order.serviceDate || order.requiredBy.slice(0, 10); }
 export function orderQuantity(order: ProductionOrder) { return order.lines.reduce((sum, line) => sum + line.customerQuantity, 0); }
-export function isHospitalityDayOrder(order: Pick<ProductionOrder, "canonicalId" | "origin">) {
-  return order.origin === "hospitality_booking" || isAdHocProductionOrder(order);
+export function isHospitalityDayOrder(order: Pick<ProductionOrder, "canonicalId" | "origin" | "lines">) {
+  if (isAdHocProductionOrder(order)) return adHocProductionWorkstream(order) === "hospitality";
+  return order.origin === "hospitality_booking";
 }
+export function adHocProductionWorkstream(order: Pick<ProductionOrder, "canonicalId" | "lines">) {
+  if (!isAdHocProductionOrder(order)) return undefined;
+  const value = order.lines.find(line => line.workstream)?.workstream;
+  return value === "sandwiches" || value === "delivered_in" || value === "hospitality" ? value : "hospitality";
+}
+export function isAdHocSandwichesDayOrder(order: Pick<ProductionOrder, "canonicalId" | "lines">) { return adHocProductionWorkstream(order) === "sandwiches"; }
+export function isAdHocDeliveredInDayOrder(order: Pick<ProductionOrder, "canonicalId" | "lines">) { return adHocProductionWorkstream(order) === "delivered_in"; }
 export type ProductionTotalProgress = "not_started" | "in_progress" | "produced";
 export type ProductionTotalItem = { key: string; name: string; unit: string; quantity: number; progress: ProductionTotalProgress; culinaryCategory?: string; menuOrder?: boolean; menuOrderVersion?: string; slot?: string; canonicalSlotId?: string; canonicalOrderIndex?: number; menuSortOrder?: number };
 export type ProductionTotalsCategory = { category: string; orderCount: number; items: ProductionTotalItem[] };
 
 function productionLineCategory(order: ProductionOrder, line: ProductionLine) {
-  if (isAdHocProductionOrder(order)) return "Hospitality";
+  if (isAdHocProductionOrder(order)) {
+    if (line.workstream === "sandwiches") return "Sandwiches";
+    if (line.workstream === "delivered_in") return "Delivered-In";
+    return "Hospitality";
+  }
   if (line.workstream === "sandwiches") return "Sandwiches";
   if (line.workstream === "hospitality") return "Hospitality";
   if (line.workstream === "delivered_in") return "Delivered-In";

@@ -71,36 +71,41 @@ test("mixed legacy Sandwiches and Hospitality projection is withheld for authori
   assert.equal(hospitality.summary.totalUnits, 0);
 });
 
-test("Ad-Hoc day/week projections stay whole in Hospitality, preserve cancellations, and contribute totals once", () => {
+test("Ad-Hoc projections follow the aligned CPU workstream and old rows default to Hospitality", () => {
   const source = structuredClone(projection);
   source.orders = [
-    { ...source.orders[0], id: "production-order:v1:ad-hoc:request:1", origin: "cpu_created", productionCategory: "grab_and_go", productionScope: "sandwiches,delivered_in,grab_and_go", quantities: [
-      { sourceLineId: "adhoc:line:1", name: "Sandwich", quantity: 2, unit: "pieces", dietaries: {} },
-      { sourceLineId: "adhoc:line:2", name: "Lunch", quantity: 3, unit: "portions", dietaries: {} },
-      { sourceLineId: "adhoc:line:3", name: "Fruit", quantity: 2, unit: "items", dietaries: {} },
+    { ...source.orders[0], id: "production-order:v1:ad-hoc:request:sandwiches", origin: "cpu_created", productionCategory: "other", productionScope: "sandwiches", quantities: [
+      { sourceLineId: "adhoc:sandwich", name: "Sandwich", quantity: 2, unit: "pieces", dietaries: {} },
+    ] },
+    { ...source.orders[0], id: "production-order:v1:ad-hoc:request:delivered-in", origin: "cpu_created", productionCategory: "hospitality", productionScope: "delivered_in", quantities: [
+      { sourceLineId: "adhoc:lunch", name: "Lunch", quantity: 3, unit: "portions", dietaries: {} },
+    ] },
+    { ...source.orders[0], id: "production-order:v1:ad-hoc:request:legacy", origin: "cpu_created", productionCategory: "delivered_in", productionScope: "unassigned", quantities: [
+      { sourceLineId: "adhoc:legacy", name: "Legacy", quantity: 1, unit: "portion", dietaries: {} },
     ] },
     { ...source.orders[0], id: "production-order:v1:ad-hoc:request:cancelled", origin: "cpu_created", productionCategory: "delivered_in", status: "cancelled", workflowStatus: "cancelled", cancellationNotice: "Cancelled by requester", productionScope: "delivered_in", quantities: [{ sourceLineId: "adhoc:cancelled:line", name: "Historical line", quantity: 99, unit: "portions", dietaries: {} }] },
   ];
-  source.summary = { orders: 2, ready: 1, attention: 0, planned: 0, totalUnits: 106 };
+  source.summary = { orders: 4, ready: 3, attention: 0, planned: 0, totalUnits: 105 };
 
   const hospitality = filterCpuProjectionForScope(source, "hospitality");
-  assert.equal(hospitality.orders.length, 2);
-  assert.equal(hospitality.summary.orders, 2);
-  assert.equal(hospitality.summary.totalUnits, 106);
-  assert.deepEqual(hospitality.orders[0].quantities.map(line => [line.sourceLineId, line.quantity]), [["adhoc:line:1", 2], ["adhoc:line:2", 3], ["adhoc:line:3", 2]]);
-  assert.equal(hospitality.orders[1].status, "cancelled");
-  assert.equal(hospitality.orders[1].workflowStatus, "cancelled");
-  assert.equal(hospitality.orders[1].cancellationNotice, "Cancelled by requester");
+  assert.equal(hospitality.orders.length, 1);
+  assert.equal(hospitality.summary.orders, 1);
+  assert.equal(hospitality.summary.totalUnits, 1);
+  assert.deepEqual(hospitality.orders[0].quantities.map(line => line.sourceLineId), ["adhoc:legacy"]);
 
-  for (const scope of ["sandwiches", "delivered_in", "grab_and_go"] as const) {
-    const filtered = filterCpuProjectionForScope(source, scope);
-    assert.deepEqual(filtered.orders, []);
-    assert.equal(filtered.summary.orders, 0);
-    assert.equal(filtered.summary.totalUnits, 0);
-  }
+  const sandwiches = filterCpuProjectionForScope(source, "sandwiches");
+  assert.deepEqual(sandwiches.orders.map(order => order.id), ["production-order:v1:ad-hoc:request:sandwiches"]);
+  assert.equal(sandwiches.summary.totalUnits, 2);
+  const deliveredIn = filterCpuProjectionForScope(source, "delivered_in");
+  assert.deepEqual(deliveredIn.orders.map(order => order.id), ["production-order:v1:ad-hoc:request:delivered-in", "production-order:v1:ad-hoc:request:cancelled"]);
+  assert.equal(deliveredIn.summary.totalUnits, 102);
+  assert.equal(deliveredIn.orders[1].status, "cancelled");
+  assert.equal(deliveredIn.orders[1].workflowStatus, "cancelled");
+  assert.equal(deliveredIn.orders[1].cancellationNotice, "Cancelled by requester");
+  assert.deepEqual(filterCpuProjectionForScope(source, "grab_and_go").orders, []);
 
   const totals = aggregateProductionTotals(cpuProjectionToOrders(hospitality));
-  assert.deepEqual(totals.map(({ category, orderCount, items }) => [category, orderCount, items.reduce((sum, item) => sum + item.quantity, 0)]), [["Hospitality", 1, 7]]);
+  assert.deepEqual(totals.map(({ category, orderCount, items }) => [category, orderCount, items.reduce((sum, item) => sum + item.quantity, 0)]), [["Hospitality", 1, 1]]);
   assert.equal(filterCpuProjectionForScope(source, "all"), source);
 });
 

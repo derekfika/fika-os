@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AD_HOC_CATEGORIES, AD_HOC_UNITS, NOTES_LIMIT, STATUS_LABELS, blankDraft, contentKey, isArchived, isSent, newLineId, readiness, submitBlockers, type AdHocCategory, type AdHocDraft, type AdHocLine, type AdHocRequest } from "../lib/ad-hoc-domain";
+import { AD_HOC_CATEGORIES, AD_HOC_PRODUCTION_SCOPES, AD_HOC_UNITS, NOTES_LIMIT, STATUS_LABELS, adHocProductionScopeLabel, blankDraft, contentKey, isArchived, isSent, newLineId, readiness, submitBlockers, type AdHocCategory, type AdHocDraft, type AdHocLine, type AdHocRequest } from "../lib/ad-hoc-domain";
 import { Icon } from "./icons";
 import type { AdHocAllergenCheckerStatus } from "../../shared/ad-hoc-production-contract";
+import { allergenCheckerDisplay, currentSignedChecker } from "../lib/allergen-checker-display";
 
 type OplocOption = { canonicalId: string; label: string; address?: string };
-const toDraft = (request: AdHocRequest): AdHocDraft => ({ eventName: request.eventName, serviceDate: request.serviceDate, requiredReadyTime: request.requiredReadyTime, category: request.category, guestCount: request.guestCount, notes: request.notes, destination: structuredClone(request.destination), lines: structuredClone(request.lines) });
+const toDraft = (request: AdHocRequest): AdHocDraft => ({ eventName: request.eventName, serviceDate: request.serviceDate, requiredReadyTime: request.requiredReadyTime, category: request.category, productionScope: request.productionScope || "hospitality", guestCount: request.guestCount, notes: request.notes, destination: structuredClone(request.destination), lines: structuredClone(request.lines) });
 const longDate = (date: string) => date ? new Date(`${date}T12:00:00Z`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }) : "—";
 const categoryLabel = (value: string) => AD_HOC_CATEGORIES.find(item => item.value === value)?.label || "—";
 
@@ -94,16 +95,17 @@ export function OrderForm({ id }: { id: string }) {
   const destination = draft.destination;
   const sendLabel = status === "NEEDS_UPDATE" || (request && isSent(request) && dirty) ? "Send update to CPU" : "Send to CPU";
   const sendDisabled = Boolean(busy) || readOnly || cpuCancelled || (status === "SENT_TO_CPU" && !dirty);
+  const verifiedCurrentAllergenPdf = Boolean(request && currentSignedChecker(allergenChecker, request, dirty));
 
   return <div className="page order">
     <div className="order-main">
       <Link href="/" className="back"><Icon name="arrowLeft" size={16} />Back to overview</Link>
       <div className="title-row"><h1>{isNew ? "New ad-hoc order" : draft.eventName || "Ad-hoc order"}</h1><span className={`chip ${status === "DRAFT" ? "draft" : status === "SENT_TO_CPU" ? "sent" : status === "NEEDS_UPDATE" ? "update" : "cancelled"}`}>{request && isArchived(request) && status === "DRAFT" ? "Archived draft" : STATUS_LABELS[status]}</span>{request && <span className="ref">{request.reference}</span>}</div>
-      <p className="lede">Create a bespoke food order to send to CPU Hospitality and Logistics.</p>
+      <p className="lede">Create a bespoke food order to send to the selected CPU production scope and Logistics.</p>
       <div aria-live="polite">{notice && <p className="banner ok" role="status">{notice}</p>}{error && <p className="banner error" role="alert">{error}</p>}
         {cpuCancelled && request && isSent(request) && <p className="banner error" role="status">CPU has cancelled this order, so it is no longer being produced or delivered. Cancel the request from the overview to record that here, or duplicate it to start again.</p>}
         {status === "NEEDS_UPDATE" && <p className="banner warn" role="status">This order changed after it was sent. CPU and Logistics still hold the previous version until you send the update.</p>}
-        {request && isSent(request) && <section className="card" aria-labelledby="allergen-checker-heading"><div className="card-head"><div><h2 id="allergen-checker-heading">Allergen checker</h2><p>CPU status is checked against the current signed release whenever this order opens.</p></div></div><p role="status">{allergenChecker?.state === "ready" ? `Current and dual signed by ${allergenChecker.signatures?.map(signature => `${signature.printedName} (${signature.role === "production_chef" ? "Production Chef" : "Head Chef / Site Manager"})`).join(" and ") || "both required chefs"}.` : allergenChecker?.state === "unsigned" ? "Not signed yet. The checker appears here after both required chefs sign." : allergenChecker?.state === "pending" ? "The current signed checker is being prepared or verified." : allergenChecker?.state === "failed" ? "Both signatures are recorded, but the signed checker could not be materialized." : allergenChecker?.state === "revoked" || allergenChecker?.state === "stale" ? "The previous checker is no longer current and cannot be opened." : allergenChecker?.state === "unavailable" ? "Current checker status is unavailable. Try reopening this order." : "Checking current CPU signing status…"}</p>{allergenChecker?.state === "ready" && <a className="btn" href={`/api/requests/allergen-checker?id=${encodeURIComponent(request.id)}`} target="_blank" rel="noreferrer">Open current signed PDF</a>}</section>}
+        {request && isSent(request) && <section className="card" aria-labelledby="allergen-checker-heading"><div className="card-head"><div><h2 id="allergen-checker-heading">Allergen checker</h2><p>CPU owns the review, both required signatures and the current signed PDF.</p></div></div><p role="status">{allergenCheckerDisplay(allergenChecker, request, dirty)}{allergenChecker?.state === "ready" && verifiedCurrentAllergenPdf ? ` · Dual signed by ${allergenChecker.signatures?.map(signature => `${signature.printedName} (${signature.role === "production_chef" ? "Production Chef" : "Head Chef / Site Manager"})`).join(" and ") || "both required chefs"}.` : ""}</p>{verifiedCurrentAllergenPdf && <a className="btn" href={`/api/requests/allergen-checker?id=${encodeURIComponent(request.id)}`} target="_blank" rel="noreferrer">Open current signed PDF</a>}</section>}
         {readOnly && <p className="banner warn" role="status">{status === "CANCELLED" ? "This order was cancelled and withdrawn from CPU and Logistics." : "This draft is archived."} It is read-only; duplicate it from the overview to start a new order.</p>}</div>
 
       <fieldset className="plain" disabled={readOnly || busy !== ""}>
@@ -113,7 +115,8 @@ export function OrderForm({ id }: { id: string }) {
             <label className="field"><span>Event name <b aria-hidden="true">*</b></span><input value={draft.eventName} maxLength={120} aria-invalid={invalid(Boolean(draft.eventName.trim()))} onChange={event => set("eventName", event.target.value)} />{invalid(Boolean(draft.eventName.trim())) && <em className="field-error">Enter an event name.</em>}</label>
             <label className="field"><span>Service date <b aria-hidden="true">*</b></span><input type="date" value={draft.serviceDate} aria-invalid={invalid(!submitBlockers(draft).includes("Service date is in the past") && Boolean(draft.serviceDate))} onChange={event => set("serviceDate", event.target.value)} />{showErrors && submitBlockers(draft).includes("Service date is in the past") && <em className="field-error">Service date is in the past.</em>}</label>
             <label className="field"><span>Required ready time <b aria-hidden="true">*</b></span><input type="time" value={draft.requiredReadyTime} aria-invalid={invalid(done("ready"))} onChange={event => set("requiredReadyTime", event.target.value)} /><small className="help">Ready by this time — Logistics sets the dispatch time.</small></label>
-            <label className="field span2"><span>Request type / category <b aria-hidden="true">*</b></span><select value={draft.category} onChange={event => set("category", event.target.value as AdHocCategory)}>{AD_HOC_CATEGORIES.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+            <label className="field"><span>Request type / category <b aria-hidden="true">*</b></span><select value={draft.category} onChange={event => set("category", event.target.value as AdHocCategory)}>{AD_HOC_CATEGORIES.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+            <label className="field span2"><span>CPU Production Scope <b aria-hidden="true">*</b></span><select value={draft.productionScope || "hospitality"} onChange={event => set("productionScope", event.target.value as AdHocDraft["productionScope"])}>{AD_HOC_PRODUCTION_SCOPES.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select><small className="help">Choose the CPU section responsible for producing this order.</small></label>
             <label className="field"><span>Guest count <b aria-hidden="true">*</b></span><input type="number" inputMode="numeric" min={1} step={1} value={draft.guestCount ?? ""} aria-invalid={invalid(Boolean(draft.guestCount))} onChange={event => set("guestCount", event.target.value ? Math.trunc(Number(event.target.value)) : undefined)} />{invalid(Boolean(draft.guestCount)) && <em className="field-error">Enter the guest count.</em>}</label>
             <label className="field span3"><span>Internal notes <i>(optional)</i></span><textarea rows={3} value={draft.notes ?? ""} maxLength={NOTES_LIMIT} onChange={event => set("notes", event.target.value)} /><small className="count">{(draft.notes ?? "").length}/{NOTES_LIMIT}</small></label>
           </div>
@@ -136,7 +139,7 @@ export function OrderForm({ id }: { id: string }) {
             <label className="field"><span>Contact phone <i>(optional)</i></span><input type="tel" value={destination.contactPhone ?? ""} maxLength={40} onChange={event => setDestination({ contactPhone: event.target.value })} /></label>
             <label className="field span3"><span>Delivery instructions <i>(optional)</i></span><input value={destination.deliveryInstructions ?? ""} maxLength={400} onChange={event => setDestination({ deliveryInstructions: event.target.value })} /></label>
           </div>}
-          <p className="info-line"><Icon name="info" size={18} />{destination.mode === "oploc" ? `This order will be sent to CPU Hospitality${destination.label ? ` for ${destination.label}` : ""} and a delivery requirement will be created in Logistics.` : "A one-off address is stored with this order only. It is not added to the OPLOC list."}</p>
+          <p className="info-line"><Icon name="info" size={18} />{destination.mode === "oploc" ? `A delivery requirement will be created in Logistics${destination.label ? ` for ${destination.label}` : ""}.` : "A one-off address is stored with this order only. It is not added to the OPLOC list."}</p>
         </section>
 
         <section className="card" aria-labelledby="sec-lines">
@@ -164,14 +167,14 @@ export function OrderForm({ id }: { id: string }) {
 
     <aside className="order-side" aria-label="Order summary">
       <section className="card flush">
-        <div className="side-head"><span className="side-icon"><Icon name="truck" size={22} /></span><div><h2>Logistics &amp; routing preview</h2><p>This order will be sent to CPU Hospitality and a delivery requirement will be created in Logistics.</p></div></div>
+        <div className="side-head"><span className="side-icon"><Icon name="truck" size={22} /></span><div><h2>Logistics &amp; routing preview</h2><p>This order will be sent to the selected CPU production scope and create a delivery requirement in Logistics.</p></div></div>
         <div className="route">
-          <div className="route-box"><span className="route-icon cpu"><Icon name="fork" size={20} /></span><small>CPU destination</small><strong>Hospitality view</strong><span>Order will appear in CPU for the selected destination.</span></div>
+          <div className="route-box"><span className="route-icon cpu"><Icon name="fork" size={20} /></span><small>CPU Production Scope</small><strong>{adHocProductionScopeLabel(draft.productionScope)}</strong><span>Order will appear in this CPU section for the selected destination.</span></div>
           <Icon name="arrowRight" size={20} className="route-arrow" />
           <div className="route-box"><span className="route-icon log"><Icon name="truck" size={20} /></span><small>Logistics</small><strong>Delivery requirement created</strong><span>A delivery stop will be created in Logistics.</span></div>
         </div>
         <dl className="summary"><h3><Icon name="doc" size={18} />Order summary</h3>
-          <div><dt>Event name</dt><dd>{draft.eventName || "—"}</dd></div><div><dt>Service date</dt><dd>{longDate(draft.serviceDate)}</dd></div><div><dt>Ready time</dt><dd>{draft.requiredReadyTime || "—"}</dd></div><div><dt>Category</dt><dd>{categoryLabel(draft.category)}</dd></div><div><dt>Guest count</dt><dd>{draft.guestCount ?? "—"}</dd></div>
+          <div><dt>Event name</dt><dd>{draft.eventName || "—"}</dd></div><div><dt>Service date</dt><dd>{longDate(draft.serviceDate)}</dd></div><div><dt>Ready time</dt><dd>{draft.requiredReadyTime || "—"}</dd></div><div><dt>Category</dt><dd>{categoryLabel(draft.category)}</dd></div><div><dt>CPU scope</dt><dd>{adHocProductionScopeLabel(draft.productionScope)}</dd></div><div><dt>Guest count</dt><dd>{draft.guestCount ?? "—"}</dd></div>
         </dl>
         <dl className="summary"><h3><Icon name="pin" size={18} />Destination</h3>
           <div><dt>Type</dt><dd>{destination.mode === "oploc" ? "Existing OPLOC" : "One-off address"}</dd></div><div><dt>{destination.mode === "oploc" ? "OPLOC" : "Name"}</dt><dd>{destination.label || "—"}</dd></div><div><dt>Address</dt><dd>{destination.address || "—"}</dd></div>{destination.contactName && <div><dt>Contact</dt><dd>{destination.contactName}</dd></div>}{destination.contactPhone && <div><dt>Phone</dt><dd>{destination.contactPhone}</dd></div>}

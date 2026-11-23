@@ -116,14 +116,14 @@ export function filterCpuProjectionForScope<T extends CpuProjection>(projection:
     return ["cpu_created", "menu_planning", "legacy_import"].includes(row.origin || "") || ["delivered_in", "fine_dining", "other"].includes(row.productionCategory || "");
   };
   const orders = projection.orders.flatMap((row) => {
-    if (isAdHocProductionOrderId(row.id)) return scope === "hospitality" ? [{ ...row }] : [];
-
+    const adHoc = isAdHocProductionOrderId(row.id);
     const workstreams = (row.productionScope || "").split(",").filter(Boolean);
     const aligned = workstreams.length === row.quantities.length;
     if (aligned) {
       const quantities = row.quantities.filter((_, index) => {
         const workstream = workstreams[index];
-        return workstream && workstream !== "unassigned" ? workstream === scope : matchesOrigin(row);
+        if (workstream && workstream !== "unassigned" && ["sandwiches", "hospitality", "delivered_in"].includes(workstream)) return workstream === scope;
+        return adHoc ? scope === "hospitality" : matchesOrigin(row);
       });
       if (!quantities.length) return [];
       const selected = quantities.map((quantity) => row.quantities.indexOf(quantity));
@@ -135,6 +135,7 @@ export function filterCpuProjectionForScope<T extends CpuProjection>(projection:
     // row to every scope it mentions; the API rebuilds it from canonical orders.
     const explicit = workstreams.filter((workstream) => workstream !== "unassigned");
     if (explicit.length) return [];
+    if (adHoc) return scope === "hospitality" ? [{ ...row }] : [];
     return matchesOrigin(row) ? [{ ...row }] : [];
   });
   return { ...projection, orders, summary: { ...projection.summary, orders: orders.length, ready: orders.filter((order) => order.planningReadiness === "ready").length, attention: orders.filter((order) => order.attention.length > 0).length, planned: orders.filter((order) => order.workflowStatus === "planned").length, totalUnits: orders.reduce((sum, order) => sum + order.quantities.reduce((total, item) => total + item.quantity, 0), 0) } } as T;

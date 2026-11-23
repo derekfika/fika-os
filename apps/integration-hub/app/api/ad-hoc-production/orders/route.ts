@@ -13,7 +13,7 @@ const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 const Line = z.object({ sourceLineId: text(80), itemName: text(200), customerQuantity: z.number().positive().max(100000), customerUnit: text(40), productionQuantity: z.number().positive().max(100000), productionUnit: text(40), notes: z.string().trim().max(300).optional() }).strict();
 const Order = z.object({
-  clientName: text(120), productionCategory: z.enum(["delivered_in", "fine_dining", "hospitality", "events", "grab_and_go", "other"]), serviceDate: date,
+  clientName: text(120), productionCategory: z.enum(["delivered_in", "fine_dining", "hospitality", "events", "grab_and_go", "other"]), productionScope: z.enum(["hospitality", "sandwiches", "delivered_in"]).optional(), serviceDate: date,
   deliveryDateTime: z.string().max(40), requiredBy: z.string().max(40), serviceWindow: z.object({ startTime: time, endTime: time.optional() }).strict(),
   destinationOplocId: text(200), requiresDelivery: z.literal(true), deliveryLocation: text(160),
   destinationAddress: z.object({ identity: text(200), label: text(160), address: text(400), deliveryInstructions: z.string().trim().max(400).optional(), contact: z.string().trim().max(200).optional() }).strict().optional(),

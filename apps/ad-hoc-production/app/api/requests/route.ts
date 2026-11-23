@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { setDataTraceOutcome, withDataTrace } from "@fika/server-shared/data-source-meter-server";
-import { AD_HOC_CATEGORIES, AD_HOC_UNITS, isDate, isTime, londonBusinessDate, weekStart, type AdHocDraft } from "../../../lib/ad-hoc-domain";
+import { AD_HOC_CATEGORIES, AD_HOC_PRODUCTION_SCOPES, AD_HOC_UNITS, isDate, isTime, londonBusinessDate, weekStart, type AdHocDraft } from "../../../lib/ad-hoc-domain";
 import { archiveRequest, cancelRequest, createRequest, downstreamState, duplicateRequest, getRequest, listRequests, sendToCpu, updateRequest } from "../../../lib/ad-hoc-service";
 import { callerFor, isHubError } from "../../../lib/hub-client";
 import { resolveOplocDestination } from "../../../lib/destinations";
@@ -10,6 +10,7 @@ const text = (max: number) => z.string().max(max);
 const draft = z.object({
   eventName: text(120), serviceDate: z.string().refine(isDate, "Enter a valid service date."), requiredReadyTime: z.string().refine(isTime, "Enter a valid ready time."),
   category: z.enum(AD_HOC_CATEGORIES.map(item => item.value) as [string, ...string[]]), guestCount: z.number().int().positive().max(100000).optional(), notes: text(600).optional(),
+  productionScope: z.enum(AD_HOC_PRODUCTION_SCOPES.map(item => item.value) as [string, ...string[]]).optional(),
   destination: z.object({ mode: z.enum(["oploc", "one_off"]), oplocId: text(200).optional(), label: text(160), address: text(400), contactName: text(120).optional(), contactPhone: text(40).optional(), deliveryInstructions: text(400).optional(), identity: text(200).optional() }),
   lines: z.array(z.object({ id: text(80).optional(), description: text(200), quantity: z.number().positive().max(100000), unit: z.enum(AD_HOC_UNITS), note: text(300).optional(), sortOrder: z.number().optional() })).max(100),
 });

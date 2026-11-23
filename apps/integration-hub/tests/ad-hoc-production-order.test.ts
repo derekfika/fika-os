@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { adHocOrderStatus, adHocProductionOrderId, amendAdHocProductionOrder, applyAdHocAllergenCheckerProjection, cancelAdHocProductionOrder, createCpuProductionOrder, submitAdHocProductionOrder, transitionProductionOrder, type CpuCreatedProductionInput } from "../lib/production-domain";
+import { adHocOrderStatus, adHocProductionOrderId, amendAdHocProductionOrder, applyAdHocAllergenCheckerProjection, cancelAdHocProductionOrder, createCpuProductionOrder, productionOrderDetail, submitAdHocProductionOrder, transitionProductionOrder, type CpuCreatedProductionInput } from "../lib/production-domain";
 import { db } from "../lib/firebase-admin";
 import { stableDocumentId } from "../lib/canonical-editor";
 
@@ -18,15 +18,49 @@ const requirementsFor = async (orderId: string) => (await db.collection("fikaFul
 
 test("emulator: Ad-Hoc first send is idempotent and uses a request-scoped one-off destination", { skip: !emulatorEnabled }, async () => {
   const requestId = `adhoc-request:${crypto.randomUUID()}`;
-  const first = await createCpuProductionOrder(actor, input(requestId, 1), `adhoc-send:${requestId}:v1`);
-  const replay = await createCpuProductionOrder(actor, input(requestId, 1), `adhoc-send:${requestId}:v1`);
+  const first = await createCpuProductionOrder(actor, { ...input(requestId, 1), stableSourceIdentity: true }, `adhoc-send:${requestId}:v1`);
+  const replay = await createCpuProductionOrder(actor, { ...input(requestId, 1), stableSourceIdentity: true }, `adhoc-send:${requestId}:v1`);
   assert.equal(first.created, true);
   assert.equal(replay.created, false);
   assert.equal(replay.order.canonicalId, first.order.canonicalId);
   assert.equal(first.order.destinationOplocId, `adhoc-destination:${requestId}`);
   assert.equal(first.order.destinationAddress?.address, "1 Test Street");
   assert.equal(first.order.lines[0].allergenEvidenceStatus, undefined, "no allergen evidence is invented by the requester");
+  assert.deepEqual(first.order.lines.map(line => line.workstream), ["hospitality", "hospitality"], "legacy sends default to Hospitality independently from category");
   assert.equal((await requirementsFor(first.order.canonicalId)).length, 1, "exactly one Logistics requirement");
+});
+
+test("emulator: each Ad-Hoc CPU scope creates one canonical order and one unchanged Logistics requirement", { skip: !emulatorEnabled }, async () => {
+  for (const scope of ["hospitality", "sandwiches", "delivered_in"] as const) {
+    const requestId = `adhoc-request:${crypto.randomUUID()}`;
+    const result = await submitAdHocProductionOrder(actor, input(requestId, 1, { productionScope: scope, productionCategory: "events" }), `adhoc-send:${requestId}:v1`);
+    assert.equal(result.outcome, "created");
+    assert.equal(result.canonicalId, adHocProductionOrderId(requestId));
+    const order = await productionOrderDetail(result.canonicalId);
+    assert.equal(order?.productionCategory, "events", "request category remains independent from CPU routing");
+    assert.deepEqual(order?.lines.map(line => line.workstream), [scope, scope]);
+    const requirements = await requirementsFor(result.canonicalId);
+    assert.equal(requirements.length, 1);
+    assert.equal(requirements[0].sourceEntityId, result.canonicalId);
+  }
+});
+
+test("emulator: rerouting an Ad-Hoc order amends the same order and requires a new current allergen release", { skip: !emulatorEnabled }, async () => {
+  const requestId = `adhoc-request:${crypto.randomUUID()}`;
+  const created = await submitAdHocProductionOrder(actor, input(requestId, 1, { productionScope: "hospitality" }), `adhoc-send:${requestId}:v1`);
+  const signedProjection = { requestId, canonicalId: created.canonicalId, releaseId: "cpu-release:test:v1", releaseVersion: 1, sourceRevision: 1, sourceVersion: 1, sourceContentHash: "a".repeat(64), eventId: `event:${requestId}:v1`, state: "current" as const, signedAt: "2026-11-02T10:00:00.000Z", signatures: [
+    { role: "production_chef" as const, printedName: "Test chef", signedAt: "2026-11-02T09:00:00.000Z" },
+    { role: "head_chef_site_manager" as const, printedName: "Test manager", signedAt: "2026-11-02T10:00:00.000Z" },
+  ], pdfAvailable: true };
+  assert.equal((await applyAdHocAllergenCheckerProjection(signedProjection)).applied, true);
+  assert.equal((await adHocOrderStatus(requestId))?.allergenChecker.state, "ready");
+
+  const rerouted = await submitAdHocProductionOrder(actor, input(requestId, 2, { productionScope: "sandwiches" }), `adhoc-send:${requestId}:v2`);
+  assert.equal(rerouted.outcome, "amended");
+  assert.equal(rerouted.canonicalId, created.canonicalId);
+  assert.deepEqual((await productionOrderDetail(rerouted.canonicalId))?.lines.map(line => line.workstream), ["sandwiches", "sandwiches"]);
+  assert.equal((await adHocOrderStatus(requestId))?.allergenChecker.state, "pending", "the old signature/PDF projection is no longer current for the amended source version");
+  assert.equal((await requirementsFor(created.canonicalId)).length, 1, "rerouting does not duplicate fulfilment");
 });
 
 test("emulator: an Ad-Hoc amendment revises the same order and requirement, and replay is a no-op", { skip: !emulatorEnabled }, async () => {

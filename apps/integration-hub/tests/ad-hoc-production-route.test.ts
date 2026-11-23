@@ -80,6 +80,15 @@ test("privileged order operations require the service token whenever one is conf
   });
 });
 
+test("the existing Hub send route accepts only canonical Ad-Hoc CPU workstreams", async () => {
+  await withEnv({ NODE_ENV: "test", FIKA_RUNTIME_MODE: "local", FIKA_INTERNAL_API_TOKEN: "secret", CPU_PRODUCTION_BASE_URL: CPU_URL }, async () => {
+    const requestId = `adhoc-request:${crypto.randomUUID()}`;
+    const invalid = await ordersPost(call("POST", AD_HOC_HUB_API.orders, { ...send(requestId), order: { ...order(requestId), productionScope: "grab_and_go" } }, { [AD_HOC_SERVICE_TOKEN_HEADER]: "secret" }));
+    assert.equal(invalid.status, 422);
+    assert.equal(cpuCalls.length, 0, "invalid scopes cannot create CPU orders or projection notifications");
+  });
+});
+
 test("CPU allergen checker reports require internal service authentication and strict release lineage", async () => {
   await withEnv({ NODE_ENV: "test", FIKA_RUNTIME_MODE: "local", FIKA_INTERNAL_API_TOKEN: "secret" }, async () => {
     const path = "/api/internal/ad-hoc-production/allergen-checker";
