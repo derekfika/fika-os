@@ -119,6 +119,7 @@ export function SectionSetup({
   openMapping,
   active,
   focusName,
+  inspectItem,
 }: {
   menu: Menu;
   section: Section;
@@ -130,6 +131,7 @@ export function SectionSetup({
   openMapping?: boolean;
   active: boolean;
   focusName: boolean;
+  inspectItem: (id: string) => void;
 }) {
   const nameInput = useRef<HTMLInputElement>(null);
   const focusedName = useRef(false);
@@ -301,6 +303,7 @@ export function SectionSetup({
           </>
         )}
         <div className={styles.actions}>
+          {section.catalogueItemId && <Button onClick={() => inspectItem(section.catalogueItemId)}>View mapped product</Button>}
           <Button
             onClick={loadCatalogue}
             disabled={catalogue.state === "loading"}
