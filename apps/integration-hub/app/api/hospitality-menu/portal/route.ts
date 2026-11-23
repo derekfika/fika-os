@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
     if (pilot?.oplocId === query.oplocId && query.serviceDate >= pilot.firstDate && query.serviceDate <= pilot.lastDate &&
         process.env.FIKA_STUDIO_HUB_PILOT_BOOKING_ENABLED === "true") {
       const live = await db.runTransaction(transaction => studioPublicationsForBooking(db).choices(
-        transaction, query.oplocId, query.serviceDate, catalogue.offerings.map(offering => offering.itemId),
+        transaction, query.oplocId, query.serviceDate, catalogue.offerings.map(offering => offering.itemId), pilot.menuId,
       ), { readOnly: true });
       const offerings = catalogue.offerings.flatMap(offering => {
         if (!live.managedItems.has(offering.itemId)) return [offering];

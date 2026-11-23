@@ -11,7 +11,7 @@ import { assertHospitalityBookingDate, prepareHospitalityAdminOrder, priceHistor
 import type { HospitalityAdminAuthority } from "./hospitality-booking-authorization";
 import { trustedPublicOrder } from "./hospitality-price-trust";
 import { hospitalityPortalReadFromRecords } from "./hospitality-catalogue-service";
-import { assertFrozenStudioAmendment, bindStudioQuote, isStudioBookingPilot, isStudioRehearsalBooking, prepareStudioBooking, studioPublicationsForBooking } from "./hospitality-studio-booking";
+import { assertFrozenStudioAmendment, bindStudioQuote, studioBookingPilotFor, isStudioRehearsalBooking, prepareStudioBooking, studioPublicationsForBooking } from "./hospitality-studio-booking";
 import { angelCourtBookingConstraintRecords, loadAngelCourtBookingCatalogue, loadMnkBookingCatalogue, loadRcoaBookingCatalogue, mnkBookingPricingRecords, mnkStudioBookingPricingRecords, rcoaBookingConstraintRecords } from "./mnk-booking-catalogue";
 import { hospitalityMenuDate } from "../../shared/hospitality-menu-date";
 import { isStudioDishChoice } from "../../shared/hospitality-menu-studio-selection";
@@ -794,7 +794,7 @@ export async function ingestMnkBooking(
     if (!destinationOplocId) throw conflict(portalSiteId === "rcoa"
       ? "RCoA has no confirmed canonical destination OPLOC. Configure the governed source mapping for rcoa before submission."
       : "This delivery-requiring Hospitality Booking has no confirmed canonical destination OPLOC; resolve the governed site mapping before submission.");
-    const studioPilot = portalSiteId === "mnk" && isStudioBookingPilot(payload.bookingId.trim(), destinationOplocId, payload.event.eventDate);
+    const studioPilot = portalSiteId === "mnk" ? studioBookingPilotFor(payload.bookingId.trim(), destinationOplocId, payload.event.eventDate) : undefined;
     let pricingRecords = canonicalRecords;
     let studioCatalogueRecords: CanonicalRecord[] | undefined;
     if (portalSiteId === "mnk") {
@@ -861,7 +861,8 @@ export async function ingestMnkBooking(
       }
     }
     const stageStudioEvidence = await prepareStudioBooking(transaction, bookingRef, result.booking, {
-      allowed: studioPilot,
+      allowed: Boolean(studioPilot),
+      menuId: studioPilot?.menuId,
       actorId: studioPilot ? await authoriseStudioPilotBooking!(transaction) : undefined,
       publications: studioPublicationsForBooking(db),
       offerings: () => {

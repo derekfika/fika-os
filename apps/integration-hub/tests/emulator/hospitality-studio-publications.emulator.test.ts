@@ -101,6 +101,9 @@ test("emulator: Hub needs explicit site activation and resolves the current sign
       { code: "STUDIO_ACTIVATION_COMMAND_CONFLICT" });
     assert.equal((await choices("2027-03-21")).items.size, 0);
     assert.equal((await choices("2027-03-28", "oploc:other")).items.size, 0);
+    const outsidePilot = await db.runTransaction(tx => hub.choices(tx, site, "2027-03-28", [item], "other-menu"), { readOnly: true });
+    assert.equal(outsidePilot.items.size, 0);
+    assert.equal(outsidePilot.managedItems.size, 0);
     assert.equal((await choices("2027-03-28")).items.get(item)?.dishes[0].dish.id, first.payload.dishes[0].dish.id);
     const mondays = ["2027-03-22", "2027-03-29", "2027-04-05", "2027-04-12", "2027-04-19", "2027-04-26"];
     for (const [week, monday] of mondays.entries()) {

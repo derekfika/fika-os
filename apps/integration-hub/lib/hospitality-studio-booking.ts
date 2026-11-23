@@ -41,19 +41,20 @@ export function isStudioRehearsalBooking(booking: Pick<CanonicalBooking, "source
   return booking.studioKitchenEvidenceVersion === 1 && rehearsalBookingId.test(booking.source.sourceBookingId);
 }
 
-export function isStudioBookingPilot(sourceBookingId: string, oplocId: string, eventDate: string) {
+export function studioBookingPilotFor(sourceBookingId: string, oplocId: string, eventDate: string) {
   const pilot = studioPilot();
   const sourceId = process.env.FIKA_STUDIO_HUB_PILOT_SOURCE_BOOKING_ID;
-  return Boolean(pilot && process.env.FIKA_STUDIO_HUB_PILOT_BOOKING_ENABLED === "true" &&
+  if (pilot && process.env.FIKA_STUDIO_HUB_PILOT_BOOKING_ENABLED === "true" &&
     process.env.FIKA_HOSPITALITY_EMAIL_DELIVERY_ENABLED === "false" &&
     sourceId && rehearsalBookingId.test(sourceId) && sourceId === sourceBookingId && pilot.oplocId === oplocId &&
-    pilot.firstDate <= eventDate && eventDate <= pilot.lastDate);
+    pilot.firstDate <= eventDate && eventDate <= pilot.lastDate) return pilot;
 }
 
 export async function prepareStudioBooking(transaction: Transaction, bookingRef: DocumentReference,
   booking: CanonicalBooking, acceptance: {
     allowed: boolean;
     actorId?: string;
+    menuId?: string;
     offerings: () => StudioCommercialOffering[];
     publications: HubStudioPublications;
   }) {
@@ -65,7 +66,7 @@ export async function prepareStudioBooking(transaction: Transaction, bookingRef:
   const oplocId = booking.service.oplocId;
   if (!oplocId || booking.bookingGroup && booking.bookingGroup.size > 1) throw stale("This Studio rehearsal accepts one canonical service.");
   const ids = booking.order.items.map(line => line.menuItemId || line.itemId);
-  const current = await acceptance.publications.choices(transaction, oplocId, booking.service.eventDate, ids);
+  const current = await acceptance.publications.choices(transaction, oplocId, booking.service.eventDate, ids, acceptance.menuId);
   if (!submitted && !current.managedItems.size) return () => {};
   const commercial = new Map(acceptance.offerings().map(offering => [offering.itemId, offering]));
   const lines = booking.order.items.flatMap((line, index) => {

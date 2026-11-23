@@ -150,11 +150,12 @@ export class HubStudioPublications {
   }
 
   /** Resolve publication before matching items so a removed section never falls back to an earlier revision. */
-  async choices(transaction: Transaction, oplocId: string, eventDate: string, itemIds: readonly string[]) {
+  async choices(transaction: Transaction, oplocId: string, eventDate: string, itemIds: readonly string[], allowedMenuId?: string) {
     const schedule = this.schedule((await transaction.get(this.siteRef(oplocId))).data(), oplocId);
     const effective = new Map<string, ActivationEntry>();
     for (const entry of schedule.entries) {
-      if (entry.startDate <= eventDate && entry.endDate >= eventDate && entry.publication.effectiveDate <= eventDate) {
+      if ((!allowedMenuId || allowedMenuId === entry.publication.menuId) &&
+          entry.startDate <= eventDate && entry.endDate >= eventDate && entry.publication.effectiveDate <= eventDate) {
         effective.set(entry.publication.menuId, entry);
       }
     }
