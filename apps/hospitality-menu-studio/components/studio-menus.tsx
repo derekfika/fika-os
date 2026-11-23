@@ -81,7 +81,8 @@ export function MenuOverview({
 }) {
   const [addingSection, setAddingSection] = useState(false);
   const addButton = useRef<HTMLDivElement>(null);
-  const suggestedAnchor = !menu.anchorMonday && openingWeekMonday(menu.startDate);
+  const suggestedAnchor =
+    !menu.anchorMonday && openingWeekMonday(menu.startDate);
   return (
     <>
       <PageHeading
@@ -118,7 +119,10 @@ export function MenuOverview({
       <div className={styles.sectionHeading}>
         <h2>Menu sections</h2>
         <div ref={addButton}>
-          <Button onClick={() => setAddingSection(true)} disabled={!canManage || addingSection}>
+          <Button
+            onClick={() => setAddingSection(true)}
+            disabled={!canManage || addingSection}
+          >
             <Icon name="plus" /> Add section
           </Button>
         </div>
@@ -127,7 +131,9 @@ export function MenuOverview({
         <NewSectionForm
           close={() => {
             setAddingSection(false);
-            requestAnimationFrame(() => addButton.current?.querySelector("button")?.focus());
+            requestAnimationFrame(() =>
+              addButton.current?.querySelector("button")?.focus(),
+            );
           }}
           create={(details) => {
             addSection(details);
@@ -139,7 +145,9 @@ export function MenuOverview({
         {menu.sections.map((section) => {
           const rotating = section.mode === "rotation";
           const count = section.staticDishIds.length;
-          const filledWeeks = section.weeks.filter((ids) => ids.length > 0).length;
+          const filledWeeks = section.weeks.filter(
+            (ids) => ids.length > 0,
+          ).length;
           return (
             <button
               type="button"
@@ -212,7 +220,9 @@ export function MenuOverview({
             />
           </label>
         </div>
-        <p className="fika-help">All rotating sections repeat every six weeks from this Monday.</p>
+        <p className="fika-help">
+          All rotating sections repeat every six weeks from this Monday.
+        </p>
         {suggestedAnchor && canManage && (
           <Button onClick={() => update({ anchorMonday: suggestedAnchor })}>
             Use the Monday of the opening week
@@ -222,7 +232,7 @@ export function MenuOverview({
       <div className={styles.footerActions}>
         <Button onClick={history}>Versions and history</Button>
         {activation && (
-          <Button onClick={activation}>Collection activation</Button>
+          <Button onClick={activation}>Collection availability</Button>
         )}
       </div>
     </>
@@ -233,6 +243,7 @@ export function SectionEditor({
   menu,
   section,
   dishes,
+  unresolvedDishLabel,
   selected,
   week,
   setWeek,
@@ -259,6 +270,7 @@ export function SectionEditor({
   menu: Menu;
   section: Section;
   dishes: Dish[];
+  unresolvedDishLabel: string;
   selected: string[];
   week: number;
   setWeek: (week: number) => void;
@@ -390,7 +402,9 @@ export function SectionEditor({
         <Button onClick={preview}>
           <Icon name="eye" /> Customer preview
         </Button>
-        <Button primary onClick={review}>Review &amp; publish menu</Button>
+        <Button primary onClick={review}>
+          Review &amp; publish menu
+        </Button>
       </PageHeading>
       <SectionSetup
         menu={menu}
@@ -450,6 +464,7 @@ export function SectionEditor({
         <RotationWorkspace
           section={section}
           dishes={dishes}
+          unresolvedDishLabel={unresolvedDishLabel}
           week={week}
           canManage={canManage}
           update={update}
@@ -631,7 +646,7 @@ export function SectionEditor({
                         ? selected.indexOf(id)
                         : index;
                       const item = byId.get(id);
-                      const name = item?.name || "Dish unavailable";
+                      const name = item?.name || unresolvedDishLabel;
                       return (
                         <tr key={id}>
                           <th scope="row">

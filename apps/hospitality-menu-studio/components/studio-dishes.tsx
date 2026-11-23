@@ -30,7 +30,9 @@ export function DishCollection({
   canManage,
   create,
   edit,
-  backToSection,
+  back,
+  backLabel,
+  initialMenuId,
   loadMore,
   busy,
   error,
@@ -40,13 +42,15 @@ export function DishCollection({
   canManage: boolean;
   create: () => void;
   edit: (dish: Dish) => void;
-  backToSection?: () => void;
+  back?: () => void;
+  backLabel: string;
+  initialMenuId?: string;
   loadMore?: () => void;
   busy: boolean;
   error: string;
 }) {
   const [filters, setFilters] = useState(emptyDishFilters);
-  const [menuId, setMenuId] = useState("");
+  const [menuId, setMenuId] = useState(initialMenuId ?? "");
   const [sectionId, setSectionId] = useState("");
   const resultId = useId();
   const search = useRef<HTMLInputElement>(null);
@@ -75,10 +79,10 @@ export function DishCollection({
       <PageHeading
         title="Dish collection"
         eyebrow={
-          backToSection && (
+          back && (
             <Breadcrumb>
-              <button type="button" onClick={backToSection}>
-                Section editor
+              <button type="button" onClick={back}>
+                {backLabel}
               </button>
               <span>/</span>
               <span>Dish collection</span>
@@ -246,7 +250,6 @@ export function DishEditor({
   back: () => void;
   backLabel: string;
   menuContext?: { name: string; sectionName: string };
-  assortment?: () => void;
   kitchen: () => void;
   safetyAvailable: boolean;
   checkerOrigin?: string;
@@ -416,43 +419,6 @@ export function DishEditor({
           allergen process.
         </div>
       )}
-    </>
-  );
-}
-
-export function AssortmentBuilder({
-  dish,
-  save,
-  canManage,
-  update,
-  back,
-  kitchen,
-}: DishForm & {
-  back: () => void;
-  kitchen: () => void;
-}) {
-  if (!dish.assortment) return null;
-  return (
-    <>
-      <PageHeading
-        title={"Assortment — " + (dish.name || "Untitled dish")}
-        eyebrow={
-          <Breadcrumb>
-            <span>Dishes</span>
-            <span>/</span>
-            <button onClick={back}>{dish.name || "Dish editor"}</button>
-            <span>/</span>
-            <span>Assortment</span>
-          </Breadcrumb>
-        }
-      >
-        <SaveNotice {...save} />
-      </PageHeading>
-      <AssortmentFields dish={dish} canManage={canManage} update={update} onRemove={back} />
-      <div className={styles.footerActions}>
-        <Button onClick={kitchen}>Kitchen preview</Button>
-        <Button primary onClick={back}>Done</Button>
-      </div>
     </>
   );
 }

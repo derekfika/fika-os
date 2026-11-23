@@ -12,7 +12,6 @@ export type Page =
   | "review"
   | "impact"
   | "kitchen"
-  | "assortment"
   | "activation";
 export type SaveState = "saved" | "unsaved" | "saving" | "error" | "conflict";
 export type DraftStatus = {
@@ -85,7 +84,7 @@ export function StudioShell({
   const active =
     page === "impact"
       ? "review"
-      : page === "assortment" || page === "kitchen"
+      : page === "kitchen"
         ? "dishes"
         : page === "activation" ||
             ((page === "menus" || page === "preview") &&
@@ -203,8 +202,8 @@ export function SaveNotice({ state, error, retry }: DraftStatus) {
     saved: "Draft saved",
     saving: "Saving…",
     unsaved: "Unsaved changes",
-    conflict: "Conflict — edits retained",
-    error: "Save failed — edits retained",
+    conflict: "Version conflict",
+    error: "Save failed",
   };
   const tone =
     state === "saved"

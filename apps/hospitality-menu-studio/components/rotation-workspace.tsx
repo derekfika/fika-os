@@ -8,6 +8,7 @@ const numbers = [0, 1, 2, 3, 4, 5];
 export function RotationWorkspace({
   section,
   dishes,
+  unresolvedDishLabel,
   week,
   canManage,
   update,
@@ -18,6 +19,7 @@ export function RotationWorkspace({
 }: {
   section: Section;
   dishes: Dish[];
+  unresolvedDishLabel: string;
   week: number;
   canManage: boolean;
   update: (change: Partial<Section>) => void;
@@ -100,7 +102,7 @@ export function RotationWorkspace({
         )}
         <div className={styles.rows}>
           {allIds.map((id) => {
-            const name = byId.get(id)?.name || "Dish unavailable";
+            const name = byId.get(id)?.name || unresolvedDishLabel;
             return (
               <fieldset className={styles.row} key={id}>
                 <legend>{name}</legend>
