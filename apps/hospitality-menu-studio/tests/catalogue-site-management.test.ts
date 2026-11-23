@@ -130,6 +130,7 @@ test("site price, VAT and quantity patches preserve other fields and explicit in
     mode: "standard",
     price: "15.00",
     vat: "5",
+    sourceVatRate: 0.05,
     minimum: "12",
     guests: "5",
     notice: "2",
@@ -235,6 +236,31 @@ test("quote-only mode clears a current site price in the same command", () => {
         companyPrice,
       ),
     /Minimum quantity/,
+  );
+});
+
+test("updating a site price preserves the full current VAT rate when the VAT input is untouched", () => {
+  const existing = { ...sitePrice, vatRate: 0.123456789 };
+  const row = {
+    ...item,
+    offerings: [
+      {
+        ...siteBOverride,
+        price: {
+          source: "overrides" as const,
+          effective: existing,
+          override: existing,
+        },
+      },
+    ],
+  };
+  const draft = siteOverrideDraft(row, siteValues(row, siteB));
+  assert.equal(draft.vat, "12.3457");
+  assert.deepEqual(
+    siteOverridePatch(draft, { ...draft, price: "18.00" }, companyPrice),
+    {
+      price: { amount: 18, vatRate: existing.vatRate },
+    },
   );
 });
 

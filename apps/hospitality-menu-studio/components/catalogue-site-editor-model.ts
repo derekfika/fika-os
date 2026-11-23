@@ -15,6 +15,7 @@ export type SiteOverrideDraft = {
   mode: SiteMode;
   price: string;
   vat: string;
+  sourceVatRate?: number;
   minimum: string;
   guests: string;
   notice: string;
@@ -51,7 +52,7 @@ export function siteValues(row: CatalogueRow, oplocId: string): SiteValues {
 function rateText(rate: number | undefined): string {
   return rate === undefined
     ? ""
-    : (rate * 100).toFixed(2).replace(/\.?0+$/, "");
+    : (rate * 100).toFixed(4).replace(/\.?0+$/, "");
 }
 
 export function siteOverrideDraft(
@@ -59,10 +60,12 @@ export function siteOverrideDraft(
   { offering, mode }: SiteValues,
 ): SiteOverrideDraft {
   const price = offering?.price.override;
+  const sourceVatRate = price?.vatRate ?? row.defaultPrice?.vatRate;
   return {
     mode,
     price: price?.amount.toFixed(2) ?? "",
-    vat: rateText(price?.vatRate ?? row.defaultPrice?.vatRate),
+    vat: rateText(sourceVatRate),
+    sourceVatRate,
     minimum: String(offering?.minimum.override ?? ""),
     guests: String(offering?.minimumGuestsOverride ?? ""),
     notice: String(offering?.noticeRequiredDaysOverride ?? ""),
@@ -71,15 +74,19 @@ export function siteOverrideDraft(
   };
 }
 
-function decimal(value: string, label: string) {
+function decimal(value: string, label: string, places: 2 | 4) {
   const text = value.trim();
   const amount = Number(text);
-  if (
-    !/^(?:\d+(?:\.\d{0,2})?|\.\d{1,2})$/.test(text) ||
-    !Number.isFinite(amount)
-  ) {
+  const format =
+    places === 2
+      ? /^(?:\d+(?:\.\d{0,2})?|\.\d{1,2})$/
+      : /^(?:\d+(?:\.\d{0,4})?|\.\d{1,4})$/;
+  if (!format.test(text) || !Number.isFinite(amount)) {
     throw new Error(
-      label + " must be a non-negative number with up to two decimal places.",
+      label +
+        " must be a non-negative number with up to " +
+        places +
+        " decimal places.",
     );
   }
   return amount;
@@ -122,15 +129,19 @@ export function siteOverridePatch(
       if (before.price.trim()) patch.price = null;
       else throw new Error("Enter a site price before changing its VAT.");
     } else {
-      const amount = decimal(after.price, "Site price");
-      const percentage = decimal(after.vat, "VAT percentage");
+      const amount = decimal(after.price, "Site price", 2);
+      const percentage = decimal(after.vat, "VAT percentage", 4);
       if (percentage > 100)
         throw new Error("VAT percentage must be between 0 and 100.");
-      const vatRate = Math.round(percentage * 100) / 10_000;
+      const beforeVat = before.sourceVatRate ?? Number(before.vat) / 100;
+      const vatRate =
+        before.vat.trim() && percentage === Number(before.vat)
+          ? beforeVat
+          : Math.round(percentage * 10_000) / 1_000_000;
       if (
         !before.price.trim() ||
         amount !== Number(before.price) ||
-        vatRate !== Number(before.vat) / 100
+        vatRate !== beforeVat
       ) {
         if (
           amount === companyPrice?.amount &&

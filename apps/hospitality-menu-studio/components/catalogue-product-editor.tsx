@@ -57,10 +57,12 @@ function RouteChoice({
   value: ProductRoute | "";
   onChange: (choice: ProductRoute | "") => void;
 }) {
+  const id = useId();
   return (
-    <label className="fika-field">
-      Production route
+    <div className="fika-field">
+      <label htmlFor={id}>Production route</label>
       <select
+        id={id}
         className="fika-select"
         value={value}
         onChange={(event) => onChange(event.target.value as ProductRoute | "")}
@@ -72,7 +74,7 @@ function RouteChoice({
           </option>
         ))}
       </select>
-    </label>
+    </div>
   );
 }
 
@@ -290,7 +292,9 @@ export function CatalogueProductEditor({
     setDetails((current) => ({ ...current, [key]: value }));
 
   function close() {
-    if (!inFlight.current) onClose();
+    if (inFlight.current) return;
+    dialog.current?.close();
+    onClose();
   }
 
   function cancelArchive() {
@@ -478,9 +482,10 @@ export function CatalogueProductEditor({
             />
           </label>
           {!product && (
-            <label className="fika-field">
-              Booking mode
+            <div className="fika-field">
+              <label htmlFor={id + "-booking-mode"}>Booking mode</label>
               <select
+                id={id + "-booking-mode"}
                 className="fika-select"
                 value={creation.mode}
                 onChange={(event) =>
@@ -496,7 +501,7 @@ export function CatalogueProductEditor({
                 <option value="standard">Standard purchase</option>
                 <option value="quote_only">Quote only</option>
               </select>
-            </label>
+            </div>
           )}
           {quoteOnly && !product ? (
             <p className="fika-help">
