@@ -11,6 +11,8 @@ import { ROUTING_CHOICE_WORKSTREAMS, type RoutingChoice, type CatalogueOfferingV
 const text = (value: unknown) => (typeof value === "string" ? value : "");
 const stringList = (value: unknown) => (Array.isArray(value) ? value.map(String) : []);
 const optionalNumber = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : undefined);
+const optionalConfiguration = (value: unknown) => value && typeof value === "object" && !Array.isArray(value)
+  ? value as Record<string, unknown> : undefined;
 
 /** UK business date (Europe/London), never a sliced UTC timestamp. */
 export function ukBusinessDate(now: Date = new Date()) {
@@ -108,6 +110,9 @@ export function buildCatalogueRows(input: CatalogueReadInput): { rows: Catalogue
         noEffect: offering.record.lifecycleState !== "archived" && offering.record.available !== false && mode === (item.record.defaultOfferingMode === "quote_only" ? "quote_only" : "standard") && !offering.record.operationalAreaId && (offering.record.minimumGuests === undefined || offering.record.minimumGuests === item.record.defaultMinimumGuests) && (offering.record.noticeRequiredDays === undefined || offering.record.noticeRequiredDays === item.record.defaultNoticeRequiredDays) && !text(configuration.displayName) && !text(configuration.description) && (!Object.keys(configuration).length || JSON.stringify(configuration) === JSON.stringify(item.record.configuration)) && (minimumOverride === undefined || minimumOverride === defaultMinimumQuantity) && (!override || Boolean(defaultPrice && defaultPrice.amount === override.amount && defaultPrice.vatRate === override.vatRate)),
         ...(offering.record.retiredReason ? { retiredReason: offering.record.retiredReason as "item-archived" | "redundant-default" } : {}),
         ...(text(configuration.displayName) ? { displayName: text(configuration.displayName) } : {}), ...(text(configuration.description) ? { description: text(configuration.description) } : {}),
+        minimumGuestsOverride: optionalNumber(offering.record.minimumGuests),
+        noticeRequiredDaysOverride: optionalNumber(offering.record.noticeRequiredDays),
+        configurationOverride: optionalConfiguration(offering.record.configuration),
         price, minimum,
       };
     }).sort((a, b) => a.oplocId.localeCompare(b.oplocId) || (a.operationalAreaId || "").localeCompare(b.operationalAreaId || ""));
@@ -130,6 +135,10 @@ export function buildCatalogueRows(input: CatalogueReadInput): { rows: Catalogue
     return {
       itemId: item.canonicalId, version: Number(item.record.version || 1), name: text(item.record.name), category: text(item.record.category), description: text(item.record.description), status,
       routing: route, ...(suggestion && suggestedChoice ? { routingSuggestion: { choice: suggestedChoice, reason: suggestion.reason } } : {}), ...(defaultPrice ? { defaultPrice } : {}), ...(defaultMinimumQuantity !== undefined ? { defaultMinimumQuantity } : {}),
+      defaultMode: item.record.defaultOfferingMode === "quote_only" ? "quote_only" : "standard",
+      defaultMinimumGuests: optionalNumber(item.record.defaultMinimumGuests),
+      defaultNoticeRequiredDays: optionalNumber(item.record.defaultNoticeRequiredDays),
+      defaultConfiguration: optionalConfiguration(item.record.configuration),
       offerings, availableAt: status === "active" ? activeSites.filter(id => !unavailableAt.includes(id)).sort() : [], unavailableAt,
       overrideCount: active.filter(offering => !offering.noEffect).reduce((sum, offering) => sum + Number(!offering.available) + Number(offering.price.source === "overrides") + Number(offering.minimum.source === "overrides") + Number(Boolean(offering.displayName)) + Number(Boolean(offering.description)), 0),
       needsReview, ...(site !== "unknown" ? { siteCopyOf: site } : {}), sourceIds: sourceIdentities(item),
