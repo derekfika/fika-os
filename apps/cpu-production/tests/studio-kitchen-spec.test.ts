@@ -20,6 +20,7 @@ const frozenSpec = (): StudioKitchenSpec => ({
   bookingLineId,
   selections: [{
     selectionId: "choice:pastries",
+    customerQuantity: 4,
     subject: { dishId: "dish:pastries", revision: 3, sourceHash: "a".repeat(64) },
     publication: { publicationId: "publication:autumn", publicationRevision: 5, contentHash: "b".repeat(64) },
     release: { releaseId: "release:pastries:3", matrixHash: "c".repeat(64) },
@@ -36,6 +37,7 @@ const frozenSpec = (): StudioKitchenSpec => ({
     },
   }, {
     selectionId: "choice:salad",
+    customerQuantity: 12,
     subject: { dishId: "dish:salad", revision: 7, sourceHash: "d".repeat(64) },
     publication: { publicationId: "publication:autumn", publicationRevision: 5, contentHash: "b".repeat(64) },
     release: { releaseId: "release:salad:7", matrixHash: "e".repeat(64) },
@@ -100,7 +102,7 @@ test("frozen Studio selections survive CPU projection, whole-day loading and pap
   assert.match(html, /4 boxes · 24 pieces per box · 96 pieces total/);
   assert.match(html, /Croissant &lt;mini&gt; · 8 pieces per box · 32 pieces total/);
   assert.match(html, /Muffin · 16 pieces per box · 64 pieces total/);
-  assert.match(html, /Kitchen specification · Salad<\/strong><p>Dish version 7 · Menu publication 5<\/p><p class="studio-kitchen-description">Pack dressing separately/);
+  assert.match(html, /Kitchen specification · Salad<\/strong><p>Dish version 7 · Menu publication 5<\/p><p class="studio-kitchen-description">Pack dressing separately\.<\/p><p class="studio-kitchen-total">Customer ordered quantity · 12 portions/);
   assert.doesNotMatch(html, /<script>|Customer-safe copy stays separate|Customer booking note/);
 });
 
@@ -113,6 +115,14 @@ test("legacy lines still print with their existing quantities and notes", async 
   assert.match(html, /Kitchen notes/);
   assert.doesNotMatch(html, /Kitchen specification ·/);
   assert.doesNotThrow(() => validatePackingOrder(hydrated));
+});
+
+test("historical frozen dishes without an individual quantity still print without a derived amount", () => {
+  const historical = frozenSpec();
+  delete historical.selections[1].customerQuantity;
+  const html = collectionPrintHtml(order(historical));
+  assert.match(html, /Kitchen specification · Salad/);
+  assert.doesNotMatch(html, /Customer ordered quantity ·/);
 });
 
 test("malformed frozen evidence is explicit and prevents packing or print of the affected collection", async () => {

@@ -1,5 +1,5 @@
 import type { ProductionLine, ProductionOrder } from "../../lib/production-types";
-import { studioAssortmentQuantities, studioKitchenSpecError, studioKitchenSpecForLine } from "../../lib/studio-kitchen-spec";
+import { studioKitchenQuantities, studioKitchenSpecError, studioKitchenSpecForLine } from "../../lib/studio-kitchen-spec";
 import {
   collectionDetails,
   collectionServiceDate,
@@ -46,7 +46,7 @@ function printStudioKitchenSpec(order: ProductionOrder, line: ProductionLine) {
   if (!spec) return "";
   return spec.selections.map(selection => {
     const name = escape(selection.name);
-    const quantities = selection.assortment && studioAssortmentQuantities(selection.assortment);
+    const quantities = studioKitchenQuantities(selection, line.customerUnit);
     const summary = quantities ? `<p class="studio-kitchen-total">${escape(quantities.summary)}</p>` : "";
     const components = quantities ? quantities.components.map(({ label }) =>
       `<tr class="studio-kitchen-spec-component"><td colspan="4">${name} · ${escape(label)}</td></tr>`,
