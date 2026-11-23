@@ -16,17 +16,13 @@ import { MenuDashboard } from "./studio-dashboard";
 import { useAssignedDishes } from "./use-assigned-dishes";
 import { MenuSetup, type NewMenuDetails } from "./menu-setup";
 import type { CatalogueChoices, NewSectionDetails } from "./menu-setup-model";
-import {
-  AssortmentBuilder,
-  DishCollection,
-  DishEditor,
-  KitchenPreview,
-} from "./studio-dishes";
+import { DishCollection, DishEditor, KitchenPreview } from "./studio-dishes";
+import { sectionDishIds } from "./studio-dish-collection-model";
 import { VersionHistory } from "./studio-history";
 import { MenuOverview, SectionEditor } from "./studio-menus";
 import {
   BookingImpact,
-  CollectionActivation,
+  CollectionAvailability,
   CustomerPreview,
   PublicationReview,
   type SitePreview,
@@ -43,6 +39,7 @@ import {
 } from "./studio-ui";
 import { request, useDraft } from "./use-studio-draft";
 import { StudioRecovery } from "./studio-recovery";
+import { acknowledgedPublication, type PublicationReceipt } from "./studio-review-model";
 import {
   formatRetainedTime,
   retainedMetadataKey,
@@ -51,6 +48,7 @@ import {
 import styles from "./studio.module.css";
 
 type Entity = Menu | Dish;
+type DishContext = "library" | "section" | "review";
 type Recovery = {
   key: string;
   kind: "menu" | "dish";
@@ -82,14 +80,14 @@ export default function Studio({
   const [newSectionId, setNewSectionId] = useState("");
   const [week, setWeek] = useState(0);
   const [createKind, setCreateKind] = useState<Menu["kind"] | null>(null);
-  const [dishBackToSection, setDishBackToSection] = useState(false);
-  const [kitchenReturn, setKitchenReturn] = useState<
-    "dishes" | "assortment" | "activation"
-  >("dishes");
+  const [dishContext, setDishContext] = useState<DishContext>("library");
+  const [dishOpen, setDishOpen] = useState(false);
+  const [kitchenReturn, setKitchenReturn] = useState<"dishes" | "activation">("dishes");
   const [collectionDishId, setCollectionDishId] = useState("");
   const [eventDate, setEventDate] = useState("");
   const [effectiveDate, setEffectiveDate] = useState("");
   const [review, setReview] = useState<Review | null>(null);
+  const [publication, setPublication] = useState<PublicationReceipt | null>(null);
   const [actionError, setActionError] = useState("");
   const [actionBusy, setActionBusy] = useState(false);
   const [history, setHistory] = useState<Publication[]>([]);
@@ -101,9 +99,6 @@ export default function Studio({
     week: "",
     dishId: "",
   });
-  const [visibility, setVisibility] = useState<"staff" | "customer">("staff");
-  const [activationId, setActivationId] = useState("");
-  const [activationConfirmed, setActivationConfirmed] = useState(false);
   const [sites, setSites] = useState<{ id: string; name: string }[]>([]);
   const [siteId, setSiteId] = useState("");
   const [catalogueChoices, setCatalogueChoices] = useState<CatalogueChoices>({
@@ -133,8 +128,12 @@ export default function Studio({
   );
   const menu = menuDraft.item;
   const dish = dishDraft.item;
+  const activeMenuId = useRef(menu?.id);
+  activeMenuId.current = menu?.id;
+  const publicationAllowed = actor.canPublish &&
+    (!actor.publicationPilot || actor.publicationPilot.menuId === menu?.id);
   const section = menu?.sections.find((item) => item.id === sectionId);
-  const assignedDishes = useAssignedDishes(section, dishes);
+  const assignedDishes = useAssignedDishes(section ? sectionDishIds(section) : [], dishes);
   const sectionDishes = [...dishes, ...assignedDishes.items];
   const unresolvedDishLabel = assignedDishes.loading
     ? "Loading dish name..."
@@ -268,18 +267,16 @@ export default function Studio({
     setHistoryLoaded(false);
     setDraftVersions([]);
     setReviewScope({ sectionId: "", week: "", dishId: "" });
-    setActivationId("");
-    setActivationConfirmed(false);
   }, [menu?.id]);
 
   function navigate(next: Page) {
     setPage(next);
     setCreateKind(null);
     setSectionId("");
-    setDishBackToSection(false);
+    setDishContext("library");
+    setDishOpen(false);
     setActionError("");
     if (next === "menus" || next === "collections") menuDraft.open(null);
-    if (next === "dishes") dishDraft.open(null);
   }
 
   function openMenu(item: Menu) {
@@ -332,8 +329,6 @@ export default function Studio({
           }))
         : [],
     });
-    // Retain the submitted form immediately, before the first autosave starts.
-    menuDraft.change((item) => item);
     setCreateKind(null);
   }
   function addSection(details: NewSectionDetails) {
@@ -354,13 +349,20 @@ export default function Studio({
     openSection(id);
     setNewSectionId(id);
   }
-  function openDish(item: Dish, fromSection = false) {
-    dishDraft.open(item);
-    setDishBackToSection(fromSection);
+  function showDishCollection(context: DishContext) {
+    setDishContext(context);
+    setDishOpen(false);
     setActionError("");
     setPage("dishes");
   }
-  function newDish(fromSection = false) {
+  function openDish(item: Dish, context: DishContext = "library") {
+    if (item.id !== dish?.id) dishDraft.open(item);
+    setDishContext(context);
+    setDishOpen(true);
+    setActionError("");
+    setPage("dishes");
+  }
+  function newDish(context: DishContext = "library") {
     openDish(
       {
         id: crypto.randomUUID(),
@@ -373,10 +375,10 @@ export default function Studio({
         assortment: null,
         updatedAt: "",
       },
-      fromSection,
+      context,
     );
   }
-  function showKitchen(from: "dishes" | "assortment" | "activation") {
+  function showKitchen(from: "dishes" | "activation") {
     setKitchenReturn(from);
     setCollectionDishId("");
     setBoxCount(1);
@@ -421,7 +423,8 @@ export default function Studio({
         setPage("menus");
       } else {
         dishDraft.recover(item as Dish, key, savedVersion);
-        setDishBackToSection(false);
+        setDishContext("library");
+        setDishOpen(true);
         setPage("dishes");
       }
     } catch {
@@ -525,7 +528,9 @@ export default function Studio({
         undefined,
         "?" + new URLSearchParams({ list, menuId: menu.id }),
       );
-      if (!Array.isArray(result.items))
+      if (activeMenuId.current !== menu.id) return;
+      if (!Array.isArray(result.items) || (list === "history" &&
+        result.items.some((item: Publication) => item?.menuId !== menu.id)))
         throw new Error("History is unavailable.");
       if (list === "history") {
         setHistory(result.items);
@@ -536,7 +541,7 @@ export default function Studio({
           setActionError("Showing the first page of draft versions.");
       }
     } catch (failure) {
-      setActionError((failure as Error).message);
+      if (activeMenuId.current === menu.id) setActionError((failure as Error).message);
     } finally {
       setActionBusy(false);
     }
@@ -596,7 +601,7 @@ export default function Studio({
   async function publish() {
     if (
       !menu ||
-      !actor.canPublish ||
+      !publicationAllowed ||
       !review?.canPublish ||
       review.safety.status !== "verified" ||
       !review.reviewToken ||
@@ -612,27 +617,17 @@ export default function Studio({
       reviewToken: review.reviewToken,
       confirmed: true,
     });
-    if (result) {
+    if (result && activeMenuId.current === menu.id) {
       setReview(null);
-      setActionError(
-        "Publication recorded. Review history for the saved revision.",
-      );
+      const receipt = acknowledgedPublication(result.publication, menu.id);
+      if (receipt) setPublication(receipt);
+      else setActionError("Studio did not confirm this publication. Check its history before retrying.");
     }
   }
-  async function activateCollection() {
-    if (!menu || !actor.canPublish || !activationId || !activationConfirmed)
-      return;
-    const result = await runAction({
-      action: "activate-collection",
-      menuId: menu.id,
-      publicationId: activationId,
-      visibility,
-      confirmed: true,
-    });
-    if (result?.ok) {
-      setActivationConfirmed(false);
-      setActionError("Activation recorded.");
-    }
+  function viewHistory() {
+    setActionError("");
+    setPage("history");
+    void loadHistory("history");
   }
 
   const menuSave = {
@@ -659,9 +654,14 @@ export default function Studio({
       : menus.filter((item) => item.kind === "seasonal");
   const menuBack = () =>
     navigate(menu?.kind === "collection" ? "collections" : "menus");
-  const contextualDish = dishBackToSection && Boolean(menu && section);
-  const dishBack = () =>
-    contextualDish ? setPage("menus") : dishDraft.open(null);
+  const contextualDish = dishContext === "section" && Boolean(menu && section);
+  const dishContextLabel = dishContext === "review" ? "Review changes" : "Section editor";
+  const backFromDishes = () => setPage(dishContext === "review" ? "review" : "menus");
+  const dishBack = () => {
+    setDishOpen(false);
+    if (dishContext !== "library") backFromDishes();
+  };
+  const libraryMenus = menu ? [menu, ...menus.filter((item) => item.id !== menu.id)] : menus;
   const showActivation =
     menu?.kind === "collection"
       ? () => {
@@ -680,7 +680,6 @@ export default function Studio({
     >
       {page !== "home" &&
         page !== "dishes" &&
-        page !== "assortment" &&
         menuDraft.state === "conflict" &&
         menu && (
           <StudioRecovery
@@ -690,7 +689,7 @@ export default function Studio({
             dishes={dishes}
           />
         )}
-      {(page === "dishes" || page === "assortment") &&
+      {page === "dishes" && dishOpen &&
         dishDraft.state === "conflict" &&
         dish && (
           <StudioRecovery
@@ -825,10 +824,7 @@ export default function Studio({
                   back={menuBack}
                   preview={showPreview}
                   review={showReview}
-                  history={() => {
-                    setActionError("");
-                    setPage("history");
-                  }}
+                  history={viewHistory}
                   activation={showActivation}
                   openSection={openSection}
                   addSection={addSection}
@@ -844,9 +840,8 @@ export default function Studio({
                 page === "preview" ||
                 page === "review" ||
                 page === "impact" ||
-                (contextualDish &&
+                (dishContext !== "library" &&
                   (page === "dishes" ||
-                    page === "assortment" ||
                     (page === "kitchen" &&
                       kitchenReturn !== "activation")))) && (
                 <div hidden={page !== "menus"}>
@@ -897,13 +892,9 @@ export default function Studio({
                     back={() => setSectionId("")}
                     preview={showPreview}
                     review={showReview}
-                    editDish={(item) => openDish(item, true)}
-                    browseDishes={() => {
-                      dishDraft.open(null);
-                      setDishBackToSection(true);
-                      setPage("dishes");
-                    }}
-                    createDish={() => newDish(true)}
+                    editDish={(item) => openDish(item, "section")}
+                    browseDishes={() => showDishCollection("section")}
+                    createDish={() => newDish("section")}
                     active={page === "menus"}
                     focusName={newSectionId === section.id}
                     loadMore={
@@ -917,59 +908,43 @@ export default function Studio({
                   />
                 </div>
               )}
-            {page === "dishes" && !dish && (
-              <DishCollection
-                dishes={dishes}
-                menus={menus}
-                canManage={actor.canManage}
-                create={() => newDish(contextualDish)}
-                edit={(item) => openDish(item, contextualDish)}
-                backToSection={
-                  contextualDish ? () => setPage("menus") : undefined
-                }
-                busy={actionBusy}
-                error={actionError}
-                loadMore={
-                  dishCursor ? () => void loadMore("dishes") : undefined
-                }
-              />
+            {(page === "dishes" || (page === "kitchen" && kitchenReturn === "dishes")) && (
+              <div hidden={page !== "dishes" || dishOpen}>
+                <DishCollection
+                  key={dishContext === "review" ? menu?.id : dishContext}
+                  dishes={dishContext === "review" ? sectionDishes : dishes}
+                  menus={libraryMenus}
+                  canManage={actor.canManage}
+                  create={() => newDish(dishContext)}
+                  edit={(item) => openDish(item, dishContext)}
+                  back={dishContext === "library" ? undefined : backFromDishes}
+                  backLabel={dishContextLabel}
+                  initialMenuId={dishContext === "review" ? menu?.id : undefined}
+                  busy={actionBusy}
+                  error={actionError}
+                  loadMore={dishCursor ? () => void loadMore("dishes") : undefined}
+                />
+              </div>
             )}
-            {page === "dishes" && dishProps && (
+            {page === "dishes" && dishOpen && dishProps && (
               <DishEditor
                 {...dishProps}
                 safetyAvailable={safetyAvailable}
                 checkerOrigin={checkerOrigin}
                 back={dishBack}
-                backLabel={
-                  contextualDish ? "Section editor" : "Dish collection"
-                }
+                backLabel={dishContext === "library" ? "Dish collection" : dishContextLabel}
+                menuContext={contextualDish && menu && section ? {
+                  name: menu.name,
+                  sectionName: section.name,
+                } : undefined}
                 kitchen={() => showKitchen("dishes")}
-                assortment={() => {
-                  if (!dish?.assortment)
-                    dishDraft.change((item) => ({
-                      ...item,
-                      assortment: {
-                        expectedTotal: 0,
-                        unit: "",
-                        components: [],
-                      },
-                    }));
-                  setPage("assortment");
-                }}
-              />
-            )}
-            {page === "assortment" && dishProps && (
-              <AssortmentBuilder
-                {...dishProps}
-                kitchen={() => showKitchen("assortment")}
-                back={() => setPage("dishes")}
               />
             )}
             {page === "preview" && menu && (
               <CustomerPreview
                 key={menu.id}
                 menu={menu}
-                dishes={dishes}
+                dishes={sectionDishes}
                 date={eventDate}
                 setDate={setEventDate}
                 initialSection={sectionId}
@@ -984,6 +959,7 @@ export default function Studio({
                 sitePreview={sitePreview}
                 notice={previewMessage}
                 back={() => setPage("menus")}
+                review={showReview}
                 openMapping={(id) => {
                   setSectionId(id);
                   setMappingSectionId(id);
@@ -997,7 +973,7 @@ export default function Studio({
               <PublicationReview
                 key={menu.id}
                 menu={menu}
-                dishes={dishes}
+                dishes={sectionDishes}
                 date={effectiveDate}
                 setDate={setEffectiveDate}
                 scope={reviewScope}
@@ -1006,32 +982,41 @@ export default function Studio({
                     ...previous,
                     sectionId: id,
                     week: "",
+                    dishId: "",
                   }))
                 }
                 setWeek={(value) =>
-                  setReviewScope((previous) => ({ ...previous, week: value }))
+                  setReviewScope((previous) => ({ ...previous, week: value, dishId: "" }))
                 }
                 setDish={(id) =>
                   setReviewScope((previous) => ({ ...previous, dishId: id }))
                 }
                 result={review}
+                publication={publication?.menuId === menu.id ? publication : null}
                 busy={actionBusy}
-                saved={menuDraft.state === "saved"}
-                canPublish={actor.canPublish}
+                save={menuSave}
+                canPublish={publicationAllowed}
+                publicationBlockedReason={publicationAllowed ? "" : actor.canPublish
+                  ? "This menu is outside the authorised publication scope."
+                  : "Publishing requires Studio publication access."}
                 notice={actionError}
                 back={() => setPage("menus")}
                 check={() => void checkReview()}
                 impact={() => setPage("impact")}
+                reviewDishes={() => showDishCollection("review")}
+                viewHistory={viewHistory}
                 editIssue={(target) => {
                   if (target.kind === "dish") {
-                    const targetDish = dishes.find(
+                    const targetDish = sectionDishes.find(
                       (item) => item.id === target.id,
                     );
-                    if (targetDish) openDish(targetDish);
+                    if (targetDish) openDish(targetDish, "review");
                     return;
                   }
-                  if (target.kind === "section") openSection(target.id);
-                  else setSectionId("");
+                  if (target.kind === "section") {
+                    openSection(target.id);
+                    if (target.mapping) setMappingSectionId(target.id);
+                  } else setSectionId("");
                   setPage("menus");
                 }}
                 publish={() => void publish()}
@@ -1100,26 +1085,13 @@ export default function Studio({
               </>
             )}
             {page === "activation" && menu?.kind === "collection" && (
-              <CollectionActivation
+              <CollectionAvailability
                 menu={menu}
                 history={history}
+                historyLoaded={historyLoaded}
                 loadHistory={() => void loadHistory("history")}
-                revision={activationId}
-                setRevision={(id) => {
-                  setActivationId(id);
-                  setActivationConfirmed(false);
-                }}
-                visibility={visibility}
-                setVisibility={(value) => {
-                  setVisibility(value);
-                  setActivationConfirmed(false);
-                }}
-                confirmed={activationConfirmed}
-                setConfirmed={setActivationConfirmed}
-                canPublish={actor.canPublish}
                 busy={actionBusy}
                 back={() => setPage("menus")}
-                activate={() => void activateCollection()}
                 kitchen={() => showKitchen("activation")}
                 notice={actionError}
               />

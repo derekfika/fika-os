@@ -232,7 +232,7 @@ export function MenuOverview({
       <div className={styles.footerActions}>
         <Button onClick={history}>Versions and history</Button>
         {activation && (
-          <Button onClick={activation}>Collection activation</Button>
+          <Button onClick={activation}>Collection availability</Button>
         )}
       </div>
     </>

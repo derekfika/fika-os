@@ -55,6 +55,25 @@ export function useDraft<T extends Entity>(
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onSavedRef = useRef(onSaved);
   onSavedRef.current = onSaved;
+  const retain = useCallback((draft: T) => {
+    const key = localKey(actor.id, kind, draft.id, editor.current);
+    const value = JSON.stringify(draft);
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      setRetainedAt(null);
+      setError("Device storage is unavailable. Keep this page open until your changes are saved.");
+      return;
+    }
+    const at = new Date().toISOString();
+    setRetainedAt(at);
+    try {
+      localStorage.setItem(retainedMetadataKey(key), JSON.stringify({ value, at }));
+    } catch {
+      /* The draft is retained even when device storage cannot record its timestamp. */
+    }
+  }, [actor.id, kind]);
+
   const save = useCallback(async () => {
     if (busy.current) {
       timer.current = setTimeout(() => void save(), 800);
@@ -121,16 +140,7 @@ export function useDraft<T extends Entity>(
           updatedAt: saved.updatedAt,
         };
         setItem(current.current);
-        try {
-          localStorage.setItem(
-            localKey(actor.id, kind, saved.id, editor.current),
-            JSON.stringify(current.current),
-          );
-        } catch {
-          setError(
-            "Device storage is unavailable. Keep this page open until your edits are saved.",
-          );
-        }
+        retain(current.current);
         setState("unsaved");
       }
       onSavedRef.current(saved);
@@ -146,16 +156,39 @@ export function useDraft<T extends Entity>(
         return;
       if (timer.current) clearTimeout(timer.current);
       const failure = cause as Error & { status?: number };
-      setState(failure.status === 409 ? "conflict" : "error");
+      const conflict = failure.status === 409;
+      let retained = false;
+      try {
+        const draft = current.current;
+        if (draft) {
+          const raw = JSON.stringify(draft);
+          const editorKey = localKey(actor.id, kind, draft.id, editor.current);
+          const key = retainedCopyKey(
+            raw,
+            recoveredFrom.current,
+            preservation.current,
+            editorKey,
+            (candidate) => localStorage.getItem(candidate),
+          );
+          retained = localStorage.getItem(key) === raw;
+        }
+      } catch {
+        /* Retention is unknown when storage cannot be read. */
+      }
+      if (!retained) setRetainedAt(null);
+      setState(conflict ? "conflict" : "error");
+      const recovery = retained
+        ? "Your changes are retained on this device."
+        : "A device copy could not be verified. Keep this page open to preserve your changes.";
       setError(
-        failure.status === 409
-          ? "This draft changed elsewhere. Your edits are retained on this device; reopen the current version and reconcile them before saving."
-          : `${failure.message} Your edits are retained on this device. Retry when ready.`,
+        conflict
+          ? `A newer version was saved elsewhere. ${recovery} Open the latest draft and reconcile your changes before saving.`
+          : `${failure.status ? failure.message : "Studio could not be reached."} ${recovery} Retry when ready.`,
       );
     } finally {
       busy.current = false;
     }
-  }, [actor.id, actor.canManage, kind]);
+  }, [actor.id, actor.canManage, kind, retain]);
   const open = useCallback(
     (next: T | null) => {
       if (timer.current) clearTimeout(timer.current);
@@ -200,8 +233,9 @@ export function useDraft<T extends Entity>(
       setItem(next);
       setState(next.version === 0 ? "unsaved" : "saved");
       setError("");
+      if (next.version === 0 && actor.canManage) retain(next);
     },
-    [actor.id, kind],
+    [actor.id, actor.canManage, kind, retain],
   );
   const change = useCallback(
     (update: (value: T) => T) => {
@@ -210,27 +244,12 @@ export function useDraft<T extends Entity>(
       current.current = next;
       generation.current++;
       setItem(next);
-      setRetainedAt(null);
-      try {
-        const key = localKey(actor.id, kind, next.id, editor.current);
-        const value = JSON.stringify(next);
-        localStorage.setItem(key, value);
-        const at = new Date().toISOString();
-        localStorage.setItem(
-          retainedMetadataKey(key),
-          JSON.stringify({ value, at }),
-        );
-        setRetainedAt(at);
-      } catch {
-        setError(
-          "Device storage is unavailable. Keep this page open until your edits are saved.",
-        );
-      }
+      retain(next);
       setState((previous) =>
         previous === "conflict" ? "conflict" : "unsaved",
       );
     },
-    [actor.id, actor.canManage, kind],
+    [actor.canManage, retain],
   );
   useEffect(() => {
     if (state !== "unsaved") return;

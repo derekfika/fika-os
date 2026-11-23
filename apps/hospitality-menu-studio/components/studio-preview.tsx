@@ -13,12 +13,17 @@ import {
   Icon,
   PageHeading,
   Pill,
+  SaveNotice,
   formatDate,
   title,
+  type DraftStatus,
 } from "./studio-ui";
 import styles from "./studio.module.css";
+import { sectionDishIds } from "./studio-dish-collection-model";
+import { useAssignedDishes } from "./use-assigned-dishes";
 import {
   presentReviewIssues,
+  type PublicationReceipt,
   type ReviewIssueTarget,
 } from "./studio-review-model";
 
@@ -49,6 +54,7 @@ export function CustomerPreview({
   sitePreview,
   notice,
   back,
+  review,
   openMapping,
 }: {
   menu: Menu;
@@ -67,6 +73,7 @@ export function CustomerPreview({
   sitePreview: SitePreview | null;
   notice: string;
   back: () => void;
+  review: () => void;
   openMapping: (sectionId: string) => void;
 }) {
   const [screen, setScreen] = useState<"web" | "mobile">("web");
@@ -84,7 +91,9 @@ export function CustomerPreview({
         ? section.weeks[rotationWeek(menu.anchorMonday, date) - 1] || []
         : section.staticDishIds
       : [];
-  const selected = ids.map((id) => dishes.find((dish) => dish.id === id));
+  const assigned = useAssignedDishes(ids, dishes);
+  const byId = new Map([...assigned.items, ...dishes].map((dish) => [dish.id, dish]));
+  const selected = ids.map((id) => byId.get(id));
   const group = (dish: Dish) =>
     dish.category === "vegetarian" || dish.category === "vegan"
       ? "veg"
@@ -101,12 +110,12 @@ export function CustomerPreview({
         title="Customer preview"
         eyebrow={
           <Breadcrumb>
-            <button onClick={back}>Menu overview</button>
+            <button onClick={back}>{menu.name || "Menu editor"}</button>
             <span>/</span>
             <span>Preview</span>
           </Breadcrumb>
         }
-        context={<p>This draft shows customer-facing menu content for an event date. It does not confirm customer availability or make the menu bookable.</p>}
+        context={<p>Customer-facing draft content for the selected date. Check site availability separately.</p>}
       >
         <div
           className={styles.segmented}
@@ -128,6 +137,7 @@ export function CustomerPreview({
             Mobile
           </button>
         </div>
+        <Button primary onClick={review}>Review &amp; publish</Button>
       </PageHeading>
       <div className={styles.filterBar}>
         <label className="fika-field">
@@ -265,13 +275,20 @@ export function CustomerPreview({
                     </section>
                   );
                 })}
-              {!groups.length && (
+              {!ids.length && (
                 <p className={styles.empty}>
                   No dishes selected for this event date.
                 </p>
               )}
-              {selected.some((dish) => !dish) && (
-                <p>Some dish content is unavailable in the loaded results.</p>
+              {assigned.loading && <p role="status">Loading assigned dishes…</p>}
+              {assigned.error && (
+                <div className="fika-notice fika-notice--warning">
+                  <p role="status">Some assigned dishes could not be loaded for this preview.</p>
+                  <Button onClick={assigned.retry}>Retry loading dishes</Button>
+                </div>
+              )}
+              {assigned.missing.length > 0 && (
+                <p role="status">Some assigned dishes are unavailable. The preview shows the dishes that could be found.</p>
               )}
             </div>
           </div>
@@ -314,14 +331,18 @@ type ReviewProps = {
   setWeek: (week: string) => void;
   setDish: (dish: string) => void;
   result: Review | null;
+  publication: PublicationReceipt | null;
   busy: boolean;
-  saved: boolean;
+  save: DraftStatus;
   canPublish: boolean;
+  publicationBlockedReason: string;
   notice: string;
   back: () => void;
   check: () => void;
   publish: () => void;
   impact: () => void;
+  reviewDishes: () => void;
+  viewHistory: () => void;
   editIssue: (target: ReviewIssueTarget) => void;
 };
 
@@ -335,23 +356,35 @@ export function PublicationReview({
   setWeek,
   setDish,
   result,
+  publication,
   busy,
-  saved,
+  save,
   canPublish,
+  publicationBlockedReason,
   notice,
   back,
   check,
   publish,
   impact,
+  reviewDishes,
+  viewHistory,
   editIssue,
 }: ReviewProps) {
   const today = londonDate();
   const issueDetails = useRef<HTMLDetailsElement>(null);
   const presented = result ? presentReviewIssues(result, menu, dishes) : null;
-  const hasDraftIssues = Boolean(
-    presented && (presented.editable.length || presented.other.length),
+  const hasReviewDetails = Boolean(
+    presented && (presented.editable.length || presented.other.length || presented.authoritiesUnavailable),
   );
   const [schedule, setSchedule] = useState(!date || date !== today);
+  const saved = save.state === "saved";
+  const scopeSection = menu.sections.find((section) => section.id === scope.sectionId);
+  const scopeIds = new Set(scopeSection
+    ? scope.week && scopeSection.mode === "rotation"
+      ? scopeSection.weeks[Number(scope.week) - 1] ?? []
+      : sectionDishIds(scopeSection)
+    : menu.sections.flatMap(sectionDishIds));
+  const scopedDishes = dishes.filter((dish) => scopeIds.has(dish.id));
   const approved = Boolean(
     result?.canPublish &&
       result.safety.status === "verified" &&
@@ -373,7 +406,17 @@ export function PublicationReview({
         context={
           <p>Check the draft scope, food safety and publication details.</p>
         }
-      />
+      >
+        <SaveNotice {...save} />
+      </PageHeading>
+      {publication && (
+        <div className="fika-notice" role="status">
+          <Pill tone="success">Published</Pill>
+          <p>Revision {publication.revision} · Effective {formatDate(publication.effectiveDate)}</p>
+          <p>Customer booking activation status is available from the Hospitality catalogue owner.</p>
+          <Button onClick={viewHistory}>View published history</Button>
+        </div>
+      )}
       <div className={styles.panel}>
         <div className={styles.checkRow}>
           <Icon name="menus" />
@@ -383,7 +426,6 @@ export function PublicationReview({
               ? result.changes.length + " items in scope"
               : "Review pending"}
           </span>
-          <Pill tone="neutral">Comparison unavailable</Pill>
         </div>
         <div className={styles.checkRow}>
           <Icon
@@ -394,7 +436,7 @@ export function PublicationReview({
             {!result
               ? "Run checks for this draft"
               : result.safety.status === "verified"
-                ? "Verified by the existing safety process"
+                ? "Signed evidence verified for the reviewed dish revisions"
                 : result.safety.status === "unverified"
                   ? "Signed verification has not been confirmed"
                   : "Signed verification is unavailable"}
@@ -408,20 +450,23 @@ export function PublicationReview({
                 ? "Verified"
                 : "Blocked"}
           </Pill>
+          {result?.safety.status === "unverified" && (
+            <button type="button" className={styles.textAction} onClick={reviewDishes}>
+              Open dishes for review <Icon name="forward" />
+            </button>
+          )}
         </div>
         <div className={styles.checkRow}>
-          <Icon name={result && !hasDraftIssues ? "check" : "warning"} />
+          <Icon name={result && !presented?.editable.length ? "check" : "warning"} />
           <strong>Draft details</strong>
           <span>
             {!presented
               ? "Run checks for this draft"
-              : hasDraftIssues
-                ? presented.editable.length +
-                  presented.other.length +
-                  " items need attention"
+              : presented.editable.length
+                ? presented.editable.length + " items need attention"
                 : "No draft detail issues reported"}
           </span>
-          {hasDraftIssues ? (
+          {hasReviewDetails ? (
             <button
               type="button"
               className={styles.textAction}
@@ -533,7 +578,7 @@ export function PublicationReview({
                 onChange={(event) => setDish(event.target.value)}
               >
                 <option value="">All dishes</option>
-                {dishes.map((dish) => (
+                {scopedDishes.map((dish) => (
                   <option key={dish.id} value={dish.id}>
                     {dish.name}
                   </option>
@@ -565,7 +610,7 @@ export function PublicationReview({
           <p>Existing bookings keep their original specifications.</p>
         </section>
       </div>
-      {presented && (hasDraftIssues || presented.authoritiesUnavailable) ? (
+      {presented && hasReviewDetails ? (
         <details className={styles.disclosure} ref={issueDetails}>
           <summary>Review details</summary>
           {presented.editable.length > 0 && (
@@ -584,7 +629,7 @@ export function PublicationReview({
                         {issue.target.kind === "dish"
                           ? "Edit dish"
                           : issue.target.kind === "section"
-                            ? "Edit section"
+                            ? issue.target.mapping ? "Open catalogue mapping" : "Edit section"
                             : "Open menu"}
                       </button>
                     )}
@@ -617,6 +662,20 @@ export function PublicationReview({
         </details>
       ) : null}
       {notice && <p role="status">{notice}</p>}
+      {publicationBlockedReason && (
+        <p className="fika-notice fika-notice--warning">{publicationBlockedReason}</p>
+      )}
+      {!approved && !publication && (
+        <p className="fika-help">
+          {!saved
+            ? "Save the draft before running publication checks."
+            : !date
+              ? "Choose an effective date to run publication checks."
+              : result
+                ? "Resolve the issues in Review details, then run the checks again."
+                : "Run the checks to see whether this draft can be published."}
+        </p>
+      )}
       <div className={styles.footerActions}>
         <Button onClick={back}>Back</Button>
         <Button onClick={check} disabled={busy || !saved || !date}>
@@ -718,144 +777,61 @@ export function BookingImpact({
   );
 }
 
-export function CollectionActivation({
+export function CollectionAvailability({
   menu,
   history,
+  historyLoaded,
   loadHistory,
-  revision,
-  setRevision,
-  visibility,
-  setVisibility,
-  confirmed,
-  setConfirmed,
-  canPublish,
   busy,
   back,
-  activate,
   kitchen,
   notice,
 }: {
   menu: Menu;
   history: Publication[];
+  historyLoaded: boolean;
   loadHistory: () => void;
-  revision: string;
-  setRevision: (id: string) => void;
-  visibility: "staff" | "customer";
-  setVisibility: (value: "staff" | "customer") => void;
-  confirmed: boolean;
-  setConfirmed: (value: boolean) => void;
-  canPublish: boolean;
   busy: boolean;
   back: () => void;
-  activate: () => void;
   kitchen?: () => void;
   notice: string;
 }) {
   return (
     <>
-      <div
-        className={styles.tabBar}
-        role="group"
-        aria-label="Operational preview"
-      >
-        <span aria-current="page">Special collection activation</span>
-        {kitchen && (
-          <button type="button" onClick={kitchen}>
-            CPU kitchen spec preview
-          </button>
-        )}
-      </div>
       <PageHeading
-        title="Activate special collection"
+        title="Collection availability"
         eyebrow={
           <Breadcrumb>
-            <button onClick={back}>Collections</button>
+            <button onClick={back}>{menu.name || "Untitled collection"}</button>
             <span>/</span>
-            <span>{menu.name || "Untitled collection"}</span>
+            <span>Availability</span>
           </Breadcrumb>
         }
-      />
-      <div className={styles.editorColumns}>
-        <section className={styles.formStack}>
-          <label className="fika-field">
-            Collection name
-            <input className="fika-input" value={menu.name} readOnly />
-          </label>
-          <label className="fika-field">
-            Published revision
-            <select
-              className="fika-select"
-              disabled={!history.length}
-              value={revision}
-              onChange={(event) => setRevision(event.target.value)}
-            >
-              <option value="">Select a revision</option>
-              {history.map((item) => (
-                <option key={item.id} value={item.id}>
-                  Revision {item.revision} · {formatDate(item.effectiveDate)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <Button disabled={busy} onClick={loadHistory}>
-            Load published history
-          </Button>
-          <fieldset className={styles.formStack}>
-            <legend>Visibility</legend>
-            <label className="fika-choice">
-              <input
-                type="radio"
-                name="collection-visibility"
-                checked={visibility === "staff"}
-                onChange={() => setVisibility("staff")}
-              />{" "}
-              Staff only (planning and preparation)
-            </label>
-            <label className="fika-choice">
-              <input
-                type="radio"
-                name="collection-visibility"
-                checked={visibility === "customer"}
-                onChange={() => setVisibility("customer")}
-              />{" "}
-              Customer-facing (subject to Hub rules)
-            </label>
-          </fieldset>
-        </section>
-        <section className={styles.summary}>
-          <h2>Activation details</h2>
-          <p>
-            Activation requires a verified published revision. Customer
-            availability is governed by Hub.
-          </p>
-          <p>
-            Existing bookings retain their current menu and kitchen
-            specifications.
-          </p>
-          {!canPublish && <Pill tone="warning">Activation unavailable</Pill>}
-        </section>
+      >
+        {kitchen && <Button onClick={kitchen}>Kitchen preview</Button>}
+      </PageHeading>
+      <div className="fika-notice fika-notice--warning">
+        <h2>Customer booking activation is unavailable in Studio</h2>
+        <p>Contact the Hospitality catalogue owner to confirm whether a published collection is open for bookings.</p>
       </div>
-      {notice && <p role="status">{notice}</p>}
-      <div className={styles.footerActions}>
-        <Button onClick={back}>Back</Button>
-        {canPublish && (
-          <label className="fika-choice">
-            <input
-              type="checkbox"
-              checked={confirmed}
-              onChange={(event) => setConfirmed(event.target.checked)}
-            />{" "}
-            Confirm this separate activation request
-          </label>
-        )}
-        <Button
-          onClick={activate}
-          primary
-          disabled={!canPublish || !revision || !confirmed || busy}
-        >
-          Activate collection
+      <div className={styles.sectionHeading}>
+        <h2>Published revisions</h2>
+        <Button disabled={busy} onClick={loadHistory}>
+          {busy ? "Checking…" : historyLoaded ? "Refresh history" : "Load published history"}
         </Button>
       </div>
+      <div className={styles.panel}>
+        {history.map((item) => (
+          <div className={styles.row} key={item.id}>
+            <strong>Revision {item.revision}</strong>
+            <span>Effective {formatDate(item.effectiveDate)}</span>
+            <Pill tone="success">Published</Pill>
+          </div>
+        ))}
+        {historyLoaded && !history.length && <p className={styles.empty}>There are no published revisions in Studio for this collection.</p>}
+      </div>
+      {notice && <p role="status">{notice}</p>}
+      <div className={styles.footerActions}><Button onClick={back}>Back to collection</Button></div>
     </>
   );
 }

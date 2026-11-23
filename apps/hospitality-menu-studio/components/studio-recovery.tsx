@@ -22,19 +22,18 @@ export function StudioRecovery({
     <section className={styles.panelBody} aria-label="Recover your edits">
       <h2>Your edits need attention</h2>
       <p>
-        A newer draft was saved elsewhere. The edits shown here have not been
-        saved to that draft. A copy is kept on this device when device storage
-        is available.
+        A newer draft was saved elsewhere. These edits still need to be
+        reconciled with the latest saved version.
       </p>
       <p>
         These edits started from version {item.version}.
         {retainedAt
           ? ` Last retained on this device: ${formatRetainedTime(retainedAt)}.`
-          : " The time of the retained copy is not available."}
+          : ""}
       </p>
       <p>
-        Open the latest saved draft to continue. Your retained copy stays on
-        this device and can be found on Home.
+        Opening the latest draft keeps a copy of these edits on this device.
+        If device storage is unavailable, copy the text below before leaving.
       </p>
       <Button
         disabled={busy}
