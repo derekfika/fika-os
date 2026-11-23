@@ -4,4 +4,3 @@ Studio can look up known assigned dish IDs in bounded, authenticated batches wit
 
 Validation: Studio tests (57 passed), typecheck and production build; integrated browser verification pending.
 Deployment: none.
-
