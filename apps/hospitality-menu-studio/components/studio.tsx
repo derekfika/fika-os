@@ -12,11 +12,9 @@ import {
   type StudioActor,
 } from "../lib/contract";
 import { kitchenQuantities } from "../lib/review";
-import {
-  MenuDashboard,
-  MenuWizard,
-  type NewMenuDetails,
-} from "./studio-dashboard";
+import { MenuDashboard } from "./studio-dashboard";
+import { MenuSetup, type NewMenuDetails } from "./menu-setup";
+import type { CatalogueChoices, NewSectionDetails } from "./menu-setup-model";
 import {
   AssortmentBuilder,
   DishCollection,
@@ -107,7 +105,8 @@ export default function Studio({
   const [activationConfirmed, setActivationConfirmed] = useState(false);
   const [sites, setSites] = useState<{ id: string; name: string }[]>([]);
   const [siteId, setSiteId] = useState("");
-  const [catalogueItems, setCatalogueItems] = useState<typeof sites>([]);
+  const [catalogueChoices, setCatalogueChoices] = useState<CatalogueChoices>({ state: "unchecked" });
+  const checkingCatalogue = useRef(false);
   const [sitePreview, setSitePreview] = useState<SitePreview | null>(null);
   const [previewMessage, setPreviewMessage] = useState("");
   const [mappingSectionId, setMappingSectionId] = useState("");
@@ -323,9 +322,11 @@ export default function Studio({
           }))
         : [],
     });
+    // Retain the submitted form immediately, before the first autosave starts.
+    menuDraft.change((item) => item);
     setCreateKind(null);
   }
-  function addSection() {
+  function addSection(details: NewSectionDetails) {
     const id = crypto.randomUUID();
     menuDraft.change((item) => ({
       ...item,
@@ -333,8 +334,7 @@ export default function Studio({
         ...item.sections,
         {
           id,
-          name: "New section",
-          mode: "static",
+          ...details,
           catalogueItemId: "",
           staticDishIds: [],
           weeks: Array.from({ length: 6 }, () => []),
@@ -374,7 +374,6 @@ export default function Studio({
   }
   function showReview() {
     setActionError("");
-    setSectionId("");
     setPage("review");
   }
   function showPreview() {
@@ -435,22 +434,26 @@ export default function Studio({
     }
   }
   async function loadSites() {
-    setActionBusy(true);
+    if (checkingCatalogue.current) return;
+    checkingCatalogue.current = true;
+    setCatalogueChoices({ state: "loading" });
     setPreviewMessage("");
     try {
       const result = await request(undefined, "?list=catalogue");
       if (!Array.isArray(result.sites) || !Array.isArray(result.items))
         throw new Error("Catalogue is unavailable.");
       setSites(result.sites);
-      setCatalogueItems(result.items);
+      setCatalogueChoices({ state: "loaded", items: result.items });
       if (!result.sites.length)
         setPreviewMessage("No sites are available from the catalogue.");
     } catch {
+      setSites([]);
+      setCatalogueChoices({ state: "unavailable" });
       setPreviewMessage(
-        "Hub catalogue is unavailable. Existing mappings are retained; site offerings cannot be checked.",
+        "The catalogue is unavailable. Site and booking availability are unknown. Saved mappings are retained.",
       );
     } finally {
-      setActionBusy(false);
+      checkingCatalogue.current = false;
     }
   }
   async function checkSitePreview() {
@@ -695,7 +698,7 @@ export default function Studio({
       )}
       {!loading &&
         (createKind ? (
-          <MenuWizard
+          <MenuSetup
             initialKind={createKind}
             menus={menus}
             close={() => setCreateKind(null)}
@@ -828,6 +831,9 @@ export default function Studio({
             {menu &&
               section &&
               (page === "menus" ||
+                page === "preview" ||
+                page === "review" ||
+                page === "impact" ||
                 (contextualDish &&
                   (page === "dishes" ||
                     page === "assortment" ||
@@ -857,6 +863,7 @@ export default function Studio({
                     }}
                     back={() => setSectionId("")}
                     preview={showPreview}
+                    review={showReview}
                     editDish={(item) => openDish(item, true)}
                     browseDishes={() => {
                       dishDraft.open(null);
@@ -869,10 +876,10 @@ export default function Studio({
                     loadMore={
                       dishCursor ? () => void loadMore("dishes") : undefined
                     }
-                    catalogue={catalogueItems}
+                    catalogue={catalogueChoices}
                     loadCatalogue={() => void loadSites()}
-                    catalogueNotice={previewMessage}
                     openSettings={mappingSectionId === section.id}
+                    openSection={openSection}
                     busy={actionBusy}
                   />
                 </div>
@@ -935,7 +942,7 @@ export default function Studio({
                 initialSection={sectionId}
                 valid={previewValid}
                 saved={menuDraft.state === "saved"}
-                busy={actionBusy}
+                busy={actionBusy || catalogueChoices.state === "loading"}
                 sites={sites}
                 siteId={siteId}
                 setSite={setSiteId}

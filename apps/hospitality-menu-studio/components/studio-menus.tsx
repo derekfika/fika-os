@@ -15,6 +15,12 @@ import {
 import styles from "./studio.module.css";
 import { copyRotationChoices, rotationSource } from "./rotation-copy";
 import { RotationWorkspace } from "./rotation-workspace";
+import {
+  openingWeekMonday,
+  type CatalogueChoices,
+  type NewSectionDetails,
+} from "./menu-setup-model";
+import { NewSectionForm, SectionSetup } from "./section-setup";
 
 const weeks = [1, 2, 3, 4, 5, 6];
 const groups = [
@@ -66,13 +72,16 @@ export function MenuOverview({
   history: () => void;
   activation?: () => void;
   openSection: (id: string) => void;
-  addSection: () => void;
+  addSection: (details: NewSectionDetails) => void;
   update: (
     values: Partial<
       Pick<Menu, "name" | "startDate" | "endDate" | "anchorMonday">
     >,
   ) => void;
 }) {
+  const [addingSection, setAddingSection] = useState(false);
+  const addButton = useRef<HTMLDivElement>(null);
+  const suggestedAnchor = !menu.anchorMonday && openingWeekMonday(menu.startDate);
   return (
     <>
       <PageHeading
@@ -98,6 +107,7 @@ export function MenuOverview({
           </div>
         }
       >
+        <SaveNotice {...save} />
         <Button onClick={preview}>
           <Icon name="eye" /> Customer preview
         </Button>
@@ -107,16 +117,29 @@ export function MenuOverview({
       </PageHeading>
       <div className={styles.sectionHeading}>
         <h2>Menu sections</h2>
-        <Button onClick={addSection} disabled={!canManage}>
-          <Icon name="plus" /> Add section
-        </Button>
+        <div ref={addButton}>
+          <Button onClick={() => setAddingSection(true)} disabled={!canManage || addingSection}>
+            <Icon name="plus" /> Add section
+          </Button>
+        </div>
       </div>
+      {addingSection && (
+        <NewSectionForm
+          close={() => {
+            setAddingSection(false);
+            requestAnimationFrame(() => addButton.current?.querySelector("button")?.focus());
+          }}
+          create={(details) => {
+            addSection(details);
+            setAddingSection(false);
+          }}
+        />
+      )}
       <div className={styles.panel}>
         {menu.sections.map((section) => {
           const rotating = section.mode === "rotation";
-          const count = rotating
-            ? section.weeks[0]?.length || 0
-            : section.staticDishIds.length;
+          const count = section.staticDishIds.length;
+          const filledWeeks = section.weeks.filter((ids) => ids.length > 0).length;
           return (
             <button
               type="button"
@@ -127,8 +150,9 @@ export function MenuOverview({
               <strong>{section.name || "Untitled section"}</strong>
               <span>{rotating ? "Six-week rotation" : "All season"}</span>
               <span>
-                {count} {count === 1 ? "choice" : "choices"}
-                {rotating ? " (W1)" : ""}
+                {rotating
+                  ? filledWeeks + " of 6 weeks filled"
+                  : count + (count === 1 ? " choice" : " choices")}
               </span>
               <span className={styles.mapping}>
                 {section.catalogueItemId
@@ -178,7 +202,7 @@ export function MenuOverview({
             />
           </label>
           <label className="fika-field">
-            Rotation anchor Monday
+            Monday of Week 1
             <input
               type="date"
               className="fika-input"
@@ -188,9 +212,14 @@ export function MenuOverview({
             />
           </label>
         </div>
+        <p className="fika-help">All rotating sections repeat every six weeks from this Monday.</p>
+        {suggestedAnchor && canManage && (
+          <Button onClick={() => update({ anchorMonday: suggestedAnchor })}>
+            Use the Monday of the opening week
+          </Button>
+        )}
       </details>
       <div className={styles.footerActions}>
-        <SaveNotice {...save} />
         <Button onClick={history}>Versions and history</Button>
         {activation && (
           <Button onClick={activation}>Collection activation</Button>
@@ -214,6 +243,7 @@ export function SectionEditor({
   remove,
   back,
   preview,
+  review,
   editDish,
   browseDishes,
   createDish,
@@ -222,8 +252,8 @@ export function SectionEditor({
   loadMore,
   catalogue,
   loadCatalogue,
-  catalogueNotice,
   openSettings,
+  openSection,
   busy,
 }: {
   menu: Menu;
@@ -239,16 +269,17 @@ export function SectionEditor({
   remove: () => void;
   back: () => void;
   preview: () => void;
+  review: () => void;
   editDish: (dish: Dish) => void;
   browseDishes: () => void;
   createDish: () => void;
   active: boolean;
   focusName: boolean;
   loadMore?: () => void;
-  catalogue: { id: string; name: string }[];
+  catalogue: CatalogueChoices;
   loadCatalogue: () => void;
-  catalogueNotice: string;
   openSettings?: boolean;
+  openSection: (id: string) => void;
   busy: boolean;
 }) {
   const [group, setGroup] = useState<DishGroup | "all">("all");
@@ -269,17 +300,7 @@ export function SectionEditor({
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [view, setView] = useState<"overview" | "week">("overview");
   const [adding, setAdding] = useState(false);
-  const [showName] = useState(focusName);
-  const sectionName = useRef<HTMLInputElement>(null);
-  const focusedName = useRef(false);
   const dishSearch = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    if (active && showName && sectionName.current && !focusedName.current) {
-      sectionName.current.focus();
-      sectionName.current.select();
-      focusedName.current = true;
-    }
-  }, [active, showName]);
   useEffect(() => {
     if (active && adding) dishSearch.current?.focus();
   }, [active, adding]);
@@ -369,19 +390,20 @@ export function SectionEditor({
         <Button onClick={preview}>
           <Icon name="eye" /> Customer preview
         </Button>
+        <Button primary onClick={review}>Review &amp; publish menu</Button>
       </PageHeading>
-      {showName && (
-        <label className="fika-field">
-          Section name
-          <input
-            ref={sectionName}
-            className="fika-input"
-            value={section.name}
-            disabled={!canManage}
-            onChange={(event) => update({ name: event.target.value })}
-          />
-        </label>
-      )}
+      <SectionSetup
+        menu={menu}
+        section={section}
+        canManage={canManage}
+        update={update}
+        openSection={openSection}
+        catalogue={catalogue}
+        loadCatalogue={loadCatalogue}
+        openMapping={openSettings}
+        active={active}
+        focusName={focusName}
+      />
       <div className={styles.sectionControls}>
         {isRotation && view === "week" && (
           <div className={styles.fieldGroup}>
@@ -405,92 +427,6 @@ export function SectionEditor({
             </div>
           </div>
         )}
-        <details className={styles.disclosure} open={openSettings || undefined}>
-          <summary>Section settings</summary>
-          <div className={styles.fieldGroup}>
-            <span id="menu-availability">Menu availability</span>
-            <div
-              className={styles.segmented}
-              aria-labelledby="menu-availability"
-              role="group"
-            >
-              <button
-                type="button"
-                disabled={!canManage}
-                aria-pressed={!isRotation}
-                onClick={() => update({ mode: "static" })}
-              >
-                All season
-              </button>
-              <button
-                type="button"
-                disabled={!canManage}
-                aria-pressed={isRotation}
-                onClick={() => update({ mode: "rotation" })}
-              >
-                Six-week rotation
-              </button>
-            </div>
-          </div>
-          {!showName && (
-            <label className="fika-field">
-              Section name
-              <input
-                className="fika-input"
-                value={section.name}
-                disabled={!canManage}
-                onChange={(event) => update({ name: event.target.value })}
-              />
-            </label>
-          )}
-          <label className="fika-field">
-            Hub catalogue item
-            <select
-              className="fika-select"
-              value={section.catalogueItemId}
-              disabled={!canManage || !catalogue.length}
-              onChange={(event) =>
-                update({ catalogueItemId: event.target.value })
-              }
-            >
-              <option value="">Not mapped</option>
-              {section.catalogueItemId &&
-                !catalogue.some(
-                  (item) => item.id === section.catalogueItemId,
-                ) && (
-                  <option value={section.catalogueItemId}>
-                    Existing mapping: {section.catalogueItemId}
-                  </option>
-                )}
-              {catalogue.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className={styles.actions}>
-            <Button disabled={busy} onClick={loadCatalogue}>
-              Load Hub catalogue
-            </Button>
-          </div>
-          {catalogueNotice && <p role="status">{catalogueNotice}</p>}
-          {canManage && (
-            <div className={styles.actions}>
-              <label className="fika-choice">
-                <input
-                  type="checkbox"
-                  checked={confirmRemove}
-                  onChange={(event) => setConfirmRemove(event.target.checked)}
-                />{" "}
-                Remove this section and its draft selections
-              </label>
-              <Button disabled={!confirmRemove} onClick={remove}>
-                Remove section
-              </Button>
-            </div>
-          )}
-        </details>
       </div>
       {isRotation && (
         <div className={styles.tabBar} role="group" aria-label="Rotation view">
@@ -826,6 +762,24 @@ export function SectionEditor({
             </section>
           )}
         </>
+      )}
+      {canManage && (
+        <details className={styles.disclosure}>
+          <summary>Manage section</summary>
+          <div className={styles.actions}>
+            <label className="fika-choice">
+              <input
+                type="checkbox"
+                checked={confirmRemove}
+                onChange={(event) => setConfirmRemove(event.target.checked)}
+              />{" "}
+              Remove this section and its draft selections
+            </label>
+            <Button disabled={!confirmRemove} onClick={remove}>
+              Remove section
+            </Button>
+          </div>
+        </details>
       )}
     </>
   );
