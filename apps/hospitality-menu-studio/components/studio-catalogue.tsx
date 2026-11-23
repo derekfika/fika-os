@@ -141,4 +141,3 @@ export function CatalogueView({ area, initialItemId, back }: { area: "products" 
   </>;
 
 }
-
