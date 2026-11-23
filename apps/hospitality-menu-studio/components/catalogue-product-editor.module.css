@@ -1,0 +1,100 @@
+.dialog {
+  color: var(--fika-text-primary);
+}
+
+.header,
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.header {
+  justify-content: space-between;
+  margin-bottom: var(--space-5);
+}
+
+.header > div {
+  min-width: 0;
+}
+
+.header h2 {
+  margin: 0 0 var(--space-1);
+  overflow-wrap: anywhere;
+}
+
+.form,
+.fields,
+.group,
+.feedback:not(:empty) {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.feedback > *,
+.group p {
+  margin: 0;
+}
+
+.fields {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.fields > legend,
+.group > legend {
+  padding: 0;
+  margin-bottom: var(--space-2);
+  font-weight: 700;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: var(--space-3);
+  align-items: end;
+}
+
+.group {
+  min-width: 0;
+  margin: var(--space-4) 0 0;
+  padding: var(--space-3);
+  border: 1px solid var(--fika-border-default);
+  border-radius: var(--radius-md);
+  background: var(--fika-surface-card);
+  justify-items: start;
+}
+
+.group .fields,
+.group :global(.fika-field) {
+  width: 100%;
+}
+
+.group > summary {
+  min-height: 44px;
+  align-content: center;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.group h3 {
+  margin: 0;
+}
+
+.siteList {
+  width: 100%;
+  max-height: 18rem;
+  overflow: auto;
+}
+
+.dialog :global(.fika-choice),
+.dialog :global(.fika-button) {
+  min-height: 44px;
+}
+
+.siteList :global(.fika-choice) {
+  overflow-wrap: anywhere;
+}
