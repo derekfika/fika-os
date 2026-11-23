@@ -592,7 +592,9 @@ test("isolated master-sign emulator: distinct admitted reviewers commit the two 
   assert.match(String(stored?.currentAllergenRelease?.releaseId), /publication-day:uat-synthetic:v7/);
 
   const priorEnv = { renderer: process.env.CHROME_PATH, dwd: process.env.GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON, owner: process.env.GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION };
-  const renderer = ["C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe", "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe", "/usr/bin/google-chrome", "/usr/bin/google-chrome-stable", "/usr/bin/chromium", "/usr/bin/chromium-browser"].find(existsSync);
+  // Match local-pdf.ts: Chrome first. Edge can exit successfully without
+  // creating the --print-to-pdf output on Windows.
+  const renderer = ["C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe", "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe", "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe", "/usr/bin/google-chrome", "/usr/bin/google-chrome-stable", "/usr/bin/chromium", "/usr/bin/chromium-browser"].find(existsSync);
   if (renderer) process.env.CHROME_PATH = renderer;
   process.env.GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON = "test-only-isolated-renderer-config";
   process.env.GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION = "test-only@example.test";
