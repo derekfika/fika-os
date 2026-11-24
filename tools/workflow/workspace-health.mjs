@@ -1,5 +1,6 @@
 import path from 'node:path';
-import { statfsSync } from 'node:fs';
+import { mkdtempSync, rmdirSync, statfsSync, unlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { command } from './runtime.mjs';
 import { canonical, localEntry, requireCanonical, withCapacityLock, workspaceInventory } from './workspace-capacity.mjs';
@@ -19,9 +20,16 @@ export function sourceWorkspaceHealth(options = {}) {
     cleanup = cleanupSourceWorkspaces();
     if (process.platform === 'win32') {
       const script = fileURLToPath(new URL('./workspace-disk.ps1', import.meta.url));
-      const input = JSON.stringify(cleanup.ready.map(entry => entry.directory));
-      disk = JSON.parse(command('pwsh', ['-NoProfile', '-File', script, '-ScanRoot', scanRoot, '-CandidatesFromStdin'],
-        { input, maxBuffer: 8 * 1024 * 1024 }));
+      const scratch = mkdtempSync(path.join(tmpdir(), 'fika-workspace-health-'));
+      const candidates = path.join(scratch, 'candidates.json');
+      try {
+        writeFileSync(candidates, JSON.stringify(cleanup.ready.map(entry => entry.directory)));
+        disk = JSON.parse(command('pwsh', ['-NoProfile', '-File', script, '-ScanRoot', scanRoot, '-CandidatesFile', candidates],
+          { maxBuffer: 8 * 1024 * 1024 }));
+      } finally {
+        if (localEntry(candidates)) unlinkSync(candidates);
+        rmdirSync(scratch);
+      }
       const downloadCache = path.join(sharedNpmCache(), '_cacache');
       const cacheEntry = localEntry(downloadCache);
       const cache = cacheEntry?.isDirectory() ? JSON.parse(command('pwsh', ['-NoProfile', '-File', script, '-ScanRoot', downloadCache],

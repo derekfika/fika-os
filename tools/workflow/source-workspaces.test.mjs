@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { fixture } from './lifecycle-fixture.mjs';
 import { createWorkspace, workspaceRecords } from './workspaces.mjs';
 import { integrateSourceWorkspace, createSourceWorkspace, completeSourceWorkspace, recoverSourceReservation, runSourceOperation } from './source-workspaces.mjs';
-import { sourceTaskFile, workspaceInventory } from './workspace-capacity.mjs';
+import { samePath, sourceTaskFile, workspaceInventory } from './workspace-capacity.mjs';
 import { cleanupSourceWorkspaces, integrationEvidence, pruneStaleSourceRegistrations } from './workspace-retirement.mjs';
 import { installSourceDependencies, recordGenerated } from './workspace-cache.mjs';
 import { migrateSourceHistory } from './source-migration.mjs';
@@ -88,7 +88,7 @@ test('simultaneous independent processes reserve at most five slots and queue th
     const over = f.within(workspaceInventory);
     assert.equal(over.occupied, 6);
     assert.equal(over.available, 0);
-    assert.equal(over.entries.find(entry => path.resolve(entry.directory) === unmanaged).state, 'unmanaged');
+    assert.equal(over.entries.find(entry => samePath(entry.directory, unmanaged)).state, 'unmanaged');
     assert.equal((await run('slot-new')).state, 'queued');
     assert.equal(existsSync(unmanaged), true);
   } finally { f.dispose(); }
@@ -161,7 +161,9 @@ test('NTFS usage counts hardlinked allocation once and skips external junctions'
     writeFileSync(path.join(external, 'should not be counted'), Buffer.alloc(32768, 2));
     symlinkSync(external, path.join(scan, 'junction'), 'junction');
     const script = fileURLToPath(new URL('./workspace-disk.ps1', import.meta.url));
-    const report = JSON.parse(command('pwsh', ['-NoProfile', '-File', script, '-ScanRoot', scan, '-CandidatesFromStdin'], { input: JSON.stringify([scan]) }));
+    const candidates = path.join(f.base, 'candidate paths.json');
+    writeFileSync(candidates, JSON.stringify([scan.replaceAll('\\', '/')]));
+    const report = JSON.parse(command('pwsh', ['-NoProfile', '-File', script, '-ScanRoot', scan, '-CandidatesFile', candidates]));
     assert.equal(report.files, 2);
     assert.ok(report.fileAllocationBytes >= 8192);
     assert.equal(report.hardlinkAliasesDeduplicated, 1);

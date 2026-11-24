@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$ScanRoot, [string[]]$Candidates, [switch]$CandidatesFromStdin)
+param([Parameter(Mandatory)][string]$ScanRoot, [string]$CandidatesFile)
 
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath($ScanRoot)
@@ -69,7 +69,8 @@ public static class FikaDiskInventory {
         var result = new Report();
         var seen = new HashSet<long>();
         var candidateIds = new HashSet<long>();
-        var candidatePaths = new HashSet<string>(candidates ?? new string[0], StringComparer.OrdinalIgnoreCase);
+        var candidatePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (string candidate in candidates ?? new string[0]) candidatePaths.Add(Path.GetFullPath(candidate));
         var folders = new Stack<Folder>();
         folders.Push(new Folder { Path = root, Area = ".", Category = "other", Candidate = candidatePaths.Contains(root) });
         const int bufferSize = 65536;
@@ -139,7 +140,7 @@ public static class FikaDiskInventory {
 }
 '@
 
-if ($CandidatesFromStdin) { $Candidates = [Console]::In.ReadToEnd() | ConvertFrom-Json }
+$Candidates = if ($CandidatesFile) { Get-Content -LiteralPath $CandidatesFile -Raw | ConvertFrom-Json }
 $report = [FikaDiskInventory]::Read($root, $Candidates)
 [ordered]@{
     scanRoot = $root

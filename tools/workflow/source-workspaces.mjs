@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, realpathSync, renameSync, unlinkSync } from 'node:fs';
-import { ancestor, command, ghApi, git, ref, root, save, stateDir } from './runtime.mjs';
+import { ancestor, command, common, ghApi, git, ref, root, save, stateDir } from './runtime.mjs';
 import { REPO, exactSha, partialPathOverlap, risk, safeScope } from './policy.mjs';
 import { successfulValidation } from './releases.mjs';
 import { canonical, completionFile, localEntry, managedRoot, optionalJson, registrations, requireCanonical, samePath,
@@ -139,7 +139,15 @@ export function checkSourceWorkspace(name) {
 }
 
 export function sourceWorkspaceStatus() {
-  return withCapacityLock(() => ({ observedAt: new Date().toISOString(), ...workspaceInventory() }));
+  // The dashboard consumes this advisory contract independently of the coordinator inventory.
+  const prefix = 'refs/heads/codex/';
+  const tasks = path.join(common(), 'fika-workflow', 'source-tasks');
+  const entries = registrations().filter(tree => tree.branch?.startsWith(prefix)).map(tree => {
+    const name = tree.branch.slice(prefix.length);
+    const task = workspaceName(name) ? optionalJson(path.join(tasks, `${name}.json`)) : null;
+    return { name, branch: `codex/${name}`, head: tree.HEAD, owner: task?.owner || null, protected: Boolean(tree.locked || tree.prunable) };
+  });
+  return { observedAt: new Date().toISOString(), entries };
 }
 
 export function runSourceOperation(kind, action, name) {

@@ -6,8 +6,8 @@ import { APPS, REPO, MAIN_CHECK, affected, target, supportedEnvironments } from 
 import { git, command, ghApi, save, jsonFile } from './runtime.mjs';
 import { workspaceRecords, cleanupPlan, applyCleanup } from './workspaces.mjs';
 import { cancelSourceQueue, checkSourceWorkspace, completeSourceWorkspace, createSourceWorkspace, devSourceWorkspace,
-  integrateSourceWorkspace, recoverSourceOperation, recoverSourceReservation, runSourceOperation, sourceWorkspaceStatus } from './source-workspaces.mjs';
-import { requireCanonical, withCapacityLock } from './workspace-capacity.mjs';
+  integrateSourceWorkspace, recoverSourceOperation, recoverSourceReservation, runSourceOperation } from './source-workspaces.mjs';
+import { requireCanonical, withCapacityLock, workspaceInventory } from './workspace-capacity.mjs';
 import { cleanupSourceWorkspaces, pruneStaleSourceRegistrations } from './workspace-retirement.mjs';
 import { sourceWorkspaceHealth } from './workspace-health.mjs';
 import { installSourceDependencies, newValidationOutputs, recordGenerated } from './workspace-cache.mjs';
@@ -114,7 +114,7 @@ async function main() {
       result = sourceWorkspaceHealth(options);
       if (options.output) save(options.output, result);
     }
-    else if (arg === 'status' || arg === 'list') result = sourceWorkspaceStatus();
+    else if (arg === 'status' || arg === 'list') result = { observedAt: new Date().toISOString(), ...withCapacityLock(workspaceInventory) };
     else if (arg === 'history') result = workspaceRecords();
     else if (arg === 'migrate') result = migrateSourceHistory(options);
     else if (arg === 'install-fences') result = installWorkspaceFences();
