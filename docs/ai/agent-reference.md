@@ -629,7 +629,7 @@ The root README.md may describe older repository structure and must not be treat
 
 A coding task is not complete merely because the page renders or TypeScript compiles.
 
-Record implementation completion with `fika workspace complete <task> --owner <agent-task>` after validation and push. Use `--preserve --reason` for unfinished work. Report the branch, PR, final SHA and retained checkout. Follow root AGENTS.md and [workspace management](../deployment/workspace-management.md). Application changes go in the app changelog or a unique `.changes/<app>/` fragment. Platform changes go in the root log or `.changes/platform/`. Read-only work needs no entry.
+After validation, push and governed merge, run `fika workspace complete <task> --owner <agent-task>` from canonical to record exact source evidence and release the slot when retirement succeeds. Use `--preserve --reason` for unfinished work. Report the branch, PR, final SHA, and whether cleanup released the slot or a protected checkout remains. Follow root AGENTS.md and [workspace management](../deployment/workspace-management.md). Application changes go in the app changelog or a unique `.changes/<app>/` fragment. Platform changes go in the root log or `.changes/platform/`. Read-only work needs no entry.
 
 A strong completion report states:
 - what changed;

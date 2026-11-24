@@ -5,7 +5,12 @@ import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { APPS, REPO, MAIN_CHECK, affected, target, supportedEnvironments } from './policy.mjs';
 import { git, command, ghApi, save, jsonFile } from './runtime.mjs';
 import { workspaceRecords, cleanupPlan, applyCleanup } from './workspaces.mjs';
-import { checkSourceWorkspace, completeSourceWorkspace, createSourceWorkspace, devSourceWorkspace, integrateSourceWorkspace, sourceWorkspaceStatus } from './source-workspaces.mjs';
+import { cancelSourceQueue, checkSourceWorkspace, completeSourceWorkspace, createSourceWorkspace, devSourceWorkspace,
+  integrateSourceWorkspace, recoverSourceOperation, recoverSourceReservation, runSourceOperation, sourceWorkspaceStatus } from './source-workspaces.mjs';
+import { requireCanonical, withCapacityLock } from './workspace-capacity.mjs';
+import { cleanupSourceWorkspaces, pruneStaleSourceRegistrations } from './workspace-retirement.mjs';
+import { sourceWorkspaceHealth } from './workspace-health.mjs';
+import { installSourceDependencies, newValidationOutputs, recordGenerated } from './workspace-cache.mjs';
 import { migrateSourceHistory } from './source-migration.mjs';
 import { bootstrap, deploy, inspectHotfixBaseline, reconcile, reconcileServingBaseline } from './releases.mjs';
 import { hostedTrust, assertHostedContext } from './hosted.mjs';
@@ -17,8 +22,8 @@ import { studioStagingPreflight } from './studio-staging.mjs';
 
 export function parse(args) {
   const positional = []; const options = {};
-  const flags = new Set(['execute', 'dry-run', 'staging', 'prod', 'resume', 'archive', 'preserve-generated', 'plan', 'tools-only', 'preserve', 'config-only', 'clear-config', 'activate-hotfix']);
-  const values = new Set(['sha', 'owner', 'scope', 'base', 'head', 'file', 'approve-hash', 'record', 'timeout-ms', 'output', 'workspace', 'release-id', 'resolution', 'rollout', 'reason', 'replacement', 'confirm', 'pr', 'port', 'lease-id', 'predecessor', 'predecessor-lease-id', 'config-value']);
+  const flags = new Set(['execute', 'dry-run', 'staging', 'prod', 'resume', 'archive', 'preserve-generated', 'plan', 'tools-only', 'preserve', 'config-only', 'clear-config', 'activate-hotfix', 'inventory-only']);
+  const values = new Set(['sha', 'owner', 'scope', 'base', 'head', 'file', 'approve-hash', 'record', 'timeout-ms', 'output', 'workspace', 'release-id', 'resolution', 'rollout', 'reason', 'replacement', 'confirm', 'pr', 'port', 'lease-id', 'predecessor', 'predecessor-lease-id', 'config-value', 'min-free-gb', 'package']);
   for (let i = 0; i < args.length; i++) {
     if (!args[i].startsWith('--')) { positional.push(args[i]); continue; }
     const key = args[i].slice(2); if (Object.hasOwn(options, key)) throw Error(`Duplicate --${key}`);
@@ -76,16 +81,39 @@ async function main() {
       for (const script of ['test', 'typecheck', 'build']) commands.push({ program: 'npm', args: ['--prefix', APPS[app].path, 'run', script], app });
     }
     if (options.plan) result = { scope, commands, executed: false };
-    else {
+    else result = runSourceOperation('validate', workspace => {
+      const candidates = workspace && !options['tools-only'] ? newValidationOutputs(workspace, scope.apps.map(app => APPS[app])) : [];
       for (const item of commands) command(item.program, item.args, { env: { ...process.env, NODE_ENV: item.args.at(-1) === 'build' ? 'production' : 'test', FIREBASE_PROJECT_ID: 'demo-fika-os', FIKA_CPU_PLAN_STORE: 'memory' }, stdio: ['ignore', 'inherit', 'inherit'] });
-      result = { scope, executed: true, commands: commands.length };
-    }
+      return { scope, executed: true, commands: commands.length,
+        ...(candidates.length ? { generated: recordGenerated(workspace, candidates) } : {}) };
+    });
   } else if (verb === 'changelog' && arg === 'check') {
     result = checkChangelogEntries(changePaths(options), options);
   } else if (verb === 'workspace') {
     if (arg === 'create') result = createSourceWorkspace(name, options);
     else if (arg === 'check') result = checkSourceWorkspace(name);
     else if (arg === 'complete') result = completeSourceWorkspace(name, options);
+    else if (arg === 'cancel') result = cancelSourceQueue(name, options);
+    else if (arg === 'recover') result = recoverSourceReservation(name, options);
+    else if (arg === 'recover-operation') result = recoverSourceOperation(name, options);
+    else if (arg === 'install') {
+      requireCanonical();
+      if (!name) throw Error('Dependency installation requires a workspace name');
+      result = runSourceOperation('install', workspace => installSourceDependencies(workspace, options.package), name);
+    }
+    else if (arg === 'cleanup' || arg === 'prune') {
+      requireCanonical();
+      result = arg === 'prune' ? withCapacityLock(() => pruneStaleSourceRegistrations(options)) : cleanupSourceWorkspaces({ ...options, name, inspect: true });
+    } else if (arg === 'startup') {
+      requireCanonical();
+      let cleanup;
+      try { cleanup = cleanupSourceWorkspaces({ execute: true }); }
+      catch (error) { cleanup = { status: 'unavailable', reason: error.message.split(/\r?\n/)[0] }; }
+      result = { cleanup, health: sourceWorkspaceHealth({ ...options, 'inventory-only': true }) };
+    } else if (arg === 'health') {
+      result = sourceWorkspaceHealth(options);
+      if (options.output) save(options.output, result);
+    }
     else if (arg === 'status' || arg === 'list') result = sourceWorkspaceStatus();
     else if (arg === 'history') result = workspaceRecords();
     else if (arg === 'migrate') result = migrateSourceHistory(options);
@@ -93,12 +121,18 @@ async function main() {
     else if (arg === 'recover-validation') result = recoverValidationOperation(name,options);
     else if (arg === 'recover-dev') result = await recoverDevOperation(name,options);
     else if (arg === 'recover-deploy') result = recoverDeployOperation(name, options);
-    else throw Error('workspace create|check|complete <name>; status|list|history|migrate|install-fences; recover-validation|recover-dev|recover-deploy <operation-id>. Legacy lease mutations are retired.');
+    else throw Error('workspace create|check|complete|cancel|recover|install <name>; startup|cleanup|prune|health|status|list|history|migrate|install-fences; recover-operation|recover-validation|recover-dev|recover-deploy <operation-id>. Legacy lease mutations are retired.');
   } else if (verb === 'integrate') {
-    result = integrateSourceWorkspace(options.workspace, options.pr);
+    if (!options.workspace) throw Error('Integration requires --workspace');
+    result = runSourceOperation('integrate', () => integrateSourceWorkspace(options.workspace, options.pr), options.workspace);
   } else if (verb === 'dev') {
     if (!Object.hasOwn(APPS, arg)) throw Error('Select a supported app');
-    result = devSourceWorkspace(options.workspace, APPS[arg], options.port);
+    if (!options.workspace) throw Error('Dev requires --workspace');
+    result = runSourceOperation('dev', workspace => {
+      const candidates = newValidationOutputs(workspace, [APPS[arg]]);
+      const outcome = devSourceWorkspace(options.workspace, APPS[arg], options.port);
+      return { ...outcome, generated: recordGenerated(workspace, candidates) };
+    }, options.workspace);
   } else if (verb === 'studio-preflight') {
     if (arg !== undefined || !options.staging || Object.keys(options).length !== 1) throw Error('Use only fika studio-preflight --staging');
     result = await studioStagingPreflight();
@@ -155,6 +189,11 @@ async function main() {
       'fika workspace create <task> --owner <agent> [--scope <advisory paths>]',
       'fika workspace check <task>',
       'fika workspace complete <task> --owner <agent> [--preserve --reason <why>]',
+      'fika workspace startup; fika workspace cleanup [<task>] [--execute]; fika workspace prune [--execute]',
+      'fika workspace health [--inventory-only] [--min-free-gb <GB>] [--output <file>]',
+      'fika workspace cancel <queued-task> --owner <agent>; fika workspace recover <task> --owner <agent> --reason <why>',
+      'fika workspace recover-operation <id> --owner <agent> --reason <why>',
+      'fika workspace install <task> [--package <repo-relative package directory>]',
       'fika workspace history|status|migrate',
       'fika dev cpu --workspace <task> --port <unused port>',
       'fika affected --base origin/main',

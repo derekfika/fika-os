@@ -1,28 +1,91 @@
-# Task worktrees and historical workspace evidence
+# Task worktrees and lifecycle
 
-Each write task uses one independent Git worktree and a unique task branch from fetched
-`origin/main`. One writer uses each checkout. Task owner, baseline, paths and completion
-are advisory records. Concurrent tasks can touch the same paths in different worktrees.
-Review open PR overlap before editing and coordinate provider and consumer changes.
-Git and protected PR review resolve conflicting source changes.
+Use the current CLI from the canonical checkout for machine-wide workspace commands.
+Each write task claims one of five slots, a unique branch from fetched `origin/main`,
+and an independent checkout with one writer. The primary checkout is excluded.
+Existing linked worktrees and unregistered directories in the managed workspace root
+count against the limit. A tree outside governance can consume a slot and will appear
+as unmanaged. Keep it in place until identity and ownership are known.
 
 ```powershell
+npm run fika -- workspace startup
 npm run fika -- workspace create <task> --owner <agent-task> --scope <paths>
 npm run fika -- workspace check <task>
+npm run fika -- workspace install <task> --package apps/<app-directory>
 npm run fika -- integrate --workspace <task> --pr <number>
 npm run fika -- workspace complete <task> --owner <agent-task>
 ```
 
-`--scope` is optional and provides an overlap hint. Treat an unavailable or partial PR
-inventory as a prompt to inspect GitHub directly. Validate from the task checkout. Refresh
-the branch by merging current main, review the resulting diff and rerun exact-source CI.
-Integration checks the same repository, current base and exact PR head and asks GitHub
-for a protected merge commit pinned to that head.
+Windows and other supported hosts use the shared Git directory for registration and an
+OS-released SQLite lock for slot changes. Node 22.13 or later is required. The oldest
+queued claim has first access to an available slot. Retry `create` with the same name
+and owner when capacity becomes available. Withdraw a claim with `workspace cancel
+<task> --owner <agent-task>`. Never dispatch a queued worker as though it has a checkout.
 
-Completion records the final source and observed pushed/main/PR evidence. It retains
-the checkout, including untracked and ignored files, unique commits, branches and stashes.
-Use `--preserve --reason` for an explicitly unfinished outcome. The dashboard's worktree
-inventory is read-only.
+`--scope` provides an optional PR-overlap hint. If the inventory is partial, inspect
+GitHub directly. Validate in the task checkout, commit, push, and open the PR. Refresh
+the branch against current main and rerun exact-source CI after a refresh. Integration
+checks the same repository, current base and exact PR head before asking GitHub for the
+protected merge. Run `complete` from canonical after merge so the coordinator stays
+outside the retiring checkout. Use the recorded source SHA and PR for later release.
+
+### Cleanup and disk health
+
+`workspace startup` reclaims eligible completions and reports free slots and disk
+warnings. Run it at session startup and campaign close. `workspace cleanup` previews
+eligible and protected tasks. `workspace cleanup [<task>] --execute` reconciles their
+exact PR heads and integrated merge commits before using native Git removal. Both
+normal merge commits and existing squash/rebase merges are eligible with matching
+GitHub evidence. Open PRs, changed branches, missing owner records, operations,
+uncommitted work and unknown ignored files retain their checkouts. `complete --preserve
+--reason <why>` records explicitly unfinished work. Use a new task only when an
+eligible prior completion has retired or a genuine blocker has been documented.
+
+The CLI preserves Git admin evidence and reflog-only commits under
+`<git-common-dir>/fika-workflow/source-recovery/` and `refs/preserve/source-recovery/`.
+It deletes only the verified local branch after removal. Use `workspace prune` to
+preview already missing checkouts and `workspace prune --execute` to preserve their
+Git admin index and reflog before native pruning. An unresolved path or unexpected Git
+prune result requires inspection. Archived data, deployment evidence and stashes
+remain in place.
+
+`workspace health --inventory-only` reports real volume free space, slot occupancy,
+queue and policy violations. Full `workspace health` also reports the C:\Fika NTFS
+file allocation by category and area and the maximum allocation associated with verified
+cleanup candidates. It counts hardlinked file allocation once and skips junctions and
+other reparse points. Directory metadata, alternate data streams and out-of-scope
+paths can make the filesystem footprint differ from volume free space. Allocation
+associated with candidates may remain allocated through other hardlinks. Set
+`FIKA_WORKSPACE_MIN_FREE_GB` or `--min-free-gb` to change the default 25 GB free-space
+warning. `--output <file>` saves the report.
+
+### Dependencies and generated data
+
+`workspace install` runs `npm ci --prefer-offline` with the selected package's tracked
+lockfile. It reuses the canonical npm download cache when it is on the workspace
+volume and outside the task checkouts. The fallback is `C:\Fika\.fika-cache\npm`.
+Omit `--package` for the root manifest. The installed tree stays in the task. An existing dependency
+directory requires inspection before native npm reinstall. For rollback of the local
+cache workflow, run the existing `npm ci` command in the selected checkout. CI,
+App Hosting, and production still use their existing npm configuration and lockfiles.
+
+The governed installer and validation record new, known generated output only. Cleanup
+retains an output if its content differs from its recorded fingerprint or if it
+links outside the checkout. Existing generated directories, browser evidence, env
+files and unknown scratch files require explicit review. Keep emulator databases,
+runtime state and build output checkout-local. Use the standard per-user Firebase
+emulator binary and Playwright browser caches, or a single explicit binary-cache
+override for all tasks. Run cache maintenance only with agents and tool processes
+stopped. Retain release scratch and reports until their corresponding rollout and
+evidence are reconciled. Retain Git reflogs and recovery refs.
+
+Firebase App Hosting supports pnpm in general. FIKA still needs a staging build of
+its app-root layout, local `file:` dependencies, shared import tracing, and approved
+native install scripts before switching CI or deployment. The pnpm 12.23.0 probe on
+the current Windows host was blocked by Device Guard. A standard content-addressed
+store is the pilot baseline on an approved runner. NTFS hardlinks also share writes,
+so the pilot must show safe package mutation isolation. Treat the global virtual
+store as a separate local experiment with its own isolation and concurrency checks.
 
 ## Historical cutover
 
@@ -52,6 +115,15 @@ review a fresh preview and complete the report. Use Node 22.13 or later on a loc
 for post-migration operation-marker writes.
 
 ## Interrupted operations
+
+Recover an interrupted slot with `workspace recover <task> --owner <agent-task>
+--reason "<confirmed checkout processes have stopped>"`. The owner verifies that the
+creator and child processes exited. The CLI either adopts the intact baseline checkout
+or releases an empty reservation. A leftover directory, branch or dirty tree needs
+manual recovery. For interrupted governed validation, install or dev, use `workspace
+recover-operation <id> --owner <agent-task> --reason "<confirmed processes have
+stopped>"` after verifying child processes and any dev ports have stopped. A running
+PID or ambiguous ownership remains protected.
 
 Release locks, local journals and remote intent ledgers keep their existing authority.
 Use the [release operator guide](workflow.md) for interrupted releases and [deploy marker
