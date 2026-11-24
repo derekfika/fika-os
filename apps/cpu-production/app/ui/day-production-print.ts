@@ -73,9 +73,9 @@ function printCollection(order: ProductionOrder, day: string, siteKey: string, s
   const details = collectionDetails(order);
   const event = [details.client, details.event].filter(Boolean).join(" · ");
   return `<article class="collection" data-collection-id="${escape(order.canonicalId)}" data-collection-start="true" data-site-key="${escape(siteKey)}" data-site-label="${escape(siteLabel)}" data-day="${escape(day)}" data-date-label="${escape(runSheetDateLabel(day))}">
-<header class="collection-header"><h2>${escape(cpuDestinationLabel(order))}</h2>${event ? `<p class="event">${escape(event)}</p>` : ""}
+<header class="collection-header"><h2>${escape(siteLabel)}</h2>${event ? `<p class="event">${escape(event)}</p>` : ""}
 <dl class="collection-details">
-<div><dt>Service type</dt><dd>${escape(details.service)}</dd></div>
+<div><dt>Service type</dt><dd>${escape(details.service)}</dd></div>${order.menuName ? `<div><dt>Menu</dt><dd>${escape(order.menuName)}</dd></div>` : ""}
 <div><dt>Ready By</dt><dd>${escape(details.readyBy)}</dd></div>
 <div><dt>Collection Time</dt><dd>${escape(details.collection)}</dd></div>
 <div><dt>Order ref</dt><dd>${escape(details.reference)}${details.pax ? ` · PAX ${escape(details.pax)}` : ""}</dd></div>

@@ -51,7 +51,7 @@ export function cpuSourceLabel(order: ProductionOrder) {
   switch (order.origin) {
     case "hospitality_booking": return "Hospitality booking";
     case "grab_and_go": return "Grab & Go order";
-    case "menu_planning": return "Published menu";
+    case "menu_planning": return order.menuName?.trim() || "Published menu";
     case "cpu_created": return "CPU-created work";
     default: return "Imported production";
   }

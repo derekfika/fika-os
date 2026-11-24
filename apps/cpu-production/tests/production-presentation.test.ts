@@ -1,4 +1,5 @@
 import test from "node:test";
+import { allergenMatrixHtml } from "../app/ui/allergen-matrix";
 import assert from "node:assert/strict";
 import type { ProductionOrder } from "../lib/production-types";
 import { cpuAttentionKey, cpuAttentionLabel, cpuAttentionReasons, cpuLifecycle, cpuLifecycleLabels, cpuRequiredTime, cpuServiceWindow, cpuSourceLabel, isAdHocProductionOrder, isAdHocProductionOrderId } from "../lib/production-presentation";
@@ -46,6 +47,7 @@ test("CPU presentation exposes one common lifecycle while retaining source state
 test("CPU presentation names source, destination timing, and exceptions explicitly", () => {
   assert.equal(cpuSourceLabel(order({ origin: "grab_and_go" })), "Grab & Go order");
   assert.equal(cpuSourceLabel(order({ origin: "menu_planning" })), "Published menu");
+  assert.equal(cpuSourceLabel(order({ origin: "menu_planning", menuName: "Fixture Breakfast" })), "Fixture Breakfast");
   assert.equal(cpuRequiredTime(order({ requiredBy: "" })), "Time TBC");
   assert.equal(cpuRequiredTime(order({ requiredBy: "2026-08-24T00:00" })), "Time TBC");
   assert.equal(cpuAttentionLabel(order({ status: "blocked" })), "Blocked");
@@ -108,4 +110,9 @@ test("withdrawn CPU orders never fall through to Received across canonical and w
   ]) assert.equal(cpuLifecycle(candidate), "cancelled");
   assert.equal(cpuLifecycle(order({ status: "accepted", workflowStatus: "planned" })), "planned");
   assert.equal(cpuLifecycle(order({ status: "needs_review", cancellationNotice: "Investigate" })), "received");
+});
+
+test("printed allergen matrix distinguishes a supplementary menu and service", () => {
+  const html = allergenMatrixHtml({ requiredBy: "2026-11-23T08:30", serviceType: "Breakfast", menuName: "Munich Re Breakfast" }, []);
+  assert.match(html, /Munich Re Breakfast · Breakfast/);
 });

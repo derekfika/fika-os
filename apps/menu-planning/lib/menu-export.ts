@@ -11,6 +11,7 @@ export type SelectedMenuWeek = {
 const HEADERS = [
   "Week commencing", "Week status", "Service date", "Day", "Category",
   "Menu slot", "Dish", "Portions", "Destination allocations", "Source",
+  "Menu name", "Service type", "Service time",
 ] as const;
 
 function csvCell(value: string | number) {
@@ -48,7 +49,7 @@ export function menuExportCsv(weeks: readonly SelectedMenuWeek[]) {
           || left.id.localeCompare(right.id),
         );
       if (!entries.length) {
-        rows.push(csvRow([snapshot.week.weekCommencing, snapshot.week.status, day.date, day.dayName, "", "", "", "", "", source]));
+        rows.push(csvRow([snapshot.week.weekCommencing, snapshot.week.status, day.date, day.dayName, "", "", "", "", "", source, snapshot.week.supplementaryMenu?.name || "Main Delivered-In menu", snapshot.week.supplementaryMenu?.serviceType || "Delivered-In menu", snapshot.week.supplementaryMenu?.serviceTime || ""]));
         continue;
       }
       for (const entry of entries) {
@@ -59,6 +60,9 @@ export function menuExportCsv(weeks: readonly SelectedMenuWeek[]) {
           snapshot.week.weekCommencing, snapshot.week.status, day.date, day.dayName,
           slotPositions.get(entry.slot)?.category || "Other", entry.slot,
           entry.itemLabel, entry.portions, allocations, source,
+          snapshot.week.supplementaryMenu?.name || "Main Delivered-In menu",
+          snapshot.week.supplementaryMenu?.serviceType || "Delivered-In menu",
+          snapshot.week.supplementaryMenu?.serviceTime || "",
         ]));
       }
     }

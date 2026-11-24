@@ -21,6 +21,7 @@ export type GastroLabelDish = {
   id: string;
   name: string;
   sortOrder: number;
+  menuName?: string;
 };
 
 export type GastroLabelQuantity = GastroLabelDish & { quantity: number; date: string };
@@ -60,9 +61,11 @@ export function gastroLabelDishes(
       // A missing optional line route inherits Menu Planning's canonical
       // Delivered-In source. An explicit non-Delivered-In route still fails closed.
       if ((line.workstream !== "delivered_in" && !(order.origin === "menu_planning" && line.workstream === undefined)) || !line.canonicalId || !line.itemName?.trim()) continue;
-      const id = line.sourceMenuItemId?.trim() || line.canonicalId;
+      const itemId = line.sourceMenuItemId?.trim() || line.canonicalId;
+      const id = order.sourceMenuId ? `${order.sourceMenuId}:${itemId}` : itemId;
+      const menuName = order.menuName?.trim();
       const current = dishes.get(id);
-      const candidate = { id, name: line.itemName.trim(), sortOrder: line.sortOrder };
+      const candidate = { id, name: line.itemName.trim(), sortOrder: line.sortOrder, ...(menuName ? { menuName } : {}) };
       if (!current || candidate.sortOrder < current.sortOrder ||
         (candidate.sortOrder === current.sortOrder && candidate.name.localeCompare(current.name) < 0)) {
         dishes.set(id, candidate);
@@ -197,7 +200,7 @@ export function gastroLabelDateLabel(date: string) {
 
 function labelMarkup(row: GastroLabelQuantity, dateLabel: string, fit: GastroLabelFit) {
   if (!fit.fits) throw new Error(`“${row.name}” cannot fit at the minimum readable size of ${GASTRO_LABEL_FONT.minimumPt} pt. Reduce the label quantity or review the dish name before printing.`);
-  return `<article class="label" style="--dish-font-size:${fit.fontSizePt}pt"><h2>${escapePrintHtml(row.name)}</h2><p class="date">${escapePrintHtml(dateLabel)}</p><p class="site"><strong>SITE:</strong> <span></span></p><small>FIKA X</small></article>`;
+  return `<article class="label" style="--dish-font-size:${fit.fontSizePt}pt"><h2>${escapePrintHtml(row.name)}</h2>${row.menuName ? `<p class="service">${escapePrintHtml(row.menuName)}</p>` : ""}<p class="date">${escapePrintHtml(dateLabel)}</p><p class="site"><strong>SITE:</strong> <span></span></p><small>FIKA X</small></article>`;
 }
 
 export function gastroLabelsPrintHtml(rows: readonly GastroLabelQuantity[], startPosition: number, fittedNames: Readonly<Record<string, GastroLabelFit>>) {
@@ -210,7 +213,7 @@ export function gastroLabelsPrintHtml(rows: readonly GastroLabelQuantity[], star
   }).join("")}</main>`).join("");
   const t = GASTRO_LABEL_TEMPLATE;
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FIKA X Gastro Labels · ${escapePrintHtml(dateLabel)}</title><style>
-*{box-sizing:border-box}html,body{margin:0;padding:0;color:#24163b;font-family:Arial,Helvetica,sans-serif}.screen-note{max-width:720px;margin:24px auto;padding:16px 20px;border:1px solid #dcd6ea;border-radius:8px;background:#fff;font-size:14px;line-height:1.45}.screen-note strong{color:#280f8c}.sheet{position:relative;width:${t.sheetWidthMm}mm;height:${t.sheetHeightMm}mm;margin:12px auto;background:#fff;overflow:hidden;break-after:page;page-break-after:always;display:grid;grid-template-columns:repeat(${t.columns},${t.labelWidthMm}mm);grid-template-rows:repeat(${t.rows},${t.labelHeightMm}mm);column-gap:${t.horizontalGapMm}mm;row-gap:${t.verticalGapMm}mm;padding:${t.topMarginMm}mm 0 0 ${t.leftMarginMm}mm}.sheet:last-of-type{break-after:auto;page-break-after:auto}.label,.empty-cell{width:${t.labelWidthMm}mm;height:${t.labelHeightMm}mm;overflow:hidden}.label{display:flex;flex-direction:column;justify-content:center;padding:4mm 5mm 3mm;border:0 solid #dcd6ea}.label h2{flex:1 1 auto;min-height:0;margin:0 0 2mm;display:flex;align-items:center;justify-content:center;text-align:center;font-weight:700;font-size:var(--dish-font-size);line-height:1.08;overflow-wrap:anywhere;hyphens:auto}.date{flex:0 0 auto;margin:1mm 0 2mm;text-align:center;font-size:11pt;line-height:1.1}.site{flex:0 0 auto;display:flex;align-items:flex-end;gap:2mm;margin:auto 0 1mm;font-size:10pt;line-height:1.2}.site span{flex:1 1 auto;border-bottom:1px solid #24163b;height:5mm}.label small{flex:0 0 auto;align-self:flex-end;margin-top:1mm;font-size:7pt;font-weight:700;letter-spacing:.08em;color:#4f34c7}.screen-note + .sheet{margin-top:0}
+*{box-sizing:border-box}html,body{margin:0;padding:0;color:#24163b;font-family:Arial,Helvetica,sans-serif}.screen-note{max-width:720px;margin:24px auto;padding:16px 20px;border:1px solid #dcd6ea;border-radius:8px;background:#fff;font-size:14px;line-height:1.45}.screen-note strong{color:#280f8c}.sheet{position:relative;width:${t.sheetWidthMm}mm;height:${t.sheetHeightMm}mm;margin:12px auto;background:#fff;overflow:hidden;break-after:page;page-break-after:always;display:grid;grid-template-columns:repeat(${t.columns},${t.labelWidthMm}mm);grid-template-rows:repeat(${t.rows},${t.labelHeightMm}mm);column-gap:${t.horizontalGapMm}mm;row-gap:${t.verticalGapMm}mm;padding:${t.topMarginMm}mm 0 0 ${t.leftMarginMm}mm}.sheet:last-of-type{break-after:auto;page-break-after:auto}.label,.empty-cell{width:${t.labelWidthMm}mm;height:${t.labelHeightMm}mm;overflow:hidden}.label{display:flex;flex-direction:column;justify-content:center;padding:4mm 5mm 3mm;border:0 solid #dcd6ea}.label h2{flex:1 1 auto;min-height:0;margin:0 0 2mm;display:flex;align-items:center;justify-content:center;text-align:center;font-weight:700;font-size:var(--dish-font-size);line-height:1.08;overflow-wrap:anywhere;hyphens:auto}.service{flex:0 0 auto;margin:0 0 1mm;text-align:center;font-size:9pt;font-weight:700;line-height:1.1}.date{flex:0 0 auto;margin:1mm 0 2mm;text-align:center;font-size:11pt;line-height:1.1}.site{flex:0 0 auto;display:flex;align-items:flex-end;gap:2mm;margin:auto 0 1mm;font-size:10pt;line-height:1.2}.site span{flex:1 1 auto;border-bottom:1px solid #24163b;height:5mm}.label small{flex:0 0 auto;align-self:flex-end;margin-top:1mm;font-size:7pt;font-weight:700;letter-spacing:.08em;color:#4f34c7}.screen-note + .sheet{margin-top:0}
 @page{size:A4 portrait;margin:0}@media print{.screen-note{display:none}.sheet{margin:0;break-after:page;page-break-after:always}.sheet:last-of-type{break-after:auto;page-break-after:auto}}
 </style></head><body><section class="screen-note"><strong>Print at Actual size / 100%.</strong> Disable fit-to-page, scaling, headers and footers in the browser/printer dialog. If the system print dialog does not open, use your browser’s menu to print this page. Printer and tray alignment still need the kitchen’s physical Trial C check.</section>${pageMarkup}</body></html>`;
 }

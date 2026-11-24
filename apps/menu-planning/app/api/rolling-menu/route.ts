@@ -6,12 +6,16 @@ import {
   batchUpdateEntries,
   cleanDuplicateEntries,
   createEntry,
+  createSupplementaryMenuWeek,
   createOrReuseBlankWeek,
+  discontinueSupplementaryMenu,
   createWeekSnapshot,
   defaultWeekForDate,
   duplicateWeek,
   getWeek,
+  ensureSupplementaryMenuWeeks,
   listWeeks,
+  listSupplementaryMenuTemplates,
   normaliseRollingSnapshotDestinations,
   planningWeekCommencing,
   planningWeekFromQuery,
@@ -19,7 +23,9 @@ import {
   resetWeek,
   saveSnapshot,
   setWeekAvailableToHospitality,
+  setSupplementaryMenuOccurrenceSkipped,
   updateEntry,
+  updateSupplementaryMenuOccurrence,
   validateWeek,
   validateWeekAuthoritative,
 } from "@/lib/rolling-menu";
@@ -380,6 +386,77 @@ async function handlePost(request: NextRequest) {
         blockers: await validateWeekAuthoritative(scopedSnapshot(snapshot, actor)),
         publicationState: await readPublicationState(snapshot),
       });
+    }
+    if (action === "create-supplementary-menu") {
+      const weekId = String(body.weekId || "");
+      const dayId = String(body.dayId || "");
+      const parent = await getWeek(weekId);
+      const day = parent.days.find(value => value.id === dayId);
+      if (!day) throw Object.assign(new Error("Choose a day in the current planning week."), { status: 422 });
+      const name = String(body.name || "").trim();
+      const serviceType = String(body.serviceType || "");
+      const siteIds = [...new Set(Array.isArray(body.siteIds) ? body.siteIds.map(String) : [])];
+      const serviceTime = String(body.serviceTime || "").trim();
+      const kitchenNotes = String(body.kitchenNotes || "").trim();
+      const recurrenceWeekdays = [...new Set(Array.isArray(body.recurrenceWeekdays) ? body.recurrenceWeekdays.map(Number) : [])];
+      if (!name || name.length > 100) throw Object.assign(new Error("Enter a menu name up to 100 characters."), { status: 422 });
+      const menuId = String(body.menuId || crypto.randomUUID());
+      if (!/^[A-Za-z0-9_-]{8,100}$/.test(menuId)) throw Object.assign(new Error("The additional menu identity is invalid."), { status: 422 });
+      if (!["Breakfast", "Lunch", "Dinner", "Other"].includes(serviceType)) throw Object.assign(new Error("Choose Breakfast, Lunch, Dinner or Other."), { status: 422 });
+      if (!siteIds.length || siteIds.some(id => !readableOplocs.some(site => site.canonicalId === (aliases.get(id) || id)))) throw Object.assign(new Error("Choose at least one current governed OPLOC."), { status: 422 });
+      const canonicalSiteIds = siteIds.map(id => aliases.get(id) || id);
+      if (canonicalSiteIds.some(id => !actorCanWriteOploc(actor, id, "manage"))) throw Object.assign(new Error("This menu includes a site outside your management scope."), { status: 403 });
+      if (serviceTime && !/^([01]\d|2[0-3]):[0-5]\d$/.test(serviceTime)) throw Object.assign(new Error("Enter a service time in 24-hour HH:MM format."), { status: 422 });
+      if (kitchenNotes.length > 4000) throw Object.assign(new Error("Kitchen notes must be 4,000 characters or fewer."), { status: 422 });
+      if (recurrenceWeekdays.some(day => !Number.isInteger(day) || day < 1 || day > 7)) throw Object.assign(new Error("Choose valid weekdays for the recurring schedule."), { status: 422 });
+      const menu = {
+        id: menuId, name, serviceType: serviceType as "Breakfast" | "Lunch" | "Dinner" | "Other",
+        siteIds: canonicalSiteIds,
+        siteLabels: Object.fromEntries(canonicalSiteIds.map(id => [id, readableOplocs.find(site => site.canonicalId === id)?.label || id])),
+        ...(!recurrenceWeekdays.length ? { serviceDate: day.date } : {}),
+        ...(serviceTime ? { serviceTime } : {}),
+        ...(kitchenNotes ? { kitchenNotes } : {}),
+        ...(recurrenceWeekdays.length ? { recurrenceWeekdays } : {}),
+      };
+      const previous = body.startWithPrevious === true
+        ? (await listWeeks()).filter(value => value.supplementaryMenu?.id === menu.id && value.weekCommencing < parent.week.weekCommencing).sort((left, right) => right.weekCommencing.localeCompare(left.weekCommencing))[0]
+        : undefined;
+      const snapshot = await createSupplementaryMenuWeek(parent.week.weekCommencing, menu, actor.uid, previous?.id);
+      return respond({ snapshot, weeks: await readWeeks(), publicationState: await readPublicationState(snapshot) });
+    }
+    if (action === "ensure-recurring-menus") {
+      const weekCommencing = planningWeekCommencing(String(body.weekCommencing || ""));
+      const weekIds = await ensureSupplementaryMenuWeeks(weekCommencing, actor.uid);
+      return respond({ weekIds, weeks: await readWeeks() });
+    }
+    if (action === "skip-supplementary-menu") {
+      const weekId = String(body.weekId || "");
+      const target = await getWeek(weekId);
+      if (!target.week.supplementaryMenu) throw Object.assign(new Error("The selected menu is not supplementary."), { status: 409 });
+      assertMenuSnapshotMutationScope(target, actor, "manage", aliases);
+      if (target.week.supplementaryMenu.siteIds.some(id => !actorCanWriteOploc(actor, id, "manage"))) throw Object.assign(new Error("This menu includes a site outside your management scope."), { status: 403 });
+      const snapshot = await setSupplementaryMenuOccurrenceSkipped(weekId, Number(body.expectedWeekVersion), body.skipped !== false, actor.uid);
+      return respond({ snapshot, weeks: await readWeeks() });
+    }
+    if (action === "update-supplementary-menu") {
+      const weekId = String(body.weekId || "");
+      const target = await getWeek(weekId);
+      if (!target.week.supplementaryMenu) throw Object.assign(new Error("The selected menu is not supplementary."), { status: 409 });
+      assertMenuSnapshotMutationScope(target, actor, "manage", aliases);
+      if (target.week.supplementaryMenu.siteIds.some(id => !actorCanWriteOploc(actor, id, "manage"))) throw Object.assign(new Error("This menu includes a site outside your management scope."), { status: 403 });
+      const serviceType = String(body.serviceType || "");
+      if (!["Breakfast", "Lunch", "Dinner", "Other"].includes(serviceType)) throw Object.assign(new Error("Choose Breakfast, Lunch, Dinner or Other."), { status: 422 });
+      const recurrenceWeekdays = Array.isArray(body.recurrenceWeekdays) ? [...new Set(body.recurrenceWeekdays.map(Number))] : undefined;
+      const snapshot = await updateSupplementaryMenuOccurrence(weekId, Number(body.expectedWeekVersion), { name: String(body.name || ""), serviceType: serviceType as "Breakfast" | "Lunch" | "Dinner" | "Other", serviceTime: body.serviceTime === undefined ? undefined : String(body.serviceTime), kitchenNotes: body.kitchenNotes === undefined ? target.week.supplementaryMenu.kitchenNotes : String(body.kitchenNotes), applyToFuture: body.applyToFuture === true, recurrenceWeekdays }, actor.uid);
+      return respond({ snapshot, weeks: await readWeeks(), publicationState: await readPublicationState(snapshot) });
+    }
+    if (action === "discontinue-supplementary-menu") {
+      const menuId = String(body.menuId || "");
+      const menu = (await listSupplementaryMenuTemplates()).find(value => value.id === menuId);
+      if (!menu) throw Object.assign(new Error("The recurring menu was not found."), { status: 404 });
+      if (menu.siteIds.some(id => !actorCanWriteOploc(actor, id, "manage"))) throw Object.assign(new Error("This recurring menu includes a site outside your management scope."), { status: 403 });
+      const result = await discontinueSupplementaryMenu(menuId, String(body.discontinuedAfter || ""), actor.uid);
+      return respond({ recurrence: result, weeks: await readWeeks() });
     }
     if (action === "duplicate-week") {
       requireOrganisationMutationActor(actor);

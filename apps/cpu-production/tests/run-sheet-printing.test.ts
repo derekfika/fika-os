@@ -205,3 +205,19 @@ test("internal run-sheet print escapes and preserves multiline kitchen notes", (
   assert.match(html, /<strong>Kitchen notes<\/strong><p>Keep warm<br>&lt;script&gt;alert\(1\)&lt;\/script&gt;<\/p>/);
   assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/);
 });
+
+test("supplementary menus at the same OPLOC retain separate run sheet identities and labels", () => {
+  const day = "2026-10-30";
+  const breakfast = { ...order("order:breakfast", day, "oploc:munich", "Munich Re"), origin: "menu_planning", sourceMenuId: "menu:breakfast", menuName: "Munich Re Breakfast", serviceType: "Breakfast", requiredBy: `${day}T08:30:00Z`, serviceWindow: { startTime: "08:30" }, guestCount: 31 } as ProductionOrder;
+  const lunch = { ...order("order:lunch", day, "oploc:munich", "Munich Re"), origin: "menu_planning", sourceMenuId: "menu:lunch", menuName: "Munich Re Lunch", serviceType: "Lunch" } as ProductionOrder;
+  assert.equal(runSheetDestinationKey(breakfast), "oploc:oploc:munich:menu:menu:breakfast");
+  const options = runSheetPrintSiteOptions(new Map([[day, [breakfast, lunch]]]), [day]);
+  assert.equal(options.length, 2);
+  assert.deepEqual(options.map(({ label }) => label), ["Munich Re — Breakfast", "Munich Re — Lunch"]);
+  const html = runSheetProductionPrintHtml(new Map([[day, [breakfast, lunch]]]), [day], options.map(({ key }) => key));
+  assert.match(html, /Munich Re — Breakfast/);
+  assert.match(html, /Munich Re — Lunch/);
+  assert.match(html, /Munich Re Lunch/);
+  assert.match(html, /PAX 31/);
+  assert.match(html, /08:30/);
+});

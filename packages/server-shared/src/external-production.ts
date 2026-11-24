@@ -20,6 +20,12 @@ export type ExternalProductionMaterialisation = {
   sourceVersion: number;
   sourceContentHash?: string;
   sourcePublicationDayId?: string;
+  /** Optional additional menu identity and presentation context; legacy daily menus omit these fields. */
+  menuId?: string;
+  menuName?: string;
+  serviceType?: "Breakfast" | "Lunch" | "Dinner" | "Other";
+  serviceTime?: string;
+  kitchenNotes?: string;
   /** Legacy routing-key field: an explicit one-off snapshot uses its day-scoped ID, never a Hub OPLOC record. */
   destinationOplocId: string;
   destination?: MenuDestination;
@@ -73,6 +79,11 @@ export const approvedAllergenSnapshotSchema = z.object({
   allergenReview: z.object({ status: z.literal("confirmed"), semantics: z.union([z.literal(2), z.literal(3)]), confirmedBy: z.string().min(1), confirmedAt: z.string().min(1), statement: z.literal("recipe-ingredients-allergens-verified"), inputFingerprint: z.string().min(1) }).optional(),
   noKeyDeclaration: z.object({ declared: z.literal(true), declaredBy: z.string().min(1), declaredAt: z.string().min(1) }).optional(),
   sourcePublicationDayId: z.string().optional(),
+  menuId: z.string().trim().min(1).max(160).optional(),
+  menuName: z.string().trim().min(1).max(100).optional(),
+  serviceType: z.enum(["Breakfast", "Lunch", "Dinner", "Other"]).optional(),
+  serviceTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(),
+  kitchenNotes: z.string().trim().max(4000).optional(),
   sourceVersion: z.number().int().positive().optional(),
   sourceContentHash: z.string().optional(),
 }).superRefine((snapshot, context) => {
@@ -87,6 +98,11 @@ export const externalProductionMaterialisationInput = z.object({
   sourceVersion: z.number().int().positive(),
   sourceContentHash: z.string().optional(),
   sourcePublicationDayId: z.string().optional(),
+  menuId: z.string().trim().min(1).optional(),
+  menuName: z.string().trim().min(1).max(100).optional(),
+  serviceType: z.enum(["Breakfast", "Lunch", "Dinner", "Other"]).optional(),
+  serviceTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(),
+  kitchenNotes: z.string().trim().max(4000).optional(),
   destinationOplocId: z.string().trim().min(1),
   destination: z.discriminatedUnion("kind", [
     z.object({ kind: z.literal("governed"), id: z.string().min(1), label: z.string().min(1) }).strict(),
@@ -118,6 +134,9 @@ export const externalProductionMaterialisationInput = z.object({
   }
   if (input.guestCount !== undefined && (!input.publicationId || !input.sourcePublicationDayId || !/^[a-f0-9]{64}$/i.test(input.sourceContentHash || ""))) {
     context.addIssue({ code: "custom", message: "Menu PAX requires immutable publication lineage.", path: ["guestCount"] });
+  }
+  if ((input.menuId || input.menuName || input.serviceType || input.serviceTime || input.kitchenNotes) && (!input.menuId || !input.menuName || !input.serviceType || input.sourceDomain !== "menu-planning")) {
+    context.addIssue({ code: "custom", message: "Supplementary service metadata requires a Menu Planning identity, name, and service type.", path: ["menuId"] });
   }
   input.lines.forEach((line, index) => {
     if (line.isCoreSalad === true && (input.sourceDomain !== "menu-planning" || !/^SALAD [1-6]$/i.test(line.slot || ""))) {

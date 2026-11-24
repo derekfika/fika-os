@@ -137,6 +137,7 @@ export type CompiledPublishedWeekSnapshot = {
     sourceDayId: string;
     date: string;
     dayName: string;
+    serviceMenu?: { id: string; name: string; serviceType: string; serviceTime?: string; kitchenNotes?: string };
     version: number;
     destinationPax?: SitePax;
     retainedSiteLineage?: RetainedMenuSiteLineage;
@@ -160,6 +161,7 @@ export type PublishedMenuDay = {
   sourceDayId: string;
   date: string;
   dayName: string;
+  serviceMenu?: { id: string; name: string; serviceType: string; serviceTime?: string; kitchenNotes?: string };
   version: number;
   status: "published" | "superseded" | "withdrawn";
   contentHash: string;
@@ -217,6 +219,13 @@ const stable = (value: unknown): string => {
 };
 export const contentHash = (value: unknown) =>
   createHash("sha256").update(stable(value)).digest("hex");
+export function serviceDaysForWeek(snapshot: RollingSnapshot) {
+  const menu = snapshot.week.supplementaryMenu;
+  if (!menu) return snapshot.days.slice(0, 5);
+  if (menu.serviceDate) return snapshot.days.filter(day => day.date === menu.serviceDate);
+  if (menu.recurrenceWeekdays?.length) return snapshot.days.filter(day => menu.recurrenceWeekdays!.includes(new Date(`${day.date}T00:00:00Z`).getUTCDay() || 7));
+  return [];
+}
 /** True only when a server-stamped working draft still targets the current publication lineage. */
 export function hasCurrentPublishedWorkingDraft(week: Pick<RollingWeek, "audit">, publication: Pick<MenuPublication, "days"> | undefined, sourceDayId?: string) {
   if (!publication) return false;
@@ -259,8 +268,7 @@ const normalizePublicationValue = <T>(value: T): T => {
 };
 export const publishedDayMatrixHtml = publishedAllergenMatrixHtml;
 const populatedWeekdays = (snapshot: RollingSnapshot) =>
-  snapshot.days
-    .slice(0, 5)
+  serviceDaysForWeek(snapshot)
     .filter((day) =>
       snapshot.entries.some(
         (entry) => entry.dayId === day.id && entry.itemLabel.trim(),
@@ -400,6 +408,7 @@ function historicalDayMatchesWorkingOrder(current: PublishedMenuDay, day: Rollin
   return contentHash(normalizePublicationValue({ sourceDayId, date, dayName, entries, destinationPax })) === workingHash;
 }
 export function buildPublishedDay(snapshot: RollingSnapshot, day: RollingDay, canonicalDishes: readonly MenuItem[] = [], options: PublicationBuildOptions = {}) {
+  if (snapshot.week.menuOccurrenceStatus === "skipped") throw Object.assign(new Error("This recurring menu occurrence is skipped and cannot be published."), { status: 409 });
   const entries = orderedEntriesForDay(snapshot, day).map((entry) => {
     const allocations = entry.allocations.slice().sort((left, right) =>
       compareStableText(allocationIdentity(left), allocationIdentity(right)) ||
@@ -413,6 +422,13 @@ export function buildPublishedDay(snapshot: RollingSnapshot, day: RollingDay, ca
     sourceDayId: day.id,
     date: day.date,
     dayName: day.dayName,
+    ...(snapshot.week.supplementaryMenu ? { serviceMenu: {
+      id: snapshot.week.supplementaryMenu.id,
+      name: snapshot.week.supplementaryMenu.name,
+      serviceType: snapshot.week.supplementaryMenu.serviceType,
+      ...(snapshot.week.supplementaryMenu.serviceTime ? { serviceTime: snapshot.week.supplementaryMenu.serviceTime } : {}),
+      kitchenNotes: snapshot.week.supplementaryMenu.kitchenNotes || "",
+    } } : {}),
     destinationPax: day.destinationPax,
     entries,
   });
@@ -473,6 +489,7 @@ export function buildCompiledPublicationSnapshot(
         sourceDayId: day.sourceDayId,
         date: day.date,
         dayName: day.dayName,
+        serviceMenu: day.serviceMenu,
         version: day.version,
         contentHash: day.contentHash,
         destinationPax: day.destinationPax,
@@ -531,6 +548,7 @@ export function publicationDayBlockers(
   governedOplocIds?: Set<string>,
   activeCanonicalDishIds?: Set<string>,
 ) {
+  if (snapshot.week.menuOccurrenceStatus === "skipped") return ["This recurring menu occurrence is skipped."];
   try {
     validateDay(snapshot, dayId, governedOplocIds, activeCanonicalDishIds);
     return [];
@@ -548,7 +566,7 @@ export function publicationWeekBlockers(
   activeCanonicalDishIds?: Set<string>,
 ) {
   const blockers: string[] = [];
-  const weekdays = snapshot.days.slice(0, 5);
+  const weekdays = serviceDaysForWeek(snapshot);
   if (weekdays.length < 5)
     blockers.push("The menu week must contain five service days.");
   if (
@@ -675,6 +693,13 @@ function appendPublicationEvents(
           sourceEntityId: day.sourceDayId,
           publicationId: publication.publicationId,
           sourcePublicationDayId: lineage.publicationDayId,
+          ...(day.serviceMenu ? {
+            menuId: day.serviceMenu.id,
+            menuName: day.serviceMenu.name,
+            serviceType: day.serviceMenu.serviceType,
+            ...(day.serviceMenu.serviceTime ? { serviceTime: day.serviceMenu.serviceTime } : {}),
+            kitchenNotes: day.serviceMenu.kitchenNotes || "",
+          } : {}),
           sourceVersion: lineage.version,
           sourceContentHash: lineage.contentHash,
           destinationOplocId,
@@ -929,7 +954,7 @@ function makeDemandOperations(before: DemandLine[], after: DemandLine[]): Publis
   for (const line of added) if (!replacedNew.has(line)) operations.push({ kind: "added", sourceDayId: line.sourceDayId, date: line.date, dayName: line.dayName, siteId: line.siteId, siteLabel: line.siteLabel, slot: line.slot, after: demandPayload(line) });
   return operations.sort((a, b) => compareStableText(a.sourceDayId, b.sourceDayId) || compareStableText(a.siteId, b.siteId) || compareStableText(a.slot, b.slot) || compareStableText(a.kind, b.kind) || compareStableText(a.after?.dishId || a.before?.dishId || "", b.after?.dishId || b.before?.dishId || ""));
 }
-type ImpactDay = Pick<PublishedMenuDay, "sourceDayId" | "date" | "dayName" | "contentHash" | "entries" | "destinationPax">;
+type ImpactDay = Pick<PublishedMenuDay, "sourceDayId" | "date" | "dayName" | "contentHash" | "entries" | "destinationPax" | "serviceMenu">;
 export function amendmentImpactForDays(beforeDays: readonly ImpactDay[], afterDays: readonly ImpactDay[]): PublishedWeekAmendmentImpactSummary {
   const grouped = (days: readonly ImpactDay[]) => {
     type ImpactEntry = { entry: PublishedMenuEntry; quantity: number; allocation: PublishedMenuEntry["allocations"][number] };
@@ -958,6 +983,7 @@ export function amendmentImpactForDays(beforeDays: readonly ImpactDay[], afterDa
     const demandQuantityChanged = JSON.stringify([...priorQuantities].sort(([left], [right]) => compareStableText(left, right))) !== JSON.stringify([...nextQuantities].sort(([left], [right]) => compareStableText(left, right)));
     const demandDetails = (value: typeof prior) => ({
       date: value?.day.date, dayName: value?.day.dayName,
+      serviceMenu: value?.day.serviceMenu,
       entries: (value?.entries || []).map(({ entry, allocation }) => ({
       sourceEntryId: entry.sourceEntryId, canonicalDishId: entry.canonicalDishId || "", slot: entry.slot,
       dishName: entry.dishName, destination: allocation.destination, destinationLabel: allocation.destinationLabel,
@@ -1023,7 +1049,7 @@ export function compareWorkingWeekToPublication(
       .map((day) => [day.sourceDayId, day]) || [],
   );
   const dayHasUnpublishedChanges = Object.fromEntries(
-    normalized.days.slice(0, 5).map((day) => {
+    serviceDaysForWeek(normalized).map((day) => {
       const current = currentDays.get(day.id);
       const working = buildPublishedDay(normalized, day, canonicalDishes);
       // An intentionally blank day is equivalent to no published day. A
@@ -1036,7 +1062,7 @@ export function compareWorkingWeekToPublication(
     }),
   );
   const baselineDays = (publication?.days || []).filter(day => day.status === "published").sort((a, b) => compareStableText(a.sourceDayId, b.sourceDayId));
-  const candidateDays = normalized.days.slice(0, 5).map(day => ({ day, preview: buildPublishedDay(normalized, day, canonicalDishes) }));
+  const candidateDays = serviceDaysForWeek(normalized).map(day => ({ day, preview: buildPublishedDay(normalized, day, canonicalDishes) }));
   const before = baselineDays.flatMap(day => demandLines(day.sourceDayId, day.date, day.dayName, day.entries || []));
   const after = candidateDays.flatMap(({ day, preview }) => demandLines(day.id, preview.date, preview.dayName, preview.entries));
   const paxOperations = candidateDays.flatMap(({ day, preview }) => {
@@ -1085,7 +1111,7 @@ export async function publicationState(
   const publication = scopePublication && storedPublication ? scopePublication(storedPublication) : storedPublication;
   const comparison = compareWorkingWeekToPublication(normalized, publication, governedOplocs, resolvedCanonicalDishes);
   return Object.fromEntries(
-    normalized.days.slice(0, 5).map((day) => {
+    serviceDaysForWeek(normalized).map((day) => {
       const current = publication?.days
         .filter(
           (value) =>
@@ -1208,7 +1234,15 @@ export async function publishScopedPublishedWeekAmendment(
       previews.set(dayId, buildPublishedDay(snapshot, day, canonicalDishes, { requireAuthoritativeCatalogue: hostedPublication(), allowExplicitReviewWithoutCatalogue: !hostedPublication() }));
     }
     const publishedAt = now();
-    const changedSites = new Map(changedDayIds.map(dayId => [dayId, new Set(comparison.changeSet.operations.filter(operation => operation.sourceDayId === dayId).map(operation => operation.siteId))]));
+    const changedSites = new Map(changedDayIds.map(dayId => {
+      const operations = comparison.changeSet.operations.filter(operation => operation.sourceDayId === dayId);
+      const current = currentDays.get(dayId);
+      const preview = previews.get(dayId);
+      const sites = operations.length
+        ? operations.map(operation => operation.siteId)
+        : [...(current?.entries || []), ...(preview?.entries || [])].flatMap(entry => entry.allocations.map(allocation => publishedSiteIdentity(allocation)));
+      return [dayId, new Set(sites)] as const;
+    }));
     const changedDays: PublishedMenuDay[] = changedDayIds.map(dayId => {
       const preview = previews.get(dayId)!;
       const prior = currentDays.get(dayId)!;
@@ -1806,7 +1840,7 @@ export async function withdrawPublishedMenuWeek(
       const rolling = state.rolling as unknown as RollingMenuStored;
       const snapshot = snapshotFromStored(rolling, publication.sourceWeekId);
       snapshot.week.dayStatuses = Object.fromEntries(
-        snapshot.days.slice(0, 5).map((day) => [day.id, "draft"]),
+        serviceDaysForWeek(snapshot).map((day) => [day.id, "draft"]),
       );
       snapshot.week.status = "draft";
       snapshot.week.version += 1;
