@@ -3,12 +3,12 @@ import test from 'node:test';
 import path from 'node:path';
 import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
-import { existsSync, linkSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, linkSync, mkdirSync, readFileSync, readdirSync, renameSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { fixture } from './lifecycle-fixture.mjs';
 import { createWorkspace, workspaceRecords } from './workspaces.mjs';
 import { integrateSourceWorkspace, createSourceWorkspace, completeSourceWorkspace, recoverSourceReservation, runSourceOperation } from './source-workspaces.mjs';
-import { samePath, sourceTaskFile, withCapacityLock, workspaceInventory } from './workspace-capacity.mjs';
+import { sourceTaskFile, withCapacityLock, workspaceInventory } from './workspace-capacity.mjs';
 import { cleanupSourceWorkspaces, integrationEvidence, pruneStaleSourceRegistrations } from './workspace-retirement.mjs';
 import { installSourceDependencies, recordGenerated } from './workspace-cache.mjs';
 import { sourceWorkspaceHealth } from './workspace-health.mjs';
@@ -90,7 +90,9 @@ test('simultaneous independent processes reserve at most five slots and queue th
     const over = f.within(workspaceInventory);
     assert.equal(over.occupied, 6);
     assert.equal(over.available, 0);
-    assert.ok(over.entries.some(entry => entry.state === 'unmanaged' && samePath(realpathSync(entry.directory), realpathSync(unmanaged))));
+    const detached = over.entries.filter(entry => entry.branch === null);
+    assert.equal(detached.length, 1, JSON.stringify(over.entries));
+    assert.equal(detached[0].state, 'unmanaged');
     assert.equal((await run('slot-new')).state, 'queued');
     assert.equal(existsSync(unmanaged), true);
   } finally { f.dispose(); }
