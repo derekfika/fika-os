@@ -3,7 +3,7 @@ import test from 'node:test';
 import path from 'node:path';
 import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
-import { existsSync, linkSync, mkdirSync, readFileSync, readdirSync, renameSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, linkSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { fixture } from './lifecycle-fixture.mjs';
 import { createWorkspace, workspaceRecords } from './workspaces.mjs';
@@ -90,7 +90,7 @@ test('simultaneous independent processes reserve at most five slots and queue th
     const over = f.within(workspaceInventory);
     assert.equal(over.occupied, 6);
     assert.equal(over.available, 0);
-    assert.equal(over.entries.find(entry => samePath(entry.directory, unmanaged)).state, 'unmanaged');
+    assert.ok(over.entries.some(entry => entry.state === 'unmanaged' && samePath(realpathSync(entry.directory), realpathSync(unmanaged))));
     assert.equal((await run('slot-new')).state, 'queued');
     assert.equal(existsSync(unmanaged), true);
   } finally { f.dispose(); }
