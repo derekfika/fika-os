@@ -114,7 +114,7 @@ async function main() {
       result = sourceWorkspaceHealth(options);
       if (options.output) save(options.output, result);
     }
-    else if (arg === 'status' || arg === 'list') result = { observedAt: new Date().toISOString(), ...withCapacityLock(workspaceInventory) };
+    else if (arg === 'status' || arg === 'list') result = { observedAt: new Date().toISOString(), ...workspaceInventory() };
     else if (arg === 'history') result = workspaceRecords();
     else if (arg === 'migrate') result = migrateSourceHistory(options);
     else if (arg === 'install-fences') result = installWorkspaceFences();

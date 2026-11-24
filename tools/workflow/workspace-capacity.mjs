@@ -26,12 +26,11 @@ export function localEntry(file) {
 }
 
 export function stateRecords(area) {
-  const dir = path.join(stateDir(), area);
-  try { return readdirSync(dir).filter(file => file.endsWith('.json')).map(file => jsonFile(path.join(dir, file))); }
-  catch (error) {
-    if (error.code === 'ENOENT' && !localEntry(dir)) return [];
-    throw error;
-  }
+  const dir = path.join(common(), 'fika-workflow', area);
+  let files;
+  try { files = readdirSync(dir); }
+  catch (error) { if (error.code === 'ENOENT') return []; throw error; }
+  return files.filter(file => file.endsWith('.json')).map(file => optionalJson(path.join(dir, file))).filter(Boolean);
 }
 
 export function registrations() {

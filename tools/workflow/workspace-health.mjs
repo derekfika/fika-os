@@ -3,7 +3,7 @@ import { mkdtempSync, rmdirSync, statfsSync, unlinkSync, writeFileSync } from 'n
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { command } from './runtime.mjs';
-import { canonical, localEntry, requireCanonical, withCapacityLock, workspaceInventory } from './workspace-capacity.mjs';
+import { canonical, localEntry, requireCanonical, workspaceInventory } from './workspace-capacity.mjs';
 import { cleanupSourceWorkspaces } from './workspace-retirement.mjs';
 import { sharedNpmCache } from './workspace-cache.mjs';
 
@@ -12,7 +12,7 @@ export function sourceWorkspaceHealth(options = {}) {
   const scanRoot = path.dirname(canonical());
   const minimumFreeGB = Number(options['min-free-gb'] ?? process.env.FIKA_WORKSPACE_MIN_FREE_GB ?? 25);
   if (!Number.isFinite(minimumFreeGB) || minimumFreeGB < 0) throw Error('Disk warning threshold must be a nonnegative number of GB');
-  const inventory = withCapacityLock(workspaceInventory);
+  const inventory = workspaceInventory();
   const { bsize, bavail } = statfsSync(scanRoot);
   let disk = { scanRoot, volumeFreeBytes: bsize * bavail, physicalScan: 'not requested' };
   let cleanup = null;
