@@ -52,6 +52,14 @@ export function requestValidationErrors(raw: unknown, issues: Array<{ path: Prop
 type WorkingDraftLineage = { dayId: string; publicationDayId: string; publicationVersion: number };
 type Receipt = RollingWeek["audit"][number] & { requestId?: string; fingerprint?: string; baseVersion?: number; savedVersion?: number; workingDraftLineage?: WorkingDraftLineage[] };
 const fingerprint = (request: WeekSaveRequest) => createHash("sha256").update(JSON.stringify(request)).digest("hex");
+function scheduledServiceDay(snapshot: RollingSnapshot, dayId: string) {
+  const menu = snapshot.week.supplementaryMenu;
+  if (!menu) return true;
+  const day = snapshot.days.find(value => value.id === dayId);
+  if (!day) return false;
+  if (menu.serviceDate) return menu.serviceDate === day.date;
+  return Boolean(menu.recurrenceWeekdays?.includes(new Date(`${day.date}T00:00:00Z`).getUTCDay() || 7));
+}
 
 export function applyWeekSave(snapshot: RollingSnapshot, request: WeekSaveRequest, actor: string, allowedOplocIds: ReadonlySet<string>, at = new Date().toISOString(), oplocAliases: ReadonlyMap<string, string> = new Map(), workingDraftLineage: WorkingDraftLineage[] = [], allowOneOffPax = true, allowSharedMenuEdits = true) {
   const hash = fingerprint(request);
@@ -75,7 +83,7 @@ export function applyWeekSave(snapshot: RollingSnapshot, request: WeekSaveReques
   const touchedPax = new Set<string>();
   for (const change of request.changes.destinationPax || []) {
     const day = next.days.find(day => day.id === change.dayId && next.week.dayIds.includes(day.id));
-    if (!day || !(workingDraft ? editableWorkingDraftDay(next, day.id) : editableDay(next, day.id))) fail("PAX belongs to a missing or locked service day.", 409);
+    if (!day || !scheduledServiceDay(next, day.id) || !(workingDraft ? editableWorkingDraftDay(next, day.id) : editableDay(next, day.id))) fail("PAX belongs to a missing, unscheduled, or locked service day.", 409);
     const destinationId = change.kind === "governed" ? oplocAliases.get(change.destinationId) || change.destinationId : change.destinationId;
     if (change.kind === "governed" && !allowedOplocIds.has(destinationId)) fail("This PAX destination is outside your permitted scope.", 403);
     if (change.kind === "one-off") {
@@ -112,7 +120,7 @@ export function applyWeekSave(snapshot: RollingSnapshot, request: WeekSaveReques
     if (touched.has(update.entryId)) fail("A save cannot change the same entry twice.");
     touched.add(update.entryId);
     const entry = next.entries.find(entry => entry.id === update.entryId && entry.dayId === update.dayId && next.week.entryIds.includes(entry.id));
-    if (!entry || !(workingDraft ? editableWorkingDraftDay(next, entry.dayId) : editableDay(next, entry.dayId)) || !next.days.find(day => day.id === entry.dayId)?.entryIds.includes(entry.id)) fail("A changed menu entry is missing or locked.", 409);
+    if (!entry || !scheduledServiceDay(next, entry.dayId) || !(workingDraft ? editableWorkingDraftDay(next, entry.dayId) : editableDay(next, entry.dayId)) || !next.days.find(day => day.id === entry.dayId)?.entryIds.includes(entry.id)) fail("A changed menu entry is missing or locked.", 409);
     checkAllocations(entry);
     try { applyRollingEntryPatch(entry, update.patch, { actor, at }); }
     catch (error) { failEntry(error instanceof Error ? error.message : "The entry is invalid.", "patch", entry, error && typeof error === "object" && "status" in error && typeof error.status === "number" ? error.status : 422); }
@@ -124,9 +132,12 @@ export function applyWeekSave(snapshot: RollingSnapshot, request: WeekSaveReques
     if (!created.id.startsWith(`${next.week.id}:entry:`) || touched.has(created.id) || next.entries.some(entry => entry.id === created.id)) fail("A new menu entry has an invalid or duplicate identity.");
     touched.add(created.id);
     const day = next.days.find(day => day.id === created.dayId && next.week.dayIds.includes(day.id));
-    if (!day || !(workingDraft ? editableWorkingDraftDay(next, day.id) : editableDay(next, day.id))) fail("A new menu entry belongs to a missing or locked day.", 409);
+    if (!day || !scheduledServiceDay(next, day.id) || !(workingDraft ? editableWorkingDraftDay(next, day.id) : editableDay(next, day.id))) fail("A new menu entry belongs to a missing, unscheduled, or locked day.", 409);
     if (created.itemLabel.trim() && !created.itemId) fail("Choose an existing canonical dish for each new named entry.");
-    const entry = { ...created, date: day.date, allocations: created.allocations.map(value => value.destinationId && oplocAliases.has(value.destinationId) ? { ...value, destinationId: oplocAliases.get(value.destinationId) } : value), allergens: {}, allergenReviewInvalidated: true, audit: [audit] };
+    const initialAllocations = created.allocations.length || !next.week.supplementaryMenu
+      ? created.allocations
+      : next.week.supplementaryMenu.siteIds.map(destinationId => ({ destinationId, destinationLabel: next.week.supplementaryMenu!.siteLabels?.[destinationId] || destinationId, quantity: 0 }));
+    const entry = { ...created, date: day.date, allocations: initialAllocations.map(value => value.destinationId && oplocAliases.has(value.destinationId) ? { ...value, destinationId: oplocAliases.get(value.destinationId) } : value), allergens: {}, allergenReviewInvalidated: true, audit: [audit] };
     if (created.isCoreSalad) {
       try { applyRollingEntryPatch(entry, { isCoreSalad: true }, { actor, at }); }
       catch (error) { failEntry(error instanceof Error ? error.message : "The entry is invalid.", "isCoreSalad", entry, error && typeof error === "object" && "status" in error && typeof error.status === "number" ? error.status : 422); }

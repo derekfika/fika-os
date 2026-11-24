@@ -8,7 +8,7 @@ export const matrixColumns = CANONICAL_ALLERGEN_COLUMNS;
 const escapeHtml = (value: string) => value.replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character] || character));
 const mayContainNotes = (_allergens: Record<string, string>, notes?: string) => notes?.trim() || "";
 
-export function allergenMatrixHtml(order: { clientName?: string; destinationLabel?: string; serviceType?: string; serviceDate?: string; serviceWindow?: { startTime: string; endTime?: string }; requiredBy: string }, menuItems: PlannedMenuItem[], signatures: InternalMatrixSignature[] = []) {
+export function allergenMatrixHtml(order: { clientName?: string; destinationLabel?: string; serviceType?: string; menuName?: string; serviceDate?: string; serviceWindow?: { startTime: string; endTime?: string }; requiredBy: string }, menuItems: PlannedMenuItem[], signatures: InternalMatrixSignature[] = []) {
   const rows = menuItems.flatMap(item => item.subItems.map(sub => {
     const notes = mayContainNotes(sub.allergens, sub.mayContainNotes);
     const details = (sub as typeof sub & { allergenDetailNotes?: string }).allergenDetailNotes?.trim() || "";
@@ -19,7 +19,7 @@ export function allergenMatrixHtml(order: { clientName?: string; destinationLabe
   const serviceDay = parsedDate && !Number.isNaN(parsedDate.getTime()) ? parsedDate.toLocaleDateString("en-GB", { weekday: "long" }) : "";
   const weekCommencing = parsedDate && !Number.isNaN(parsedDate.getTime()) ? (() => { const monday = new Date(parsedDate); const offset = (monday.getDay() + 6) % 7; monday.setDate(monday.getDate() - offset); return monday.toISOString().slice(0, 10); })() : "";
   const serviceArea = order.destinationLabel || "Not assigned";
-  const serviceType = order.serviceType || "Service type not recorded";
+  const serviceType = [order.menuName, order.serviceType || "Service type not recorded"].filter(Boolean).join(" · ");
   const serviceTime = order.serviceWindow ? `${order.serviceWindow.startTime}${order.serviceWindow.endTime ? `–${order.serviceWindow.endTime}` : ""}` : "";
   const signature = (role: InternalMatrixSignature["role"]) => signatures.find(item => item.role === role);
   const signatureCell = (role: InternalMatrixSignature["role"]) => { const item = signature(role); return item ? `${item.signatureDataUrl ? `<img src="${escapeHtml(item.signatureDataUrl)}" alt="${escapeHtml(item.printedName)} signature" style="display:block;max-width:100%;height:22px;margin:0 auto 2px;object-fit:contain">` : ""}${escapeHtml(item.printedName)}<br><small>${escapeHtml(new Date(item.signedAt).toLocaleString("en-GB"))}</small>` : ""; };

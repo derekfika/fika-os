@@ -244,3 +244,16 @@ test("collection details use recorded service data and stable readable reference
   assert.equal(collectionQuantity(line("one", 1, "portions")), "1 portion");
   assert.equal(collectionQuantity(line("many", 1234.0625, "portion")), "1,234.0625 portions");
 });
+
+test("production totals keep supplementary menu allocations traceable while aggregating compatible dish quantities", () => {
+  const shared = { ...line("fruit", 4), itemName: "Fruit salad", slot: "SOUP", sourceMenuItemId: "dish:fruit" } as ProductionLine;
+  const breakfast = { ...order("breakfast", [shared]), sourceMenuId: "menu:breakfast", menuName: "Munich Re Breakfast", serviceType: "Breakfast", destinationOplocId: "oploc:munich", destinationLabel: "Munich Re" };
+  const friday = { ...order("friday", [{ ...shared, canonicalId: "line:friday", sourceBookingLineId: "line:friday", customerQuantity: 6 }]), sourceMenuId: "menu:wise", menuName: "Wise Breakfast", serviceType: "Breakfast", destinationOplocId: "oploc:wise", destinationLabel: "Wise" };
+  const categories = aggregateProductionTotals([breakfast, friday]);
+  const total = categories.flatMap(category => category.items).find(item => item.name === "Fruit salad")!;
+  assert.equal(total.quantity, 10);
+  assert.deepEqual(total.serviceAllocations?.map(service => [service.destinationLabel, service.menuName, service.quantity]), [["Munich Re", "Munich Re Breakfast", 4], ["Wise", "Wise Breakfast", 6]]);
+  const html = totalsPrintHtml(categories, "Mon", "All sites", "compact", [breakfast, friday]);
+  assert.match(html, /Munich Re Breakfast · 4 portions/);
+  assert.match(html, /Wise Breakfast · 6 portions/);
+});

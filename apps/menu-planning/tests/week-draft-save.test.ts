@@ -6,6 +6,7 @@ import { join } from "node:path";
 import type { RollingSnapshot } from "../lib/rolling-menu-types";
 import { CANONICAL_MENU_SLOTS } from "../../shared/menu-section-order";
 import { editWeek, weekChanges } from "../lib/week-draft";
+import { buildPublishedDay, serviceDaysForWeek } from "../lib/menu-publication";
 
 const directory = mkdtempSync(join(tmpdir(), "fika-week-draft-337-"));
 process.chdir(directory); process.env.MENU_PLANNING_DB_PATH = join(directory, "isolated.sqlite"); process.env.MENU_PLANNING_TEST_MODE = "1";
@@ -251,4 +252,29 @@ test("week-only and template rows save atomically and replay without duplicate s
   const first = await saveWeekDraft(request, "person:1", allowed); const replay = await saveWeekDraft(request, "person:1", allowed);
   const { getMenuTemplateSlots } = await import("../lib/operational-store");
   assert.equal(first.snapshot.week.customSlots?.filter(value => value === slot).length, 1); assert.equal((await getMenuTemplateSlots()).filter(value => value === slot).length, 1); assert.equal(replay.replayed, true); assert.equal(replay.snapshot.week.version, first.snapshot.week.version);
+});
+
+test("supplementary menu saves reject unscheduled weekdays", () => {
+  const source = emptyWeek("2099-06-01", "fixture-actor", undefined, "rolling-week:2099-06-01:menu:breakfast");
+  source.week.supplementaryMenu = { id: "breakfast", name: "Fixture breakfast", serviceType: "Breakfast", siteIds: ["site:1"], recurrenceWeekdays: [1] };
+  const tuesday = source.days[1];
+  assert.equal(new Date(`${tuesday.date}T00:00:00Z`).getUTCDay(), 2);
+  assert.throws(() => applyWeekSave(source, {
+    weekId: source.week.id, expectedWeekVersion: 1, requestId: "request-unscheduled", changes: {
+      updates: [], creates: [{ id: `${source.week.id}:entry:unscheduled`, dayId: tuesday.id, slot: "SOUP", itemLabel: "Fixture soup", portions: 1, allocations: [] }],
+    },
+  }, "person:1", allowed), /unscheduled/);
+});
+
+test("supplementary recurrence publishes only scheduled days and binds menu context to the content hash", () => {
+  const source = emptyWeek("2099-06-01", "fixture-actor", undefined, "rolling-week:2099-06-01:menu:breakfast");
+  source.week.supplementaryMenu = { id: "breakfast", name: "Fixture Breakfast", serviceType: "Breakfast", siteIds: ["site:1"], serviceTime: "08:30", recurrenceWeekdays: [1, 3] };
+  const scheduled = serviceDaysForWeek(source);
+  assert.deepEqual(scheduled.map(day => day.date), ["2099-06-01", "2099-06-03"]);
+  const published = buildPublishedDay(source, scheduled[0]);
+  assert.equal(published.sourceDayId, scheduled[0].id);
+  assert.deepEqual(published.serviceMenu, { id: "breakfast", name: "Fixture Breakfast", serviceType: "Breakfast", serviceTime: "08:30", kitchenNotes: "" });
+  const renamed = { ...source, week: { ...source.week, supplementaryMenu: { ...source.week.supplementaryMenu, name: "Fixture Brunch" } } };
+  assert.notEqual(buildPublishedDay(renamed, scheduled[0]).contentHash, published.contentHash);
+  assert.throws(() => buildPublishedDay({ ...source, week: { ...source.week, menuOccurrenceStatus: "skipped" } }, scheduled[0]), /skipped/);
 });

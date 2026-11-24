@@ -299,3 +299,15 @@ test("fresh whole-day read rejects access failures, stale dates and incomplete p
   })) as typeof fetch;
   await assert.rejects(loadWholeDay(day, wrongDate), /incomplete|another day/i);
 });
+
+test("Gastro labels keep the same dish separate by supplementary menu and print the menu name", () => {
+  const breakfast = order("order:breakfast", { sourceMenuId: "menu:breakfast", menuName: "Munich Re Breakfast", lines: [line("breakfast-salad", "Chopped salad", 1, "dish:salad")] });
+  const main = order("order:main", { lines: [line("main-salad", "Chopped salad", 1, "dish:salad")] });
+  const dishes = gastroLabelDishes([breakfast, main], day);
+  assert.equal(dishes.length, 2);
+  assert.deepEqual(dishes.map(({ menuName }) => menuName), [undefined, "Munich Re Breakfast"]);
+  const rows = gastroLabelRowsWithQuantity(dishes, Object.fromEntries(dishes.map(dish => [dish.id, 1])), day);
+  const fits = Object.fromEntries(dishes.map(dish => [dish.id, { fontSizePt: 16, lineCount: 1, fits: true }]));
+  const html = gastroLabelsPrintHtml(rows, 1, fits);
+  assert.match(html, /Munich Re Breakfast/);
+});

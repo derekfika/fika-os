@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { appDataPath, resolveGovernedOploc } from "./fika-contracts";
 import * as XLSX from "xlsx";
 export * from "./rolling-menu-types";
-import { assertMenuSlotCanBeRemoved, LEGACY_ROLLING_SLOTS, newWeekTemplateSlots, plannerSlotsForWeek, ROLLING_SLOTS, type RollingAllocation, type RollingDay, type RollingEntry, type RollingSnapshot, type RollingWeek, type RollingWeekStatus } from "./rolling-menu-types";
+import { assertMenuSlotCanBeRemoved, LEGACY_ROLLING_SLOTS, newWeekTemplateSlots, plannerSlotsForWeek, ROLLING_SLOTS, type RollingAllocation, type RollingDay, type RollingEntry, type RollingSnapshot, type RollingWeek, type RollingWeekStatus, type SupplementaryMenuContext } from "./rolling-menu-types";
 import { normaliseDishName, titleCase } from "./text";
 import type { MenuItem } from "./domain";
 import { listCanonicalMenuItemsByIds } from "./canonical-menu-repository";
@@ -13,7 +13,8 @@ import { applyRollingEntryPatch, type RollingEntryPatch, type RollingMutationDel
 import { dishCategoryForWrite } from "./dish-categories";
 import { isGovernedMenuSlot, suggestMenuRowSlot } from "./menu-template";
 import { menuSiteIdentity, menuSiteKey } from "./site-pax";
-export interface Stored { version: 1; weeks: RollingWeek[]; days: RollingDay[]; entries: RollingEntry[]; /** Permanent template additions apply only to weeks created after the change. */ menuTemplateSlots?: string[]; }
+export type SupplementaryMenuTemplate = SupplementaryMenuContext & { startsFrom: string; discontinuedAfter?: string; previousOccurrenceWeekId?: string; createdAt: string; createdBy: string; audit?: RollingWeek["audit"] };
+export interface Stored { version: 1; weeks: RollingWeek[]; days: RollingDay[]; entries: RollingEntry[]; /** Permanent template additions apply only to weeks created after the change. */ menuTemplateSlots?: string[]; supplementaryMenuTemplates?: SupplementaryMenuTemplate[]; }
 const now = () => new Date().toISOString();
 export const operationalDateLondon = (at = new Date()) => { const parts = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(at).filter(part => part.type !== "literal").map(part => [part.type, part.value])); return `${parts.year}-${parts.month}-${parts.day}`; };
 const operationalDate = () => operationalDateLondon();
@@ -102,10 +103,111 @@ export async function migrateSavedDestinations() {
   return { changed, governed, oneOff, entries: db.entries.length };
 }
 
-export function emptyWeek(weekCommencing: string, actor = "local-menu-planner", templateSlots: string[] = [...ROLLING_SLOTS]): RollingSnapshot {
-  const id = `rolling-week:${weekCommencing}`; const days = Array.from({ length: 7 }, (_, i) => ({ id: `${id}:day:${i + 1}`, date: addDays(weekCommencing, i), dayName: dayName(addDays(weekCommencing, i)), entryIds: [] }));
+export function emptyWeek(weekCommencing: string, actor = "local-menu-planner", templateSlots: string[] = [...ROLLING_SLOTS], identity?: string): RollingSnapshot {
+  const id = identity || `rolling-week:${weekCommencing}`; const days = Array.from({ length: 7 }, (_, i) => ({ id: `${id}:day:${i + 1}`, date: addDays(weekCommencing, i), dayName: dayName(addDays(weekCommencing, i)), entryIds: [] }));
   const week: RollingWeek = { id, weekCommencing, weekEnding: addDays(weekCommencing, 6), status: "draft", version: 1, dayIds: days.map(d => d.id), entryIds: [], sourceFiles: [], templateSlots: [...new Set(templateSlots)], customSlots: [], dayStatuses: Object.fromEntries(days.map(day => [day.id, "draft"])), audit: [{ action: "week-created", at: now(), by: actor }] };
   return { week, days, entries: [] };
+}
+export function supplementaryMenuWeekId(weekCommencing: string, menuId: string) { return `rolling-week:${weekCommencing}:menu:${menuId}`; }
+export function listSupplementaryMenuTemplates() { return read().then(state => state.supplementaryMenuTemplates || []); }
+export async function createSupplementaryMenuWeek(weekCommencing: string, menu: SupplementaryMenuContext, actor: string, startFromWeekId?: string) {
+  const id = supplementaryMenuWeekId(weekCommencing, menu.id);
+  const templateSlots = newWeekTemplateSlots(await getMenuTemplateSlots());
+  const candidate = emptyWeek(weekCommencing, actor, templateSlots, id);
+  candidate.week.supplementaryMenu = structuredClone(menu);
+  const existingTemplate = (await listSupplementaryMenuTemplates()).find(value => value.id === menu.id);
+  const previousId = startFromWeekId || existingTemplate?.previousOccurrenceWeekId;
+  const previous = previousId ? await getWeek(previousId) : undefined;
+  if (previous) {
+    candidate.entries = previous.entries.map(entry => {
+      const dayIndex = previous.days.findIndex(day => day.id === entry.dayId);
+      const day = candidate.days[Math.max(0, dayIndex)];
+      return { ...structuredClone(entry), id: `${id}:entry:${entry.id.split(":entry:").pop()}`, dayId: day.id, date: day.date, audit: [{ action: "previous-menu-occurrence-copied", at: now(), by: actor }] };
+    });
+    for (const day of candidate.days) day.entryIds = candidate.entries.filter(entry => entry.dayId === day.id).map(entry => entry.id);
+    candidate.week.entryIds = candidate.entries.map(entry => entry.id);
+  }
+  return withMenuPlanningTransaction(state => {
+    const stored = state.rolling as unknown as Stored;
+    const existing = stored.weeks.find(week => week.id === id);
+    if (existing) return snapshotFromStored(stored, id);
+    const templates = stored.supplementaryMenuTemplates || [];
+    const templateIndex = templates.findIndex(value => value.id === menu.id);
+    if (menu.recurrenceWeekdays?.length && templateIndex < 0) stored.supplementaryMenuTemplates = [...templates, { ...structuredClone(menu), startsFrom: weekCommencing, previousOccurrenceWeekId: id, createdAt: now(), createdBy: actor }];
+    else if (menu.recurrenceWeekdays?.length && templateIndex >= 0) stored.supplementaryMenuTemplates![templateIndex] = { ...stored.supplementaryMenuTemplates![templateIndex], previousOccurrenceWeekId: id };
+    replaceSnapshotInStored(stored, candidate);
+    return candidate;
+  }, undefined, { weekId: id, sourceWeekId: "__none__", includeEvents: false });
+}
+/** Explicit idempotent POST command: opening a week never creates recurrence through GET. */
+export async function ensureSupplementaryMenuWeeks(weekCommencing: string, actor: string) {
+  const templates = await listSupplementaryMenuTemplates();
+  const created: string[] = [];
+  for (const menu of templates) {
+    if (weekCommencing < menu.startsFrom || (menu.discontinuedAfter && weekCommencing > menu.discontinuedAfter)) continue;
+    if (!menu.recurrenceWeekdays?.length) continue;
+    const snapshot = await createSupplementaryMenuWeek(weekCommencing, menu, actor);
+    created.push(snapshot.week.id);
+  }
+  return created;
+}
+export async function setSupplementaryMenuOccurrenceSkipped(weekId: string, expectedWeekVersion: number, skipped: boolean, actor: string) {
+  return withMenuPlanningTransaction(state => {
+    const stored = state.rolling as unknown as Stored;
+    const week = stored.weeks.find(value => value.id === weekId);
+    if (!week) throw Object.assign(new Error("The additional menu occurrence was not found."), { status: 404 });
+    if (!week.supplementaryMenu) throw Object.assign(new Error("The primary menu cannot be skipped through this action."), { status: 409 });
+    if (week.version !== expectedWeekVersion) throw Object.assign(new Error("This menu changed. Refresh before changing its occurrence."), { status: 409 });
+    if (week.status === "published" || week.status === "partially_published" || Object.values(week.dayStatuses || {}).some(value => value === "published" || value === "superseded")) throw Object.assign(new Error("Withdraw the published occurrence before skipping it."), { status: 409 });
+    const nextStatus = skipped ? "skipped" : "active";
+    if ((week.menuOccurrenceStatus || "active") === nextStatus) return snapshotFromStored(stored, weekId);
+    week.menuOccurrenceStatus = nextStatus;
+    week.version += 1;
+    week.audit.push({ action: skipped ? "supplementary-menu-occurrence-skipped" : "supplementary-menu-occurrence-restored", at: now(), by: actor });
+    return snapshotFromStored(stored, weekId);
+  }, { weekId, weekVersion: expectedWeekVersion }, { weekId, sourceWeekId: "__none__", includeEvents: false });
+}
+export async function updateSupplementaryMenuOccurrence(weekId: string, expectedWeekVersion: number, patch: { name: string; serviceType: SupplementaryMenuContext["serviceType"]; serviceTime?: string; kitchenNotes?: string; applyToFuture?: boolean; recurrenceWeekdays?: number[] }, actor: string) {
+  return withMenuPlanningTransaction(state => {
+    const stored = state.rolling as unknown as Stored;
+    const week = stored.weeks.find(value => value.id === weekId);
+    if (!week) throw Object.assign(new Error("The additional menu occurrence was not found."), { status: 404 });
+    if (!week.supplementaryMenu) throw Object.assign(new Error("The primary menu cannot be edited through this action."), { status: 409 });
+    if (week.version !== expectedWeekVersion) throw Object.assign(new Error("This menu changed. Refresh before editing it."), { status: 409 });
+    if (!patch.name.trim() || patch.name.length > 100) throw Object.assign(new Error("Enter a menu name up to 100 characters."), { status: 422 });
+    const time = patch.serviceTime?.trim();
+    if (time && !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) throw Object.assign(new Error("Enter a service time in 24-hour HH:MM format."), { status: 422 });
+    const notes = patch.kitchenNotes?.trim();
+    if ((notes?.length || 0) > 4000) throw Object.assign(new Error("Kitchen notes must be 4,000 characters or fewer."), { status: 422 });
+    if (patch.applyToFuture && (!patch.recurrenceWeekdays?.length || patch.recurrenceWeekdays.some(day => !Number.isInteger(day) || day < 1 || day > 7))) throw Object.assign(new Error("Choose at least one valid weekday for future recurrence."), { status: 422 });
+    if (week.supplementaryMenu.name === patch.name.trim() && week.supplementaryMenu.serviceType === patch.serviceType && (week.supplementaryMenu.serviceTime || "") === (time || "") && (week.supplementaryMenu.kitchenNotes || "") === (notes || "") && !patch.applyToFuture) return snapshotFromStored(stored, weekId);
+    week.supplementaryMenu = { ...week.supplementaryMenu, name: patch.name.trim(), serviceType: patch.serviceType, ...(time ? { serviceTime: time } : {}), ...(notes ? { kitchenNotes: notes } : {}) };
+    if (!time) delete week.supplementaryMenu.serviceTime;
+    if (!notes) delete week.supplementaryMenu.kitchenNotes;
+    week.version += 1;
+    week.audit.push({ action: "supplementary-menu-occurrence-amended", at: now(), by: actor });
+    if (patch.applyToFuture) {
+      const storedState = stored as unknown as Stored;
+      const templates = storedState.supplementaryMenuTemplates || [];
+      const index = templates.findIndex(template => template.id === week.supplementaryMenu!.id);
+      if (index < 0) throw Object.assign(new Error("The recurring menu template was not found."), { status: 404 });
+      storedState.supplementaryMenuTemplates![index] = { ...templates[index], name: patch.name.trim(), serviceType: patch.serviceType, ...(time ? { serviceTime: time } : {}), ...(notes ? { kitchenNotes: notes } : {}), recurrenceWeekdays: [...(patch.recurrenceWeekdays || [])], audit: [...(templates[index].audit || []), { action: "recurrence-amended", at: now(), by: actor }] };
+      if (!time) delete storedState.supplementaryMenuTemplates![index].serviceTime;
+      if (!notes) delete storedState.supplementaryMenuTemplates![index].kitchenNotes;
+    }
+    return snapshotFromStored(stored, weekId);
+  }, { weekId, weekVersion: expectedWeekVersion }, { weekId, sourceWeekId: "__none__", includeEvents: false });
+}
+export async function discontinueSupplementaryMenu(menuId: string, discontinuedAfter: string, actor: string) {
+  return withMenuPlanningTransaction(state => {
+    const stored = state.rolling as unknown as Stored;
+    const templates = stored.supplementaryMenuTemplates || [];
+    const index = templates.findIndex(value => value.id === menuId);
+    if (index < 0) throw Object.assign(new Error("The recurring menu was not found."), { status: 404 });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(discontinuedAfter)) throw Object.assign(new Error("Choose a valid final recurrence week."), { status: 422 });
+    stored.supplementaryMenuTemplates = templates.map((value, i) => i === index ? { ...value, discontinuedAfter, audit: [...(value.audit || []), { action: "recurrence-discontinued", at: now(), by: actor }] } : value);
+    return stored.supplementaryMenuTemplates[index];
+  }, undefined, { weekId: "__recurrence_templates__", sourceWeekId: "__none__", includeEvents: false });
 }
 export const slotsForWeek = (week: RollingWeek) => plannerSlotsForWeek(week);
 export async function createWeekSnapshot(weekCommencing: string, actor = "local-menu-planner") {

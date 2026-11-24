@@ -63,7 +63,7 @@ export async function createCpuMasterArtifact(plan: ProductionPlan, order: Produ
   if (!signatures.some(signature => signature.role === "production_chef") || !signatures.some(signature => signature.role === "head_chef_site_manager")) throw Object.assign(new Error("Both required signatures are required for release materialization."), { status: 422 });
   const serviceDate = order.serviceDate || order.requiredBy.slice(0, 10);
   const withSource = (item: PlannedMenuItem) => ({ ...item, id: `${order.canonicalId}:${item.id}`, name: item.name });
-  const html = allergenMatrixHtml({ clientName: "FIKA OS", destinationLabel: "CPU master allergen checker", serviceType: "Delivered-In menu", serviceDate, serviceWindow: order.serviceWindow, requiredBy: order.requiredBy }, items.map(withSource), signatures);
+  const html = allergenMatrixHtml({ clientName: "FIKA OS", destinationLabel: "CPU master allergen checker", serviceType: order.serviceType || "Delivered-In menu", menuName: order.menuName, serviceDate, serviceWindow: order.serviceWindow, requiredBy: order.requiredBy }, items.map(withSource), signatures);
   let pdfBase64: string | undefined;
   try { pdfBase64 = (await renderPdfToBuffer(html)).toString("base64"); } catch (error) { console.error("FIKA PDF renderer failure", { app: "cpu-production", operation: "allergen-master-pdf-generation", errorName: error instanceof Error ? error.name : "UnknownError", errorMessage: error instanceof Error ? error.message : String(error), serviceDate, requestId: request.headers.get("x-request-id") || undefined, buildSha: process.env.FIKA_BUILD_SHA || undefined }); throw rendererFailure(error); }
   if (!pdfBase64) throw Object.assign(new Error("The final allergen checker PDF could not be generated."), { status: 503 });
@@ -116,7 +116,7 @@ export async function createCpuReleaseArtifacts(plan: ProductionPlan, order: Pro
     if (!scope || !release || !["pending", "current"].includes(release.status) || plan.signedMenuContentHash !== scope.matrixContentHash || !allergenReleaseLineageMatchesOrder(release, order, plan.menuItems) || signatures.some(signature => !signatureMatchesScope(signature, scope))) {
       throw Object.assign(new Error("The Ad-Hoc release must match both signatures and the current source matrix before creating its PDF."), { status: 409, code: "CPU_RELEASE_LINEAGE_CONFLICT" });
     }
-    const adHocHtml = allergenMatrixHtml({ clientName: order.clientName, destinationLabel: order.destinationLabel || "Ad-Hoc production order", serviceType: order.serviceType, serviceDate, serviceWindow: order.serviceWindow, requiredBy: order.requiredBy }, plan.menuItems, signatures);
+    const adHocHtml = allergenMatrixHtml({ clientName: order.clientName, destinationLabel: order.destinationLabel || "Ad-Hoc production order", serviceType: order.serviceType, menuName: order.menuName, serviceDate, serviceWindow: order.serviceWindow, requiredBy: order.requiredBy }, plan.menuItems, signatures);
     const adHocToken = release.releaseId.replace(/[^A-Za-z0-9_-]+/g, "-");
     const fileName = `AdHoc-${(order.clientName || "order").replace(/[^A-Za-z0-9._-]+/g, "_")}-${serviceDate}-${adHocToken}-${scope.matrixContentHash.slice(0, 16)}-Allergen-Checker.pdf`;
     // A retry may reuse only this release's exact frozen PDF, never a shared Menu master or a previous amendment's artifact.
@@ -127,14 +127,14 @@ export async function createCpuReleaseArtifacts(plan: ProductionPlan, order: Pro
   }
   if (!order.destinationOplocId) throw Object.assign(new Error("The signed CPU allergen checker requires a canonical OPLOC output."), { status: 422 });
   const withSource = (item: PlannedMenuItem) => ({ ...item, id: `${order.canonicalId}:${item.id}`, name: order.destinationOplocId ? `${order.destinationOplocId} · ${item.name}` : item.name });
-  const masterHtml = allergenMatrixHtml({ clientName: "FIKA OS", destinationLabel: "CPU master allergen checker", serviceType: "Delivered-In menu", serviceDate, serviceWindow: order.serviceWindow, requiredBy: order.requiredBy }, plan.menuItems.map(withSource), signatures);
+  const masterHtml = allergenMatrixHtml({ clientName: "FIKA OS", destinationLabel: "CPU master allergen checker", serviceType: order.serviceType || "Delivered-In menu", menuName: order.menuName, serviceDate, serviceWindow: order.serviceWindow, requiredBy: order.requiredBy }, plan.menuItems.map(withSource), signatures);
   const releaseToken = (plan.currentAllergenRelease?.releaseId || "uncommitted").replace(/[^A-Za-z0-9_-]+/g, "-");
   const master = durableArtifact(options.masterArtifact)
     ? options.masterArtifact
     : durableArtifact(plan.masterMatrixArtifact)
       ? plan.masterMatrixArtifact
       : (await persistPdf("master", `CPU-Master-${serviceDate}-${releaseToken}.pdf`, masterHtml, plan.masterMatrixArtifact)).artifact;
-  const siteHtml = allergenMatrixHtml({ clientName: order.clientName, destinationLabel: order.destinationLabel || order.destinationOplocId || "Unassigned destination", serviceType: order.serviceType, serviceDate, serviceWindow: order.serviceWindow, requiredBy: order.requiredBy }, plan.menuItems.map(withSource), signatures);
+  const siteHtml = allergenMatrixHtml({ clientName: order.clientName, destinationLabel: order.destinationLabel || order.destinationOplocId || "Unassigned destination", serviceType: order.serviceType, menuName: order.menuName, serviceDate, serviceWindow: order.serviceWindow, requiredBy: order.requiredBy }, plan.menuItems.map(withSource), signatures);
   const site = (await persistPdf("site", `${order.destinationLabel || order.destinationOplocId || "Unassigned"}-${serviceDate}-${releaseToken}-Allergen-Matrix.pdf`.replace(/[^A-Za-z0-9._-]+/g, "_"), siteHtml, plan.siteMatrixArtifacts?.[order.destinationOplocId])).artifact;
   const packageStore = cpuPackageStore();
   const sourceScope = matrixSignatureScope(order, menuContentHash(plan.menuItems));

@@ -23,6 +23,22 @@ export function newWeekTemplateSlots(templateAdditions: readonly string[] = []) 
 export type RollingSlot = typeof CANONICAL_MENU_SLOTS[number]["id"];
 export type RollingWeekStatus = "draft" | "imported" | "needs_review" | "ready" | "partially_published" | "published" | "archived";
 export type RollingDayPublicationStatus = "draft" | "ready" | "published" | "superseded";
+export type MenuServiceType = "Breakfast" | "Lunch" | "Dinner" | "Other";
+export type SupplementaryMenuContext = {
+  /** Stable identity for this menu series; separate from the primary weekly menu. */
+  id: string;
+  name: string;
+  serviceType: MenuServiceType;
+  siteIds: string[];
+  /** Display snapshots only; siteIds remain the identity authority. */
+  siteLabels?: Record<string, string>;
+  /** For a one-off occurrence; recurring menus use recurrenceWeekdays. */
+  serviceDate?: string;
+  serviceTime?: string;
+  kitchenNotes?: string;
+  recurrenceWeekdays?: number[];
+  recurrenceTemplateId?: string;
+};
 import type { CanonicalAllergenMap, OperationalAllergenState } from "./fika-contracts";
 import type { SitePax } from "./site-pax";
 export type AllergenState = OperationalAllergenState;
@@ -31,7 +47,7 @@ export interface RollingAllocation { destinationId?: string; oneOffDestinationId
 export interface RollingEntry { id: string; dayId: string; date: string; slot: string; itemId?: string; itemLabel: string; portions: number; allocations: RollingAllocation[]; /** Manual placement designation; absent historical values mean not Core. */ isCoreSalad?: boolean; allergens: AllergenMap; mayContainNotes?: string; allergenDetailNotes?: string; allergenReviewInvalidated?: boolean; allergenReview?: import("./fika-contracts").AllergenRowReview | import("../../shared/allergen-declaration").ExplicitRowReview; noKeyDeclaration?: import("../../shared/allergen-declaration").NoKeyDeclarationRecord; source?: { workbook: string; sheet: string; range: string; rawText?: string }; audit: Array<{ action: string; at: string; by: string }>; }
 export interface RollingOneOffDestination { id: string; label: string; address?: string; addressStatus: "pending" | "confirmed"; contact?: string; deliveryInstructions?: string; }
 export interface RollingDay { id: string; date: string; dayName: string; entryIds: string[]; oneOffDestinations?: RollingOneOffDestination[]; destinationPax?: SitePax; }
-export interface RollingWeek { id: string; weekCommencing: string; weekEnding: string; status: RollingWeekStatus; version: number; dayIds: string[]; entryIds: string[]; sourceFiles: string[]; /** Explicit permission for Hospitality to show the current client-safe menu preview. Does not publish operational work. */ availableToHospitality?: boolean; /** Immutable-at-creation template snapshot; absent only on legacy weeks. */ templateSlots?: string[]; customSlots?: string[]; removedSlots?: string[]; dayStatuses?: Record<string, RollingDayPublicationStatus>; audit: Array<{ action: string; at: string; by: string }>; }
+export interface RollingWeek { id: string; weekCommencing: string; weekEnding: string; status: RollingWeekStatus; version: number; dayIds: string[]; entryIds: string[]; sourceFiles: string[]; /** Present only on additive supplementary service menus. Legacy weeks remain the primary menu. */ supplementaryMenu?: SupplementaryMenuContext; menuOccurrenceStatus?: "active" | "skipped"; /** Explicit permission for Hospitality to show the current client-safe menu preview. Does not publish operational work. */ availableToHospitality?: boolean; /** Immutable-at-creation template snapshot; absent only on legacy weeks. */ templateSlots?: string[]; customSlots?: string[]; removedSlots?: string[]; dayStatuses?: Record<string, RollingDayPublicationStatus>; audit: Array<{ action: string; at: string; by: string }>; }
 export interface RollingSnapshot { week: RollingWeek; days: RollingDay[]; entries: RollingEntry[]; }
 /** Keep the standard Dessert rows visible in legacy drafts without rewriting saved history. */
 export function plannerSlotsForWeek(week: RollingWeek) {

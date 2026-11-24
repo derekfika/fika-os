@@ -60,3 +60,11 @@ test("CSV retains accents, quoted/multiline dishes and neutralises spreadsheet f
 test("fails closed rather than inventing a selected date absent from snapshot", () => {
   assert.throws(() => menuExportCsv([{ snapshot: snapshot(), dates: ["2026-11-20"] }]), /missing from week/);
 });
+
+test("supplementary exports identify the menu, service type and service time", () => {
+  const menu = snapshot("draft", [entry("breakfast", "2026-11-16", "SOUP", "Fixture porridge")]);
+  menu.week.supplementaryMenu = { id: "menu:breakfast", name: "Fixture Breakfast", serviceType: "Breakfast", siteIds: ["oploc:fixture"], serviceTime: "08:30", recurrenceWeekdays: [1] };
+  const csv = menuExportCsv([{ snapshot: menu, dates: ["2026-11-16"] }]);
+  assert.match(csv, /"Menu name","Service type","Service time"/);
+  assert.match(csv, /"Fixture Breakfast","Breakfast","08:30"/);
+});

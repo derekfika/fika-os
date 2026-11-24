@@ -86,7 +86,7 @@ export function runSheetPrintDates(
 /** Stable destination identity; labels are presentation only. Unscoped snapshots stay order-scoped. */
 export function runSheetDestinationKey(order: ProductionOrder): string {
   const oploc = order.destinationOplocId?.trim();
-  if (oploc) return `oploc:${oploc}`;
+  if (oploc) return order.sourceMenuId ? `oploc:${oploc}:menu:${order.sourceMenuId}` : `oploc:${oploc}`;
   const snapshot = order.destinationAddress?.identity?.trim();
   if (snapshot) return `snapshot:${snapshot}`;
   return `order:${order.canonicalId}`;
@@ -100,7 +100,9 @@ export function runSheetPrintSiteOptions(
   for (const day of days) {
     for (const order of eligibleRunSheetDayOrders(ordersByDay.get(day) || [], day)) {
       const key = runSheetDestinationKey(order);
-      const current = counts.get(key) || { label: cpuDestinationLabel(order), orderIds: new Set<string>(), serviceOrderIds: new Map<RunSheetServiceKey, Set<string>>() };
+      const menuLabel = order.sourceMenuId ? (order.serviceType?.trim() || order.menuName?.trim()) : "";
+      const label = menuLabel ? `${cpuDestinationLabel(order)} — ${menuLabel}` : cpuDestinationLabel(order);
+      const current = counts.get(key) || { label, orderIds: new Set<string>(), serviceOrderIds: new Map<RunSheetServiceKey, Set<string>>() };
       current.orderIds.add(order.canonicalId);
       const service = runSheetServiceKey(order);
       const serviceIds = current.serviceOrderIds.get(service) || new Set<string>();

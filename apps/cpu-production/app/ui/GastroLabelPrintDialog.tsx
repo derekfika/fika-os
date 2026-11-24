@@ -26,7 +26,7 @@ type Props = {
 };
 
 const dishManifest = (orders: readonly ProductionOrder[], date: string, sites: readonly string[]) =>
-  JSON.stringify(gastroLabelDishes(orders, date, sites).map(({ id, name, sortOrder }) => ({ id, name, sortOrder })));
+  JSON.stringify(gastroLabelDishes(orders, date, sites).map(({ id, name, sortOrder, menuName }) => ({ id, name, sortOrder, menuName })));
 
 export function GastroLabelPrintDialog({ productionDate, selectedSiteIds }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -166,7 +166,7 @@ export function GastroLabelPrintDialog({ productionDate, selectedSiteIds }: Prop
     try {
       const freshOrders = await loadWholeDay(productionDate);
       const freshManifest = dishManifest(freshOrders, productionDate, selectedSiteIds);
-      const currentManifest = JSON.stringify(dishes.map(({ id, name, sortOrder }) => ({ id, name, sortOrder })));
+      const currentManifest = JSON.stringify(dishes.map(({ id, name, sortOrder, menuName }) => ({ id, name, sortOrder, menuName })));
       if (freshManifest !== currentManifest) {
         const freshDishes = gastroLabelDishes(freshOrders, productionDate, selectedSiteIds);
         setDishes(freshDishes);

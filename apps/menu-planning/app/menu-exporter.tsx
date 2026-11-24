@@ -5,7 +5,7 @@ import type { RollingSnapshot } from "@/lib/rolling-menu-types";
 import { menuExportCsv, type SelectedMenuWeek } from "@/lib/menu-export";
 import PlannerModal from "./planner-modal";
 
-type WeekOption = { id: string; weekCommencing: string };
+type WeekOption = { id: string; weekCommencing: string; supplementaryMenu?: RollingSnapshot["week"]["supplementaryMenu"] };
 type Props = {
   weeks: readonly WeekOption[];
   currentSnapshot: RollingSnapshot;
@@ -13,13 +13,16 @@ type Props = {
   onClose: () => void;
 };
 
-function weekdays(monday: string) {
-  const first = new Date(`${monday}T12:00:00Z`);
-  return Array.from({ length: 5 }, (_, index) => {
-    const day = new Date(first);
-    day.setUTCDate(first.getUTCDate() + index);
-    return day.toISOString().slice(0, 10);
+function exportDates(week: WeekOption, currentSnapshot?: RollingSnapshot) {
+  const days = currentSnapshot?.week.id === week.id ? currentSnapshot.days : Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(`${week.weekCommencing}T12:00:00Z`); date.setUTCDate(date.getUTCDate() + index); const value = date.toISOString().slice(0, 10);
+    return { date: value, weekday: new Date(`${value}T00:00:00Z`).getUTCDay() || 7 };
   });
+  const menu = week.supplementaryMenu;
+  if (!menu) return days.filter(day => Number(new Date(`${day.date}T00:00:00Z`).getUTCDay() || 7) <= 5).map(day => day.date);
+  if (menu.serviceDate) return days.filter(day => day.date === menu.serviceDate).map(day => day.date);
+  if (menu.recurrenceWeekdays?.length) return days.filter(day => menu.recurrenceWeekdays!.includes("weekday" in day ? day.weekday : new Date(`${day.date}T00:00:00Z`).getUTCDay() || 7)).map(day => day.date);
+  return [];
 }
 function humanDate(date: string) {
   return new Date(`${date}T12:00:00Z`).toLocaleDateString("en-GB", {
@@ -30,11 +33,11 @@ function humanDate(date: string) {
 export default function MenuExporter({ weeks, currentSnapshot, unsavedCurrent, onClose }: Props) {
   const options = useMemo(() => {
     const byId = new Map(weeks.map(week => [week.id, week]));
-    byId.set(currentSnapshot.week.id, { id: currentSnapshot.week.id, weekCommencing: currentSnapshot.week.weekCommencing });
+    byId.set(currentSnapshot.week.id, { id: currentSnapshot.week.id, weekCommencing: currentSnapshot.week.weekCommencing, supplementaryMenu: currentSnapshot.week.supplementaryMenu });
     return [...byId.values()].sort((a, b) => a.weekCommencing.localeCompare(b.weekCommencing));
   }, [weeks, currentSnapshot.week.id, currentSnapshot.week.weekCommencing]);
   const [selected, setSelected] = useState<Record<string, string[]>>(() => ({
-    [currentSnapshot.week.id]: currentSnapshot.days.slice(0, 5).map(day => day.date),
+    [currentSnapshot.week.id]: exportDates({ id: currentSnapshot.week.id, weekCommencing: currentSnapshot.week.weekCommencing, supplementaryMenu: currentSnapshot.week.supplementaryMenu }, currentSnapshot),
   }));
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState("");
@@ -43,10 +46,9 @@ export default function MenuExporter({ weeks, currentSnapshot, unsavedCurrent, o
   const dayCount = selectedWeeks.reduce((total, week) => total + selected[week.id].length, 0);
   const toggleWeek = (week: WeekOption) => setSelected(previous => {
     const next = { ...previous };
-    if ((next[week.id]?.length || 0) === (week.id === currentSnapshot.week.id ? currentSnapshot.days.slice(0, 5).length : 5)) delete next[week.id];
-    else next[week.id] = week.id === currentSnapshot.week.id
-      ? currentSnapshot.days.slice(0, 5).map(day => day.date)
-      : weekdays(week.weekCommencing);
+    const dates = exportDates(week, currentSnapshot);
+    if ((next[week.id]?.length || 0) === dates.length) delete next[week.id];
+    else next[week.id] = dates;
     return next;
   });
   const toggleDay = (weekId: string, date: string) => setSelected(previous => {
@@ -112,17 +114,17 @@ export default function MenuExporter({ weeks, currentSnapshot, unsavedCurrent, o
     <p>Choose any saved weeks and individual weekdays. Published and unpublished menus can all be exported to Excel-compatible CSV.</p>
     {unsavedCurrent && <p className="form-help">The currently open week has unsaved browser edits. Its exported rows will be labelled "Unsaved browser draft". Other weeks are loaded from saved records.</p>}
     <div className="form-actions">
-      <button type="button" className="button button-soft" disabled={busy} onClick={() => setSelected(Object.fromEntries(options.map(week => [week.id, week.id === currentSnapshot.week.id ? currentSnapshot.days.slice(0, 5).map(day => day.date) : weekdays(week.weekCommencing)])))}>Select all weeks</button>
+      <button type="button" className="button button-soft" disabled={busy} onClick={() => setSelected(Object.fromEntries(options.map(week => [week.id, exportDates(week, currentSnapshot)])))}>Select all weeks</button>
       <button type="button" className="button button-soft" disabled={busy} onClick={() => setSelected({})}>Clear selection</button>
     </div>
     <div style={{ maxHeight: 340, overflowY: "auto", padding: "4px 0" }} aria-label="Available menu weeks">
       {options.map(week => {
-        const days = week.id === currentSnapshot.week.id ? currentSnapshot.days.slice(0, 5).map(day => day.date) : weekdays(week.weekCommencing);
+        const days = exportDates(week, currentSnapshot);
         const chosen = selected[week.id] || [];
         return <fieldset key={week.id} disabled={busy} style={{ border: "1px solid var(--line, #ddd)", borderRadius: 8, padding: "10px 12px", marginBottom: 8 }}>
-          <legend><label style={{ display: "inline-flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={days.length > 0 && days.every(date => chosen.includes(date))} ref={element => { if (element) element.indeterminate = chosen.length > 0 && chosen.length < days.length; }} onChange={() => toggleWeek(week)} />WC {humanDate(week.weekCommencing)}{week.id === currentSnapshot.week.id ? " · Current" : ""}</label></legend>
+          <legend><label style={{ display: "inline-flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={days.length > 0 && days.every(date => chosen.includes(date))} ref={element => { if (element) element.indeterminate = chosen.length > 0 && chosen.length < days.length; }} onChange={() => toggleWeek(week)} />WC {humanDate(week.weekCommencing)}{week.supplementaryMenu ? ` · ${week.supplementaryMenu.name} · ${week.supplementaryMenu.serviceType}` : " · Main menu"}{week.id === currentSnapshot.week.id ? " · Current" : ""}</label></legend>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-            {days.map((date, index) => <label key={date} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><input type="checkbox" checked={chosen.includes(date)} onChange={() => toggleDay(week.id, date)} />{["Mon", "Tue", "Wed", "Thu", "Fri"][index]} {date.slice(-2)}</label>)}
+            {days.map(date => <label key={date} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><input type="checkbox" checked={chosen.includes(date)} onChange={() => toggleDay(week.id, date)} />{new Date(`${date}T12:00:00Z`).toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", timeZone: "UTC" })}</label>)}
           </div>
         </fieldset>;
       })}

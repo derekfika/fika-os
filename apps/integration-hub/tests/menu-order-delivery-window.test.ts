@@ -108,3 +108,15 @@ test("emulator: Grab & Go orders keep their existing default window", { skip: !e
     assert.deepEqual(order.serviceWindow, { startTime: "00:00" });
   } finally { await cleanup([input]); }
 });
+
+test("emulator: supplementary menus keep separate canonical orders, service context, time and kitchen notes", { skip: !emulatorEnabled }, async () => {
+  const breakfast = menuInput("supplementary-breakfast", { menuId: "fixture-breakfast", menuName: "Fixture Breakfast", serviceType: "Breakfast", serviceTime: "08:30", kitchenNotes: "Keep fruit separate.", serviceWindow: { startTime: "08:30" } });
+  const lunch = menuInput("supplementary-lunch", { menuId: "fixture-lunch", menuName: "Fixture Lunch", serviceType: "Lunch", serviceTime: "12:00", serviceWindow: { startTime: "12:00" } });
+  try {
+    const morning = await materialiseExternalProductionOrder(actor, breakfast);
+    const midday = await materialiseExternalProductionOrder(actor, lunch);
+    assert.notEqual(morning.order.canonicalId, midday.order.canonicalId);
+    assert.deepEqual([morning.order.sourceMenuId, morning.order.menuName, morning.order.serviceType, morning.order.requiredBy, morning.order.serviceWindow?.startTime, morning.order.kitchenNotes], ["fixture-breakfast", "Fixture Breakfast", "Breakfast", "2026-10-26T08:30", "08:30", "Keep fruit separate."]);
+    assert.deepEqual([midday.order.sourceMenuId, midday.order.menuName, midday.order.serviceType, midday.order.requiredBy, midday.order.serviceWindow?.startTime], ["fixture-lunch", "Fixture Lunch", "Lunch", "2026-10-26T12:00", "12:00"]);
+  } finally { await cleanup([breakfast, lunch]); }
+});

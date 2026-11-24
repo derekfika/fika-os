@@ -58,3 +58,24 @@ test("the Menu Planning publisher payload, including publicationId, is accepted 
   const legacy = { ...payload, lines: [{ ...payload.lines[0], isCoreSalad: undefined }] };
   assert.equal(projectExternalProductionLine(parseExternalProductionMaterialisation(legacy), "production-order:legacy", 0, "menu_available").isCoreSalad, undefined);
 });
+
+test("supplementary service metadata is complete, Menu Planning-only, and survives parsing", () => {
+  const payload = {
+    sourceDomain: "menu-planning" as const,
+    sourceEntityId: "rolling-week:2026-09-07:menu:breakfast:day:1",
+    sourceVersion: 1,
+    destinationOplocId: "oploc:fixture",
+    serviceDate: "2026-09-07",
+    status: "published" as const,
+    menuId: "breakfast",
+    menuName: "Fixture Breakfast",
+    serviceType: "Breakfast" as const,
+    serviceTime: "08:30",
+    kitchenNotes: "Keep fruit separate from hot service.",
+    lines: [{ sourceLineId: "entry:1", itemName: "Fixture oats", quantity: 4, unit: "portion" }],
+  };
+  assert.deepEqual(parseExternalProductionMaterialisation(payload), payload);
+  assert.throws(() => parseExternalProductionMaterialisation({ ...payload, menuName: undefined }), /Supplementary service metadata/);
+  assert.throws(() => parseExternalProductionMaterialisation({ ...payload, sourceDomain: "grab-and-go" }), /Supplementary service metadata/);
+  assert.throws(() => parseExternalProductionMaterialisation({ ...payload, serviceTime: "25:00" }), /serviceTime/);
+});
