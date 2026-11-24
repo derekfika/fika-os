@@ -5,7 +5,7 @@ For agent tasks, use independent Git worktrees and local port selection in
 below is for an exclusive whole-platform local session; do not share its mutable
 emulator/runtime state between independent tasks.
 
-Record completion with `fika workspace complete <task> --owner <agent-task>` from the canonical checkout. The checkout and its files stay in place. The Deployment Dashboard’s [task worktree inventory](http://127.0.0.1:4180/#workspace-management) reads local Git registrations. See [workspace management](docs/deployment/workspace-management.md) for historical records and interrupted-operation recovery.
+From the canonical checkout, run `fika workspace startup` and check `fika workspace health --inventory-only` before creating a task. The five task slots are shared across all agents. Install into the task with `fika workspace install <task>` and repeat with `--package apps/<app-directory>` for each required app. This shares npm downloads while keeping each checkout's install tree independent. After merge, run `fika workspace complete <task> --owner <agent-task>` from canonical to retire the eligible checkout and release its slot. See [workspace management](docs/deployment/workspace-management.md) for cleanup and recovery.
 
 Double-click `fikaos.bat` to start the single foreground FIKA OS supervisor. It restores the verified local Firebase dataset, starts Firebase and all local apps on their fixed ports, starts the passive launcher, and opens one browser page: the FIKA OS launcher. Use `Start-FIKA-OS-All.cmd` as the legacy fallback.
 

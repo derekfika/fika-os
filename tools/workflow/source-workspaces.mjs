@@ -1,35 +1,30 @@
 import path from 'node:path';
-import { existsSync, mkdirSync, realpathSync } from 'node:fs';
-import { ancestor, command, common, ghApi, git, jsonFile, ref, root, save, stateDir } from './runtime.mjs';
+import { randomUUID } from 'node:crypto';
+import { mkdirSync, realpathSync, renameSync, unlinkSync } from 'node:fs';
+import { ancestor, command, common, ghApi, git, ref, root, save, stateDir } from './runtime.mjs';
 import { REPO, exactSha, partialPathOverlap, risk, safeScope } from './policy.mjs';
 import { successfulValidation } from './releases.mjs';
+import { canonical, completionFile, localEntry, managedRoot, optionalJson, registrations, requireCanonical, samePath,
+  sourceTaskFile, split, stateRecords, withCapacityLock, workspaceInventory, workspaceName } from './workspace-capacity.mjs';
+import { cleanupSourceWorkspaces, githubOrigin, integrationEvidence, pullInventory, sourceStatus } from './workspace-retirement.mjs';
 
-const split = value => value.split('\0').filter(Boolean);
-const isGitHubOrigin = () => new RegExp(`github\\.com[:/]${REPO}(?:\\.git)?$`, 'i').test(git('remote', 'get-url', 'origin'));
-const managedRoot = () => path.resolve(realpathSync(common()), '..', '..', 'agent-workspaces', 'fika-os');
-const metadataFile = name => path.join(common(), 'fika-workflow', 'source-tasks', `${name}.json`);
-const readMetadata = name => {
-  try { return jsonFile(metadataFile(name)); } catch { return null; }
-};
+const queueFile = name => path.join(stateDir(), 'source-queue', `${name}.json`);
+const operationFile = id => path.join(stateDir(), 'source-operations', `${id}.json`);
+function exited(pid) {
+  try { process.kill(pid, 0); return false; }
+  catch (error) { if (error.code === 'ESRCH') return true; throw error; }
+}
 const fetchMain = () => {
   git('fetch', '--no-write-fetch-head', 'origin', 'main');
   return exactSha(git('rev-parse', 'origin/main'));
 };
 const validateName = name => {
-  if (!/^[a-z][a-z0-9-]{2,60}$/.test(name || '')) throw Error('Use a 3–61 character lowercase workspace name');
+  if (!workspaceName(name)) throw Error('Use a 3–61 character lowercase workspace name');
   return name;
 };
 
-function registrations() {
-  return git('worktree', 'list', '--porcelain', '-z').split('\0\0').filter(Boolean).map(row =>
-    Object.fromEntries(split(row).map(field => {
-      const [key] = field.split(' ', 1);
-      return [key, field === key ? true : field.slice(key.length + 1)];
-    })));
-}
-
 function openOverlap(paths, base) {
-  if (!isGitHubOrigin()) return { status: 'local fixture', overlaps: [], uninspected: [] };
+  if (!githubOrigin()) return { status: 'local fixture', overlaps: [], uninspected: [] };
   try {
     const pulls = JSON.parse(command('gh', ['pr', 'list', '--repo', REPO, '--state', 'open', '--base', 'main', '--limit', '100', '--json', 'number,url,headRefOid'], { timeout: 10000 }));
     const overlaps = [], uninspected = [];
@@ -46,30 +41,89 @@ function openOverlap(paths, base) {
 }
 
 export function createSourceWorkspace(name, options) {
+  requireCanonical();
   validateName(name);
   if (!options.owner?.trim()) throw Error('--owner is required for task metadata');
   const paths = options.scope ? options.scope.split(',').map(safeScope) : [];
   const baseline = fetchMain();
   const branch = `codex/${name}`, directory = path.join(managedRoot(), name);
-  const file = metadataFile(name);
-  if (existsSync(directory) || existsSync(file) || ref(`refs/heads/${branch}`) || git('ls-remote', '--heads', 'origin', `refs/heads/${branch}`)) throw Error('Task name, path or branch already exists; choose a new name');
+  const file = sourceTaskFile(name);
+  if (git('ls-remote', '--heads', 'origin', `refs/heads/${branch}`)) throw Error('Task name, path or branch already exists; choose a new name');
   const review = openOverlap(paths, baseline);
-  mkdirSync(managedRoot(), { recursive: true });
-  // Git owns the branch/worktree transaction. A concurrent same-name create must fail without force.
+  const claim = withCapacityLock(() => {
+    if (localEntry(directory) || localEntry(file) || ref(`refs/heads/${branch}`)) throw Error('Task name, path or branch already exists; choose a new name');
+    const inventory = workspaceInventory();
+    if (inventory.entries.some(entry => entry.owner === options.owner && entry.state === 'awaiting-cleanup')) {
+      throw Error('Your prior task is awaiting cleanup. Complete its merge or resolve its cleanup blocker before starting another task');
+    }
+    const existing = inventory.queue.find(entry => entry.name === name);
+    if (existing && existing.owner !== options.owner) throw Error('This task is queued by a different owner');
+    if (!inventory.available || (inventory.queue.length && inventory.queue[0].name !== name)) {
+      const queued = existing || { name, owner: options.owner, position: (inventory.queue.at(-1)?.position || 0) + 1, queuedAt: new Date().toISOString() };
+      if (!existing) save(queueFile(name), queued);
+      return { ...queued, state: 'queued', occupied: inventory.occupied, available: inventory.available, limit: inventory.limit };
+    }
+    mkdirSync(managedRoot(), { recursive: true });
+    if (!samePath(realpathSync(managedRoot()), managedRoot())) throw Error('Managed workspace root resolves through a link');
+    const task = { name, owner: options.owner, branch, baseline, directory, paths, startedAt: new Date().toISOString(), state: 'creating' };
+    save(file, { ...task, pid: process.pid });
+    if (existing) unlinkSync(queueFile(name));
+    return task;
+  });
+  if (claim.state === 'queued') return claim;
+  // The reservation occupies a slot even before Git creates the registration.
   git('worktree', 'add', '--quiet', '-b', branch, directory, baseline);
-  const task = { name, owner: options.owner, branch, baseline, directory, paths, startedAt: new Date().toISOString() };
-  save(file, task);
-  return { ...task, risk: paths.length ? risk(paths) : 'unclassified', review };
+  return withCapacityLock(() => {
+    const active = { ...claim, state: 'active' };
+    save(file, active);
+    return { ...active, risk: paths.length ? risk(paths) : 'unclassified', review };
+  });
+}
+
+export function cancelSourceQueue(name, options) {
+  requireCanonical();
+  validateName(name);
+  return withCapacityLock(() => {
+    const file = queueFile(name), entry = optionalJson(file);
+    if (!entry) return { name, state: 'not-queued' };
+    if (entry.owner !== options.owner) throw Error('Only the queued task owner can cancel its claim');
+    unlinkSync(file);
+    return { name, state: 'cancelled' };
+  });
+}
+
+export function recoverSourceReservation(name, options) {
+  requireCanonical();
+  validateName(name);
+  return withCapacityLock(() => {
+    const file = sourceTaskFile(name), task = optionalJson(file);
+    if (!task || task.state !== 'creating' || task.owner !== options.owner || !options.reason?.trim() ||
+      !samePath(task.directory, path.join(managedRoot(), name)) || task.branch !== `codex/${name}` ||
+      !Number.isSafeInteger(task.pid) || task.pid < 1) throw Error('Recovery requires the interrupted reservation owner and --reason confirming all checkout processes have stopped');
+    if (!exited(task.pid)) throw Error('Reservation process may still be running');
+    const tree = registrations().find(item => samePath(item.worktree, task.directory));
+    let state = 'cancelled';
+    if (tree) {
+      const workspace = sourceWorkspace(name);
+      if (workspace.head !== task.baseline || sourceStatus(workspace.run)) throw Error('Interrupted checkout contains changes. Preserve it for manual recovery');
+      state = 'active';
+    } else if (localEntry(task.directory) || ref(`refs/heads/${task.branch}`)) {
+      throw Error('Interrupted checkout left a directory or branch. Preserve it for manual recovery');
+    }
+    const recovered = { ...task, state, recoveryReason: options.reason, recoveredAt: new Date().toISOString() };
+    save(file, recovered);
+    return recovered;
+  });
 }
 
 export function sourceWorkspace(name) {
   validateName(name);
   const directory = path.join(managedRoot(), name), branch = `codex/${name}`;
-  const tree = registrations().find(entry => path.resolve(entry.worktree) === directory);
-  if (!tree || tree.locked || tree.prunable || tree.branch !== `refs/heads/${branch}` || realpathSync(directory) !== directory) throw Error('Expected an independent registered task checkout on its named branch');
+  const tree = registrations().find(entry => samePath(entry.worktree, directory));
+  if (!tree || tree.locked || tree.prunable || tree.branch !== `refs/heads/${branch}` || !samePath(realpathSync(directory), directory)) throw Error('Expected an independent registered task checkout on its named branch');
   const run = (...args) => command('git', args, { cwd: directory });
   if (run('branch', '--show-current') !== branch || run('rev-parse', 'HEAD') !== tree.HEAD) throw Error('Task checkout changed during inspection');
-  return { name, directory, branch, head: exactSha(tree.HEAD), task: readMetadata(name), run };
+  return { name, directory, branch, head: exactSha(tree.HEAD), task: optionalJson(sourceTaskFile(name)), run };
 }
 
 export function checkSourceWorkspace(name) {
@@ -85,41 +139,99 @@ export function checkSourceWorkspace(name) {
 }
 
 export function sourceWorkspaceStatus() {
+  // The dashboard consumes this advisory contract independently of the coordinator inventory.
   const prefix = 'refs/heads/codex/';
-  const entries = registrations().filter(tree => String(tree.branch).startsWith(prefix)).map(tree => {
+  const tasks = path.join(common(), 'fika-workflow', 'source-tasks');
+  const entries = registrations().filter(tree => tree.branch?.startsWith(prefix)).map(tree => {
     const name = tree.branch.slice(prefix.length);
-    const task = /^[a-z][a-z0-9-]{2,60}$/.test(name) ? readMetadata(name) : null;
-    return { name, branch: tree.branch.slice('refs/heads/'.length), head: tree.HEAD, owner: task?.owner || null, protected: Boolean(tree.locked || tree.prunable) };
+    const task = workspaceName(name) ? optionalJson(path.join(tasks, `${name}.json`)) : null;
+    return { name, branch: `codex/${name}`, head: tree.HEAD, owner: task?.owner || null, protected: Boolean(tree.locked || tree.prunable) };
   });
   return { observedAt: new Date().toISOString(), entries };
 }
 
-export function completeSourceWorkspace(name, options, { readPrs = branch => ghApi(`repos/${REPO}/pulls?state=all&head=derekfika:${encodeURIComponent(branch)}&per_page=100`) } = {}) {
+export function runSourceOperation(kind, action, name) {
+  if (!name && samePath(root(), canonical())) return action();
+  const operation = withCapacityLock(() => {
+    const workspace = sourceWorkspace(name || path.basename(root()));
+    if (!name && !samePath(workspace.directory, root())) throw Error('Use a governed task checkout');
+    const { task, head } = workspace;
+    if (!task || task.state === 'creating') throw Error('A registered active task owner is required');
+    const completion = optionalJson(completionFile(task.name));
+    if (kind !== 'integrate' && completion?.outcome === 'completed' && completion.finalSha === head) {
+      throw Error('Task is awaiting cleanup. The owner must explicitly preserve it before restarting work');
+    }
+    if (stateRecords('source-operations').some(marker => marker.name === task.name)) {
+      throw Error('A governed operation is active or interrupted in this workspace');
+    }
+    const id = randomUUID();
+    const file = operationFile(id);
+    save(file, { id, kind, name: task.name, owner: task.owner, pid: process.pid, startedAt: new Date().toISOString() });
+    return { file, workspace };
+  });
+  try { return action(operation.workspace); }
+  finally { withCapacityLock(() => unlinkSync(operation.file)); }
+}
+
+export function recoverSourceOperation(id, options) {
+  requireCanonical();
+  if (!/^[0-9a-f-]{36}$/.test(id || '')) throw Error('Use the interrupted operation ID');
+  return withCapacityLock(() => {
+    const file = operationFile(id), marker = optionalJson(file);
+    if (!marker || marker.id !== id || marker.owner !== options.owner || !options.reason?.trim() ||
+      !Number.isSafeInteger(marker.pid) || marker.pid < 1) throw Error('Recovery requires the operation owner and --reason confirming all child processes have exited');
+    if (!exited(marker.pid)) throw Error('Operation process may still be running');
+    const archive = path.join(stateDir(), 'source-operation-recovery', `${id}.json`);
+    save(file, { ...marker, recoveredAt: new Date().toISOString(), recoveryReason: options.reason });
+    mkdirSync(path.dirname(archive), { recursive: true });
+    if (localEntry(archive)) throw Error('Operation recovery evidence already exists');
+    renameSync(file, archive);
+    return { id, state: 'recovered', archive };
+  });
+}
+
+export function completeSourceWorkspace(name, options, dependencies) {
+  requireCanonical();
+  validateName(name);
+  return withCapacityLock(() => completeUnderLock(name, options, dependencies));
+}
+
+function completeUnderLock(name, options, { readPrs = pullInventory } = {}) {
+  const previous = optionalJson(completionFile(name));
+  if (previous?.retirement === 'retired' && previous.owner === options.owner) return previous;
+  if (['removing', 'removed'].includes(previous?.retirement) && previous.owner === options.owner) {
+    const cleanup = cleanupSourceWorkspaces({ execute: true, name, locked: true, readPulls: () => readPrs(previous.branch) });
+    return { ...optionalJson(completionFile(name)), cleanup };
+  }
   const { branch, directory, head, task, run } = sourceWorkspace(name);
-  if (!options.owner || (task && task.owner !== options.owner)) throw Error('Use the task owner for the completion record');
+  if (!task || !options.owner || task.owner !== options.owner || task.state === 'creating') throw Error('Use the registered task owner for the completion record');
   if (options.preserve && !options.reason?.trim()) throw Error('Preserving unfinished work requires --reason');
-  const status = run('status', '--porcelain', '--ignored=matching', '--untracked-files=all');
-  const dirty = status.split(/\r?\n/).some(line => line && !line.startsWith('!! '));
+  const status = sourceStatus(run);
+  const dirty = split(status).some(line => !line.startsWith('!! '));
   let evidence = { pushed: false, inMain: false, pr: null };
+  let pulls = [], merged = null;
   try {
     git('fetch', '--no-write-fetch-head', 'origin');
     evidence = { ...evidence, pushed: ref(`refs/remotes/origin/${branch}`) === head, inMain: ancestor(head, 'origin/main') };
-    if (isGitHubOrigin()) {
-      const pulls = readPrs(branch);
-      if (pulls.length >= 100) throw Error('PR inventory is incomplete');
-      const pr = pulls.find(item => item.head.sha === head && item.head.ref === branch && item.head.repo?.full_name === REPO && item.base.repo?.full_name === REPO && item.base.ref === 'main');
+    if (githubOrigin()) {
+      pulls = readPrs(branch);
+      const pr = pulls.find(item => item.head?.sha === head && item.head?.ref === branch && item.head?.repo?.full_name === REPO && item.base?.repo?.full_name === REPO && item.base?.ref === 'main');
       if (pr) evidence.pr = { number: pr.number, state: pr.state, merged: Boolean(pr.merged_at), url: pr.html_url };
     }
+    merged = integrationEvidence(pulls, branch, head);
   } catch (error) {
     if (!options.preserve) throw error;
     evidence.unverified = true;
   }
-  if (!options.preserve && (dirty || (!evidence.pushed && !evidence.inMain))) throw Error('Dirty or unpushed work remains. Commit/push or record --preserve --reason; the checkout is retained');
-  if (run('branch', '--show-current') !== branch || run('rev-parse', 'HEAD') !== head || run('status', '--porcelain', '--ignored=matching', '--untracked-files=all') !== status) throw Error('Checkout changed during completion');
+  if (!options.preserve && (dirty || (!evidence.pushed && !evidence.inMain && !merged))) throw Error('Dirty or unpushed work remains. Commit/push or record --preserve --reason; the checkout is retained');
+  if (run('branch', '--show-current') !== branch || run('rev-parse', 'HEAD') !== head || sourceStatus(run) !== status) throw Error('Checkout changed during completion');
   const result = { name, owner: options.owner, branch, finalSha: head, ...evidence, outcome: options.preserve ? 'unfinished-preserved' : 'completed',
-    ...(options.preserve ? { reason: options.reason } : {}), retirement: 'retained', dirty, ignored: status.split(/\r?\n/).some(line => line.startsWith('!! ')), directory };
-  save(path.join(stateDir(), 'source-completions', `${name}.json`), { ...result, at: new Date().toISOString() });
-  return result;
+    ...(options.preserve ? { reason: options.reason } : {}), retirement: 'retained', dirty, ignored: split(status).some(line => line.startsWith('!! ')),
+    directory, at: new Date().toISOString() };
+  save(completionFile(name), result);
+  if (options.preserve || !merged) return result;
+  const cleanup = cleanupSourceWorkspaces({ execute: true, name, locked: true, readPulls: () => pulls });
+  return { ...optionalJson(completionFile(name)), cleanup };
 }
 
 export function integrateSourceWorkspace(name, prNumber, { readPr = number => ghApi(`repos/${REPO}/pulls/${number}`), validate = successfulValidation,

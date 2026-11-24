@@ -17,16 +17,19 @@ A deployment request names an app and environment. A merge alone never starts a 
 `origin/main` is the sole integration authority in `C:\Fika\fika-os`. Each task gets a scoped worktree/branch from a recorded main baseline:
 
 ```powershell
+npm run fika -- workspace startup
 npm run fika -- workspace create cpu-calendar --owner agent-task
+npm run fika -- workspace install cpu-calendar
+npm run fika -- workspace install cpu-calendar --package apps/cpu-production
 ```
 
 The command creates a new task branch and linked worktree from fetched main. Optional `--scope` reports advisory overlap with open PRs. Never overwrite another task’s files or share mutable dependencies, `.next`, environment files or test data. Coordinate shared providers before consumer implementation. Choose an unused port with `fika dev cpu --workspace cpu-calendar --port 13100`.
 
 Run `fika workspace check <task>` for source and advisory overlap. From the task checkout, run `fika affected` and `fika validate`, add unique `.changes/<app>/<change-id>.md` fragments for each affected app, and push the task branch. Shared tooling/platform work uses `.changes/platform/` or root `CHANGELOG.md`. Read-only and documentation-only work have no mandatory entry. Affected app tests, typechecks, builds, shared-contract fan-out and isolated emulator coverage remain enforced by CI.
 
-Use `fika workspace complete <task> --owner <agent-task>` from the canonical checkout to record final Git/PR evidence. The checkout remains in place. Record unpushed or dirty work explicitly with `--preserve --reason`. See [workspace management](workspace-management.md) for historical records, migration and interrupted-operation recovery.
+After the approved merge, use `fika workspace complete <task> --owner <agent-task>` from canonical to record the exact Git and PR evidence and retire the verified checkout and local branch. The released slot is then available to the next queued owner. Record unpushed or dirty work explicitly with `--preserve --reason`. Use the recorded source SHA, PR, and release journal for later deployment or acceptance. See [workspace management](workspace-management.md) for capacity, protected files and interruption recovery.
 
-PRs are agent-managed CI/integration tools. Main requires strict `Workflow / merge-gate`, with zero mandatory human approvals and admin-enforced force-push/deletion protection. After CI passes and integration is authorised, the agent can use a merge-commit PR merge pinned to its verified head. GitHub rechecks protected-branch requirements. Do not merge when the owner explicitly said to stop before merging. Squash/rebase merging and automatic branch deletion remain disabled to preserve integrated ancestry and unfinished work.
+PRs are agent-managed CI/integration tools. Main requires strict `Workflow / merge-gate`, with zero mandatory human approvals and admin-enforced force-push/deletion protection. After CI passes and integration is authorised, the agent can use a merge-commit PR merge pinned to its verified head. GitHub rechecks protected-branch requirements. Do not merge when the owner explicitly said to stop before merging. GitHub squash/rebase merging and automatic remote branch deletion remain disabled to preserve integrated ancestry and unfinished work.
 
 Use `fika integrate --workspace <task> --pr <number>` to verify the exact head and current main base before merging. If main advances, merge it into the task branch, review the resulting diff and rerun CI.
 
@@ -94,6 +97,6 @@ Only if hosted execution is wanted, separately authorise environment-scoped `FIK
 
 ## Safe retirement and existing history
 
-Finish/retire only your own completed workspace. `--preserve-generated` moves allowlisted ignored dependencies/build outputs into recovery archives without deleting their contents. `.env`, other unique ignored files, changed HEADs and unpreserved commits block removal. `--archive` separately creates a recovery ref and verified Git bundle for unique clean commits. Ambiguous worktrees, seven existing stashes, recovery archives, rollback refs and unfinished Logistics work remain protected. Bounded cleanup retires only positively redundant unattached local refs after preservation.
+Complete only your own task. The coordinator can run governed cleanup against exact completion and merge evidence. `.env`, unverified ignored files, changed HEADs, live or interrupted operations and ambiguous ownership block retirement. Historical recovery records, stashes, archives and rollback refs remain evidence. See [workspace management](workspace-management.md) for cleanup, stale registrations and recovery.
 
 CPU lineage baseline: production source `94287ecf98504cc67ba6c09a0de32dcfe8d949da` came from PR #2. Preserve that deployed commit as an ancestor during reconciliation; never squash or cherry-pick away its identity. For each subsequent promotion, compare the actual serving source and release ledger against the candidate rather than relying on this historical SHA. Exact-source CI and runtime verification apply to subsequent deployments.
