@@ -1,7 +1,7 @@
 # Task worktrees and lifecycle
 
 Use the current CLI from the canonical checkout for machine-wide workspace commands.
-Each write task claims one of five slots, a unique branch from fetched `origin/main`,
+Each write task claims one of ten slots, a unique branch from fetched `origin/main`,
 and an independent checkout with one writer. The primary checkout is excluded.
 Existing linked worktrees and unregistered directories in the managed workspace root
 count against the limit. A tree outside governance can consume a slot and will appear
@@ -17,9 +17,10 @@ npm run fika -- workspace complete <task> --owner <agent-task>
 ```
 
 Windows and other supported hosts use the shared Git directory for registration and an
-OS-released SQLite lock for slot changes. Node 22.13 or later is required. The oldest
-queued claim has first access to an available slot. Retry `create` with the same name
-and owner when capacity becomes available. Withdraw a claim with `workspace cancel
+OS-released SQLite lock for slot changes. Node 22.13 or later is required. A claim
+reserves its slot before Git creates the checkout. With ten occupied slots, the next
+claim queues. The oldest queued claim has first access to an available slot. Retry
+`create` with the same name and owner when capacity becomes available. Withdraw a claim with `workspace cancel
 <task> --owner <agent-task>`. Never dispatch a queued worker as though it has a checkout.
 
 `--scope` provides an optional PR-overlap hint. If the inventory is partial, inspect
@@ -69,11 +70,17 @@ directory requires inspection before native npm reinstall. For rollback of the l
 cache workflow, run the existing `npm ci` command in the selected checkout. CI,
 App Hosting, and production still use their existing npm configuration and lockfiles.
 
-The governed installer and validation record new, known generated output only. Cleanup
-retains an output if its content differs from its recorded fingerprint or if it
-links outside the checkout. Existing generated directories, browser evidence, env
-files and unknown scratch files require explicit review. Keep emulator databases,
-runtime state and build output checkout-local. Use the standard per-user Firebase
+The governed installer and validation record known generated outputs they create.
+Successful validation refreshes an existing output's fingerprint only when its
+previous fingerprint still matched at launch and its paths and file types were
+covered by that fingerprint. Interactive dev sessions do not register generated
+output for removal. Retirement checks each ignored output against its recorded
+fingerprint. Outputs with
+unknown or changed content, links outside the checkout, browser evidence, user
+attachments, env files and unknown scratch files still require explicit review.
+Keep emulator databases, runtime state and build output checkout-local. Check
+available CPU, memory, disk and isolated ports before starting intensive work.
+Stagger builds and emulator runs when resources are constrained. Use the standard per-user Firebase
 emulator binary and Playwright browser caches, or a single explicit binary-cache
 override for all tasks. Run cache maintenance only with agents and tool processes
 stopped. Retain release scratch and reports until their corresponding rollout and

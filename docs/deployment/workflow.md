@@ -23,7 +23,7 @@ npm run fika -- workspace install cpu-calendar
 npm run fika -- workspace install cpu-calendar --package apps/cpu-production
 ```
 
-The command creates a new task branch and linked worktree from fetched main. Optional `--scope` reports advisory overlap with open PRs. Never overwrite another task’s files or share mutable dependencies, `.next`, environment files or test data. Coordinate shared providers before consumer implementation. Choose an unused port with `fika dev cpu --workspace cpu-calendar --port 13100`.
+The command claims one of ten task slots and creates a branch and linked worktree from fetched main. The canonical checkout is separate. If admission is queued, retry with the same owner when the claim reaches the front and a slot is free. Optional `--scope` reports advisory overlap with open PRs. Never overwrite another task’s files or share mutable dependencies, `.next`, environment files or test data. Coordinate shared providers before consumer implementation. Choose an unused port with `fika dev cpu --workspace cpu-calendar --port 13100`.
 
 Run `fika workspace check <task>` for source and advisory overlap. From the task checkout, run `fika affected` and `fika validate`, add unique `.changes/<app>/<change-id>.md` fragments for each affected app, and push the task branch. Shared tooling/platform work uses `.changes/platform/` or root `CHANGELOG.md`. Read-only and documentation-only work have no mandatory entry. Affected app tests, typechecks, builds, shared-contract fan-out and isolated emulator coverage remain enforced by CI.
 
