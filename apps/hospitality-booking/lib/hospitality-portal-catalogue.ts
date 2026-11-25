@@ -3,6 +3,7 @@ import { resolveSiteCatalogue, type EffectiveOffering } from "@fika/server-share
 import type { PortalMenuItem } from "./mnk-contract";
 import type { PortalSiteKey } from "./portal-sites";
 import { studioDishChoiceId, type StudioPortalChoices } from "../../shared/hospitality-menu-studio-selection";
+import { supportsStudioPortalChoices } from "./studio-portal-selection";
 import { rcoaVisibilityFromCatalogue, RCOA_SERVICE_SETTINGS_UNAVAILABLE, type RcoaServiceVisibility } from "./rcoa-service-visibility";
 
 const UK_DATE = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" });
@@ -15,6 +16,8 @@ function portalMenuItem(offering: Omit<EffectiveOffering, "source"> & { studioCh
   const configuration = offering.configuration || {};
   const choices = Array.isArray(configuration.choices) ? configuration.choices as Array<Record<string, unknown>> : [];
   const studio = offering.studioChoices;
+  // Never fall back to an older catalogue choice when a published product menu is unsupported.
+  if (studio && !supportsStudioPortalChoices(studio)) return undefined;
   const optionGroups = choices.flatMap(group => {
     if (studio?.dishes.length && !offering.quoteRequired && group.id === studio.replacesChoiceGroupId) return [];
     if (typeof group.id !== "string" || typeof group.label !== "string" || !Array.isArray(group.options)) return [];
