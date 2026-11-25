@@ -35,8 +35,8 @@ export class ProductMenuStore {
     const records = await this.drafts.firestore.getAll(...unique.map(reference => this.dishRevision(reference)));
     return records.flatMap((record, index) => {
       if (!record.exists) return [];
-      const { id, version, name, category } = decodeDishRevision(record.data(), unique[index]);
-      return [{ id, version, name, category }];
+      const { id, version, name, category, customerDescription } = decodeDishRevision(record.data(), unique[index]);
+      return [{ id, version, name, category, customerDescription }];
     });
   }
 
