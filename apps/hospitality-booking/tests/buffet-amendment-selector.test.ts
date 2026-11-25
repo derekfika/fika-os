@@ -48,7 +48,7 @@ test("historical choice stays intact until a deliberate menu edit", () => {
 
 test("edit saved selection, switch package, and retain unrelated choices and dietaries", () => {
   let result: typeof line | undefined; let notes = "";
-  render(React.createElement(BuffetAmendmentSelector, { fullScreen: true, config, line, catalogue: [item(gold, "Gold", 28), item(silver, "Silver", 20)], selectedItemIds: [], guestCount: 31, dietaryNotes: "Original", onSave(next, value) { result = next as typeof line; notes = value; } }));
+  render(React.createElement(BuffetAmendmentSelector, { config, line, catalogue: [item(gold, "Gold", 28), item(silver, "Silver", 20)], selectedItemIds: [], guestCount: 31, dietaryNotes: "Original", onSave(next, value) { result = next as typeof line; notes = value; } }));
   assert.equal(storedBuffetPreview(line)?.selection.nonVegetarianMainId, meat.id);
   fireEvent.click(screen.getByRole("button", { name: "Edit menu" }));
   fireEvent.click(screen.getByRole("radio", { name: /Silver ·/ }));
@@ -61,12 +61,14 @@ test("edit saved selection, switch package, and retain unrelated choices and die
   assert.deepEqual((result!.choices[1] as { value: { dessertIds: string[] } }).value.dessertIds, [desserts[0]]);
 });
 
-test("All Day amendment sends the edited menu within its original service identity", async () => {
+for (const site of ["rcoa", "mnk"] as const) test(`${site} All Day amendment sends the edited menu within its original service identity`, async () => {
+  const siteGold = config.packages[0].catalogueItemIds[site];
+  const siteSilver = config.packages[1].catalogueItemIds[site];
   const originalFetch = globalThis.fetch;
   const oldFlag = process.env.NEXT_PUBLIC_FIKA_HOT_FORK_BUFFET_ENABLED;
-  const booking = { ...original, canonicalId: "service-1", version: 7, bookingGroup: { id: "group-1", sequence: 1, size: 1 }, service: { eventDate: "2027-01-20", startTime: "12:00", guestCount: 30 }, client: { name: "Fixture", companyName: "Fixture", email: "fixture@example.test" }, dietaries: { freeText: "Original" }, order: { eventType: "event_catering", items: [line] }, notes: "", deliveryChargeRequired: true };
+  const booking = { ...original, canonicalId: "service-1", version: 7, bookingGroup: { id: "group-1", sequence: 1, size: 1 }, service: { eventDate: "2027-01-20", startTime: "12:00", guestCount: 30 }, client: { name: "Fixture", companyName: "Fixture", email: "fixture@example.test" }, dietaries: { freeText: "Original" }, order: { eventType: "event_catering", items: [{ ...line, itemId: siteGold }] }, notes: "", deliveryChargeRequired: true };
   let payload: any; let cancelled = false;
-  Object.assign(globalThis, { __amendmentMenu: [item(gold, "Gold", 28), item(silver, "Silver", 20)] });
+  Object.assign(globalThis, { __amendmentMenu: [item(siteGold, "Gold", 28), item(siteSilver, "Silver", 20)] });
   process.env.NEXT_PUBLIC_FIKA_HOT_FORK_BUFFET_ENABLED = "true";
   globalThis.fetch = async (url, init) => {
     if (init?.method === "POST") { payload = JSON.parse(String(init.body)); return Response.json({}); }
@@ -74,7 +76,7 @@ test("All Day amendment sends the edited menu within its original service identi
     return Response.json({ bookings: [booking], sourceHash: "source-v1" });
   };
   try {
-    render(React.createElement(GroupAmendmentEditor, { group: { id: "group-1" } as never, site: "rcoa", oplocId: "oploc:test", onCancel() { cancelled = true; }, onSaved: async () => {}, onBusyChange() {} }));
+    render(React.createElement(GroupAmendmentEditor, { group: { id: "group-1" } as never, site, oplocId: "oploc:test", onCancel() { cancelled = true; }, onSaved: async () => {}, onBusyChange() {} }));
     await screen.findByRole("button", { name: "Edit menu" });
     fireEvent.click(screen.getByRole("button", { name: "Edit menu" }));
     fireEvent.click(screen.getByRole("button", { name: /Back to booking/ }));
@@ -96,6 +98,7 @@ test("All Day amendment sends the edited menu within its original service identi
     assert.equal(payload.services[0].bookingId, "service-1"); assert.equal(payload.services[0].expectedVersion, 7);
     assert.equal(payload.services[0].patch.dietaries.vegetarian, 12);
     const amended = payload.services[0].patch.order.items[0];
+    assert.equal(amended.itemId, siteGold);
     assert.equal(amended.quantity, 31); assert.deepEqual(amended.choices[0], { id: "ordinary", value: "kept" });
     assert.equal(amended.choices[1].value.mains[1].portions, 15);
   } finally { globalThis.fetch = originalFetch; if (oldFlag === undefined) delete process.env.NEXT_PUBLIC_FIKA_HOT_FORK_BUFFET_ENABLED; else process.env.NEXT_PUBLIC_FIKA_HOT_FORK_BUFFET_ENABLED = oldFlag; }

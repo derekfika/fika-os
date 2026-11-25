@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { BuffetMenu, BuffetSelection } from "../app/ui/BuffetMenuDialog";
+import type { BuffetMenu, BuffetSelection } from "../app/ui/BuffetMenuBuilder";
 import type { PortalMenuItem } from "./mnk-contract";
 
 const id = z.string().min(1);
