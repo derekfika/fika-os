@@ -21,6 +21,7 @@ test("grouped quantities require verified complete unique IDs and checkboxes fai
   ] };
   assert.equal(supportsStudioPortalChoices(grouped), true);
   assert.equal(validStudioPortalAllocation(grouped, { "dish:a": 2, "dish:b": 3 }, 5), true);
+  assert.equal(validStudioPortalAllocation(grouped, { "dish:a": Number.MAX_SAFE_INTEGER, "dish:b": 2 }, Number.MAX_SAFE_INTEGER + 2), false);
   assert.equal(supportsStudioPortalChoices({ ...grouped, groups: [{ ...grouped.groups![0], dishIds: ["dish:a", "dish:a"] }] }), false);
   assert.equal(supportsStudioPortalChoices({ ...grouped, presentation: "checkboxes" }), false);
   assert.equal(supportsStudioPortalChoices({ ...base, groups: grouped.groups }), false);
