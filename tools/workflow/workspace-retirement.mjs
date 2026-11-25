@@ -5,7 +5,8 @@ import { ancestor, command, common, git, ref, save, stateDir } from './runtime.m
 import { REPO, exactSha } from './policy.mjs';
 import { canonical, completionFile, localEntry, managedRoot, optionalJson, pathKey, registrations, samePath, sourceTaskFile, split,
   stateRecords, withCapacityLock, workspaceName } from './workspace-capacity.mjs';
-import { verifiedGenerated } from './workspace-cache.mjs';
+import { generatedEntries, generatedRetirementPlan } from './workspace-cache.mjs';
+import { dependencyLinkPlan, readArchivedRetirement, removeRetirementResidue, retirementResidue } from './workspace-residue.mjs';
 
 export const githubOrigin = () => new RegExp(`github\\.com[:/]${REPO}(?:\\.git)?$`, 'i').test(git('remote', 'get-url', 'origin'));
 export function pullInventory(branch) {
@@ -36,30 +37,58 @@ export function sourceStatus(run) {
 const branchRef = branch => `refs/heads/${branch}`;
 const recordsByName = area => new Map(stateRecords(area).map(record => [record.name, record]));
 
-function localSafety(task, completion, tree, operations, historical, management, checkFiles = true) {
-  if (!workspaceName(task.name) || task.branch !== `codex/${task.name}` ||
+const retiring = new Set(['removing', 'removed', 'retired']);
+const retirementArchive = name => path.join(stateDir(), 'source-recovery', 'retirements', name);
+const preservedHead = (name, head) => ref('refs/preserve/source-recovery/retirements/' + name + '/' + head);
+const gitOperationFiles = ['index.lock', 'MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'rebase-merge', 'rebase-apply', 'sequencer', 'BISECT_LOG'];
+
+function assertLocalIdentity(task, completion, tree, operations, historical, management) {
+  if (!workspaceName(task.name) || !task.owner?.trim() || task.branch !== 'codex/' + task.name || task.state === 'creating' ||
     completion.name !== task.name || completion.owner !== task.owner || completion.branch !== task.branch ||
-    !samePath(task.directory, completion.directory) || !samePath(task.directory, path.join(management, task.name))) return 'ownership or workspace path mismatch';
-  if (operations.some(op => op.name === task.name || (op.source?.directory && samePath(op.source.directory, task.directory)))) return 'in-flight or interrupted operation';
-  if (historical && !['finished', 'retired'].includes(historical.state)) return `protected historical workspace state: ${historical.state}`;
-  if (tree && (tree.locked || tree.prunable || tree.branch !== branchRef(task.branch) || tree.HEAD !== completion.finalSha)) return 'registration is locked, stale or changed since completion';
-  if (!tree && localEntry(task.directory)) return 'unregistered workspace directory remains';
-  if (!tree && completion.retirement !== 'removing' && completion.retirement !== 'removed') return 'registration disappeared outside governed cleanup';
+    !samePath(task.directory, completion.directory) || !samePath(task.directory, path.join(management, task.name))) throw Error('Ownership or workspace path mismatch');
+  if (operations.some(op => op.name === task.name || (op.source?.directory && samePath(op.source.directory, task.directory)))) throw Error('In-flight or interrupted workspace operation');
+  if (historical && !['finished', 'retired'].includes(historical.state)) throw Error('Protected historical workspace state: ' + historical.state);
+  if (tree && (tree.locked || tree.prunable || tree.branch !== branchRef(task.branch) || tree.HEAD !== completion.finalSha || completion.retirement === 'retired')) {
+    throw Error('Registration is locked, stale or changed since completion');
+  }
+  if (!tree && !retiring.has(completion.retirement)) throw Error('Registration disappeared outside governed cleanup');
   const local = ref(branchRef(task.branch));
-  if (local !== completion.finalSha && (tree || local)) return 'local branch moved or disappeared after completion';
-  const remote = ref(`refs/remotes/origin/${task.branch}`);
-  if (remote && remote !== completion.finalSha) return 'remote branch moved after completion';
-  if (!tree) return null;
+  if (local !== completion.finalSha && (tree || local)) throw Error('Local branch moved or disappeared after completion');
+  const remote = ref('refs/remotes/origin/' + task.branch);
+  if (remote && remote !== completion.finalSha) throw Error('Remote branch moved after completion');
+}
+
+function registeredRetirement(task, completion) {
   const entry = localEntry(task.directory);
-  if (!entry?.isDirectory() || entry.isSymbolicLink() || !samePath(realpathSync(task.directory), task.directory)) return 'workspace path is missing or resolves through a link';
-  if (!checkFiles) return null;
+  if (!entry?.isDirectory() || !samePath(realpathSync(task.directory), task.directory)) throw Error('Workspace path is missing or resolves through a link');
   const run = (...args) => command('git', args, { cwd: task.directory });
-  if (run('branch', '--show-current') !== task.branch || run('rev-parse', 'HEAD') !== completion.finalSha) return 'checkout changed after completion';
-  if (split(run('ls-files', '-v', '-z')).some(line => /^[a-zS]/.test(line))) return 'index contains assume-unchanged or skip-worktree paths';
+  if (run('branch', '--show-current') !== task.branch || run('rev-parse', 'HEAD') !== completion.finalSha) throw Error('Checkout changed after completion');
+  const admin = run('rev-parse', '--absolute-git-dir');
+  if (!samePath(path.dirname(admin), path.join(common(), 'worktrees')) || !samePath(realpathSync(admin), admin)) throw Error('Unexpected Git worktree metadata path');
+  const operation = gitOperationFiles.find(name => localEntry(path.join(admin, name)));
+  if (operation) throw Error('Unresolved Git operation: ' + operation);
+  if (split(run('ls-files', '-v', '-z')).some(line => /^[a-zS]/.test(line))) throw Error('Index contains assume-unchanged or skip-worktree paths');
   const status = sourceStatus(run);
-  if (split(status).some(line => !line.startsWith('!! '))) return 'tracked or untracked work remains';
-  if (status && !verifiedGenerated(task, status)) return 'ignored files remain and require recovery or independent verification';
-  return null;
+  return generatedRetirementPlan(task, status, completion.finalSha);
+}
+
+function unregisteredRetirement(task, completion, proof) {
+  if (completion.mergedPr?.mergeSha !== proof.mergeSha || completion.mergedPr?.number !== proof.number ||
+      !readArchivedRetirement(retirementArchive(task.name), task, completion.finalSha, preservedHead(task.name, completion.finalSha))) {
+    throw Error('Unregistered retirement lacks matching archived Git and merged PR evidence');
+  }
+  if (!localEntry(task.directory)) return new Map();
+  const allowed = dependencyLinkPlan(task, completion.finalSha, generatedEntries(task));
+  // Old completions have the install fingerprint and Git archive. New ones also
+  // recorded the exact verified links before Git started removal.
+  const recorded = completion.retirementLinks;
+  if (recorded !== undefined && (!Array.isArray(recorded) || recorded.some(pair =>
+    !Array.isArray(pair) || pair.length !== 2 || !allowed.has(pair[0]) || allowed.get(pair[0]) !== pair[1]))) {
+    throw Error('Saved retirement link plan no longer matches the dependency lockfile');
+  }
+  const links = recorded === undefined ? allowed : new Map(recorded);
+  retirementResidue(task.directory, links);
+  return links;
 }
 
 function gitAdminSnapshot(tree, name, contains) {
@@ -149,9 +178,11 @@ export function pruneStaleSourceRegistrations({ execute = false } = {}) {
   return { stale, pruned: entries.map(entry => entry.tree) };
 }
 
-export function cleanupSourceWorkspaces({ execute = false, name, inspect = false, locked = false, readPulls = pullInventory } = {}) {
+const nativeWorktreeRemove = directory => git('worktree', 'remove', directory);
+
+export function cleanupSourceWorkspaces({ execute = false, name, inspect = false, locked = false,
+  readPulls = pullInventory, removeWorktree = nativeWorktreeRemove } = {}) {
   const tasks = recordsByName('source-tasks'), historical = recordsByName('workspaces');
-  const operations = [...stateRecords('workspace-operations'), ...stateRecords('source-operations')];
   const recorded = recordsByName('source-completions');
   for (const [legacyName, record] of historical) {
     if (record.state !== 'finished' || !record.finalSha || tasks.has(legacyName) || !workspaceName(legacyName)) continue;
@@ -159,53 +190,71 @@ export function cleanupSourceWorkspaces({ execute = false, name, inspect = false
     if (!recorded.has(legacyName)) recorded.set(legacyName, { name: legacyName, directory: record.directory, owner: record.owner,
       branch: record.branch, finalSha: record.finalSha, outcome: 'completed', retirement: 'retained' });
   }
-  const completions = [...recorded.values()].filter(record => record.outcome === 'completed' &&
-    record.retirement !== 'retired' && (!name || name === record.name));
-  if (!completions.length) return { retired: [], ready: [], protected: [] };
   const trees = registrations();
+  const completions = [...recorded.values()].filter(record => {
+    if (record.outcome !== 'completed' || (name && name !== record.name)) return false;
+    if (record.retirement !== 'retired') return true;
+    const task = tasks.get(record.name);
+    return task && samePath(task.directory, path.join(managedRoot(), task.name)) && Boolean(localEntry(task.directory));
+  });
+  const result = { retired: [], ready: [], protected: [] };
+  if (!completions.length) return result;
   const management = managedRoot();
   const github = githubOrigin();
   if (execute || inspect) git('fetch', '--no-write-fetch-head', 'origin');
   const main = new Set(git('rev-list', 'origin/main').split(/\r?\n/));
   const pulls = readPulls(name ? tasks.get(name)?.branch : undefined);
-  const result = { retired: [], ready: [], protected: [] };
+  const markers = () => [...stateRecords('workspace-operations'), ...stateRecords('source-operations')];
   for (const completion of completions) {
     const task = tasks.get(completion.name);
     const protect = reason => result.protected.push({ name: completion.name, directory: completion.directory, reason });
     const proof = integrationEvidence(pulls, completion.branch, completion.finalSha, { github, contains: sha => main.has(sha) });
-    if (!task || !proof) { protect('missing owner record or exact merged main PR evidence'); continue; }
+    if (!task || !proof) { protect('Missing owner record or exact merged main PR evidence'); continue; }
+    const candidate = { name: task.name, directory: task.directory, branch: task.branch, head: completion.finalSha, pr: proof };
     try {
-      const tree = trees.find(item => samePath(item.worktree, task.directory));
-      const reason = localSafety(task, completion, tree, operations, historical.get(task.name), management, !execute);
-      if (reason) { protect(reason); continue; }
-      const candidate = { name: task.name, directory: task.directory, branch: task.branch, head: completion.finalSha, pr: proof };
-      if (!execute) { result.ready.push(candidate); continue; }
+      if (!execute) {
+        const tree = trees.find(item => samePath(item.worktree, task.directory));
+        assertLocalIdentity(task, completion, tree, markers(), historical.get(task.name), management);
+        if (tree) registeredRetirement(task, completion);
+        else unregisteredRetirement(task, completion, proof);
+        result.ready.push({ ...candidate, action: tree ? 'retire-checkout' : 'finish-retirement' });
+        continue;
+      }
       const retire = () => {
         const file = completionFile(task.name);
-        const latest = optionalJson(file) || completion;
-        if (latest.retirement === 'retired') return;
+        let latest = optionalJson(file) || completion;
+        if (latest.retirement === 'retired' && !localEntry(task.directory)) return;
         if (latest.outcome !== 'completed' || latest.finalSha !== completion.finalSha) throw Error('Owner completion changed during cleanup');
-        const history = optionalJson(path.join(stateDir(), 'workspaces', `${task.name}.json`));
+        const history = optionalJson(path.join(stateDir(), 'workspaces', task.name + '.json'));
         const currentTask = optionalJson(sourceTaskFile(task.name)) || history;
-        const current = registrations().find(item => samePath(item.worktree, task.directory));
-        const markers = () => [...stateRecords('workspace-operations'), ...stateRecords('source-operations')];
         if (!currentTask) throw Error('Owner record disappeared during cleanup');
-        const hold = localSafety(currentTask, latest, current, markers(), history, management);
-        if (hold) throw Error(hold);
+        const current = registrations().find(item => samePath(item.worktree, currentTask.directory));
+        assertLocalIdentity(currentTask, latest, current, markers(), history, management);
         if (current) {
+          registeredRetirement(currentTask, latest);
           gitAdminSnapshot(current, task.name, sha => main.has(sha));
-          save(file, { ...latest, retirement: 'removing', mergedPr: proof });
-          // Native removal checks tracked and untracked files again. Retest ignored files just before it.
-          const run = (...args) => command('git', args, { cwd: currentTask.directory });
-          const status = sourceStatus(run);
-          if (status && !verifiedGenerated(currentTask, status)) throw Error('Workspace changed during retirement');
-          git('worktree', 'remove', currentTask.directory);
+          // Recheck ignored and source content after archiving Git evidence. Record the
+          // exact link paths before native Git may delete their targets.
+          const links = registeredRetirement(currentTask, latest);
+          latest = { ...latest, retirement: 'removing', mergedPr: proof, retirementLinks: [...links] };
+          save(file, latest);
+          try { removeWorktree(currentTask.directory); }
+          catch (error) {
+            if (registrations().some(item => samePath(item.worktree, currentTask.directory))) {
+              throw Error('Native Git retirement did not finish. The checkout stays registered for inspection', { cause: error });
+            }
+          }
         }
+        if (registrations().some(item => samePath(item.worktree, currentTask.directory))) throw Error('Git worktree registration remains');
+        const links = unregisteredRetirement(currentTask, latest, proof);
+        if (localEntry(currentTask.directory)) removeRetirementResidue(currentTask.directory, links);
+        if (localEntry(currentTask.directory)) throw Error('Physical workspace directory remains after retirement');
         save(file, { ...latest, retirement: 'removed', mergedPr: proof });
         if (registrations().some(item => item.branch === branchRef(task.branch))) throw Error('Branch is checked out in another workspace');
         if (ref(branchRef(task.branch))) git('update-ref', '-d', branchRef(task.branch), latest.finalSha);
-        save(file, { ...latest, retirement: 'retired', retiredAt: new Date().toISOString(), mergedPr: proof });
-        result.ready.push(candidate);
+        save(file, { ...latest, retirement: 'retired', retiredAt: latest.retiredAt || new Date().toISOString(),
+          ...(latest.retirement === 'retired' ? { residueReconciledAt: new Date().toISOString() } : {}), mergedPr: proof });
+        result.ready.push({ ...candidate, action: current ? 'retire-checkout' : 'finish-retirement' });
         result.retired.push(candidate);
       };
       if (locked) retire();

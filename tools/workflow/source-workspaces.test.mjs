@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { fixture } from './lifecycle-fixture.mjs';
 import { createWorkspace, workspaceRecords } from './workspaces.mjs';
 import { integrateSourceWorkspace, createSourceWorkspace, completeSourceWorkspace, recoverSourceReservation, runSourceOperation } from './source-workspaces.mjs';
-import { sourceTaskFile, workspaceInventory } from './workspace-capacity.mjs';
+import { completionFile, sourceTaskFile, workspaceInventory } from './workspace-capacity.mjs';
 import { cleanupSourceWorkspaces, integrationEvidence, pruneStaleSourceRegistrations } from './workspace-retirement.mjs';
 import { installSourceDependencies, recordGenerated, validationOutputCandidates } from './workspace-cache.mjs';
 import { sourceWorkspaceHealth } from './workspace-health.mjs';
@@ -107,9 +107,14 @@ test('ten concurrent claims fill the slots and startup retirement promotes the q
     const [startup, newer] = await finishAll([runCli('startup'), run('slot-new')]);
     assert.equal(startup.cleanup.retired[0].name, released.name);
     assert.equal(startup.health.limit, 10);
-    assert.equal(startup.health.available, 1);
+    assert.equal(startup.health.available, 0);
+    assert.deepEqual(startup.promotion.admitted.map(entry => entry.name), [queued.name]);
     assert.equal(newer.state, 'queued');
-    assert.equal((await run(queued.name)).state, 'active');
+    const promoted = await run(queued.name);
+    assert.equal(promoted.state, 'active');
+    assert.equal(promoted.queuedAt, queued.queuedAt);
+    assert.equal(existsSync(deferredPath), true);
+    await assert.rejects(runCli('create', queued.name, '--owner', 'different-owner'), /already exists/);
     assert.equal(f.within(workspaceInventory).queue[0].name, 'slot-new');
     assert.equal(f.within(workspaceInventory).occupied, 10);
     const unmanaged = path.join(f.base, 'unmanaged outside managed root');
@@ -141,6 +146,7 @@ test('governed validation refreshes verified output and dev preserves nested att
     const task = createSourceWorkspace('source-rebuild', { owner: 'agent-a' });
     const outputPath = `${app.path}/.next`;
     const infoPath = `${app.path}/tsconfig.tsbuildinfo`;
+    const nextPath = `${app.path}/next-env.d.ts`;
     const output = path.join(task.directory, outputPath);
     const contents = path.join(output, 'build');
     const prior = path.join(task.directory, infoPath);
@@ -148,7 +154,7 @@ test('governed validation refreshes verified output and dev preserves nested att
     function build(value, writeExtra = () => {}) {
       return runSourceOperation('validate', workspace => {
         const candidates = validationOutputCandidates(workspace, [app]);
-        assert.deepEqual(candidates.map(candidate => candidate.relative ?? candidate), [outputPath]);
+        assert.deepEqual(candidates.map(candidate => candidate.relative ?? candidate), [outputPath, nextPath]);
         mkdirSync(output, { recursive: true });
         writeFileSync(contents, value);
         writeExtra();
@@ -163,7 +169,7 @@ test('governed validation refreshes verified output and dev preserves nested att
 
     writeFileSync(contents, 'operator changes');
     runSourceOperation('validate', workspace => {
-      assert.deepEqual(validationOutputCandidates(workspace, [app]), []);
+      assert.deepEqual(validationOutputCandidates(workspace, [app]), [nextPath]);
     }, task.name);
     assert.equal(readFileSync(contents, 'utf8'), 'operator changes');
     writeFileSync(contents, 'rebuilt output');
@@ -357,6 +363,156 @@ test('interrupted reservations retain capacity and require confirmed process exi
       assert.equal(workspaceInventory().occupied, 1);
     });
   } finally { f.dispose(); }
+});
+
+function lockedNpmWorktree(f, name = 'retirement-dependency') {
+  const app = 'apps/hospitality-menu-studio';
+  const appDir = path.join(f.repo, app);
+  mkdirSync(appDir, { recursive: true });
+  const shared = path.join(f.repo, 'packages/server-shared');
+  mkdirSync(shared, { recursive: true });
+  writeFileSync(path.join(shared, 'package.json'), '{"name":"@fika/server-shared","version":"1.0.0"}');
+  writeFileSync(path.join(appDir, 'tsconfig.json'), '{}');
+  writeFileSync(path.join(appDir, 'package-lock.json'), JSON.stringify({
+    lockfileVersion: 3,
+    packages: {
+      'node_modules/@fika/server-shared': { link: true, resolved: '../../packages/server-shared' },
+      'node_modules/next': { version: '16.2.12' },
+    },
+  }));
+  writeFileSync(path.join(appDir, '.gitignore'), 'next-env.d.ts\n.next/\n');
+  f.git('add', '.');
+  f.git('commit', '-m', 'Track Next app and npm local package link');
+  f.git('push', 'origin', 'main');
+  const task = createSourceWorkspace(name, { owner: name });
+  const dependencyRoot = app + '/node_modules';
+  const relative = dependencyRoot + '/@fika/server-shared';
+  const dependency = path.join(task.directory, relative);
+  const target = path.join(task.directory, 'packages/server-shared');
+  const placeLink = () => {
+    mkdirSync(path.dirname(dependency), { recursive: true });
+    symlinkSync(target, dependency, process.platform === 'win32' ? 'junction' : 'dir');
+  };
+  placeLink();
+  runSourceOperation('install', workspace => {
+    assert.deepEqual(recordGenerated(workspace, [dependencyRoot]).paths, [dependencyRoot]);
+  }, task.name);
+  return { app, task, dependency, target, placeLink, relative };
+}
+
+const nextDeclaration = [
+  '/// <reference types="next" />', '/// <reference types="next/image-types/global" />',
+  'import "./.next/types/routes.d.ts";', '', '// NOTE: This file should not be edited',
+  '// see https://nextjs.org/docs/app/api-reference/config/typescript for more information.', '',
+].join('\n');
+
+test('Next declarations are recorded by validation and independently verified at retirement', () => {
+  const f = fixture();
+  try { f.within(() => {
+    const { app, task } = lockedNpmWorktree(f);
+    const relative = app + '/next-env.d.ts';
+    const declaration = path.join(task.directory, relative);
+    const complete = () => completeSourceWorkspace(task.name, { owner: task.owner });
+    writeFileSync(declaration, nextDeclaration + '// operator attachment\n');
+    assert.match(complete().cleanup.protected[0].reason, /Unverified ignored output: .*next-env.d.ts/);
+
+    // An exact generated declaration from before this repair needs no fingerprint.
+    writeFileSync(declaration, nextDeclaration.replaceAll('\n', '\r\n'));
+    assert.equal(cleanupSourceWorkspaces({ name: task.name }).ready.length, 1);
+    completeSourceWorkspace(task.name, { owner: task.owner, preserve: true, reason: 'Resume fixture validation' });
+
+    // Fresh validation records the exact generated file and build output. A changed
+    // build remains protected even while the declaration can be reproduced.
+    unlinkSync(declaration);
+    const buildDir = path.join(task.directory, app, '.next');
+    const builtFile = path.join(buildDir, 'built');
+    runSourceOperation('validate', workspace => {
+      const candidates = validationOutputCandidates(workspace, [{ path: app }]);
+      mkdirSync(buildDir);
+      writeFileSync(builtFile, 'verified output');
+      writeFileSync(declaration, nextDeclaration);
+      assert.deepEqual(recordGenerated(workspace, candidates).paths, [app + '/.next', relative]);
+    }, task.name);
+    writeFileSync(builtFile, 'unique evidence');
+    assert.match(complete().cleanup.protected[0].reason, /Unverified ignored output: .*\.next/);
+    assert.equal(readFileSync(builtFile, 'utf8'), 'unique evidence');
+    writeFileSync(builtFile, 'verified output');
+    assert.equal(complete().retirement, 'retired');
+  }); } finally { f.dispose(); }
+});
+
+test('retirement resumes after native Git leaves a dangling own-target dependency junction', () => {
+  const f = fixture();
+  try { f.within(() => {
+    const { task, dependency, target, placeLink, relative } = lockedNpmWorktree(f);
+    const complete = () => completeSourceWorkspace(task.name, { owner: task.owner });
+    runSourceOperation('dev', () => assert.match(complete().cleanup.protected[0].reason, /operation/), task.name);
+
+    const extra = path.join(path.dirname(dependency), 'operator-attachment.txt');
+    const interrupted = cleanupSourceWorkspaces({ execute: true, name: task.name, removeWorktree: directory => {
+      // Model Git's observed post-removal state on Windows. The native call removes
+      // tracked files and registration, and the own-target junction survives.
+      unlinkSync(dependency);
+      f.git('worktree', 'remove', directory);
+      assert.equal(existsSync(target), false);
+      placeLink();
+      writeFileSync(extra, 'unverified user evidence');
+      throw Error('fixture interrupted after Git registration removal');
+    } });
+    assert.match(interrupted.protected[0].reason, /operator-attachment.txt/);
+    assert.equal(readFileSync(extra, 'utf8'), 'unverified user evidence');
+    const saved = JSON.parse(readFileSync(completionFile(task.name), 'utf8'));
+    assert.equal(saved.retirement, 'removing');
+    assert.deepEqual(saved.retirementLinks, [[relative, 'packages/server-shared']]);
+    const health = sourceWorkspaceHealth({ 'inventory-only': true });
+    assert.equal(health.occupied, 1);
+    assert.equal(health.retirementResidues, 1);
+    assert.equal(f.git('rev-parse', task.branch), task.baseline);
+
+    renameSync(extra, path.join(f.base, 'preserved-user-evidence'));
+    assert.throws(() => completeSourceWorkspace(task.name, {
+      owner: task.owner, preserve: true, reason: 'Inspect residue before choosing recovery',
+    }), /Retirement already started/);
+    assert.equal(workspaceInventory().occupied, 1);
+    assert.deepEqual(cleanupSourceWorkspaces().ready.map(entry => entry.action), ['finish-retirement']);
+    assert.equal(complete().retirement, 'retired');
+    assert.equal(existsSync(task.directory), false);
+    assert.equal(workspaceInventory().occupied, 0);
+    assert.equal(cleanupSourceWorkspaces({ execute: true }).retired.length, 0);
+    assert.equal(f.git('rev-parse', 'refs/preserve/source-recovery/retirements/' + task.name + '/' + task.baseline), task.baseline);
+  }); } finally { f.dispose(); }
+});
+
+test('old false retirement is rechecked against its archive, lockfile and exact dangling target', () => {
+  const f = fixture();
+  try { f.within(() => {
+    const { task, dependency, placeLink } = lockedNpmWorktree(f);
+    const actual = completeSourceWorkspace(task.name, { owner: task.owner });
+    assert.equal(actual.retirement, 'retired');
+    const { retirementLinks: _unused, ...legacy } = actual;
+    save(completionFile(task.name), legacy);
+    placeLink();
+    assert.equal(workspaceInventory().entries[0].state, 'retirement-residue');
+
+    const archive = path.join(stateDir(), 'source-recovery', 'retirements', task.name);
+    const gitdir = path.join(archive, 'gitdir');
+    const archivedPointer = readFileSync(gitdir);
+    writeFileSync(gitdir, path.join(f.base, 'another-checkout', '.git'));
+    const cleanup = () => cleanupSourceWorkspaces({ execute: true, name: task.name });
+    assert.match(cleanup().protected[0].reason, /archived Git/);
+    writeFileSync(gitdir, archivedPointer);
+
+    unlinkSync(dependency);
+    const external = path.join(f.base, 'external-package');
+    symlinkSync(external, dependency, process.platform === 'win32' ? 'junction' : 'dir');
+    assert.match(cleanup().protected[0].reason, /Unverified retirement residue: .*server-shared/);
+    assert.equal(workspaceInventory().occupied, 1);
+    unlinkSync(dependency);
+    placeLink();
+    assert.equal(cleanup().retired.length, 1);
+    assert.equal(existsSync(task.directory), false);
+    assert.equal(workspaceInventory().occupied, 0);
+  }); } finally { f.dispose(); }
 });
 
 test('pruning a stale registration keeps the staged index and is idempotent in paths with spaces', () => {

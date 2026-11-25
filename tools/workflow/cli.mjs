@@ -6,7 +6,7 @@ import { APPS, REPO, MAIN_CHECK, affected, target, supportedEnvironments } from 
 import { git, command, ghApi, save, jsonFile } from './runtime.mjs';
 import { workspaceRecords, cleanupPlan, applyCleanup } from './workspaces.mjs';
 import { cancelSourceQueue, checkSourceWorkspace, completeSourceWorkspace, createSourceWorkspace, devSourceWorkspace,
-  integrateSourceWorkspace, recoverSourceOperation, recoverSourceReservation, runSourceOperation } from './source-workspaces.mjs';
+  integrateSourceWorkspace, promoteSourceQueue, recoverSourceOperation, recoverSourceReservation, runSourceOperation } from './source-workspaces.mjs';
 import { requireCanonical, withCapacityLock, workspaceInventory } from './workspace-capacity.mjs';
 import { cleanupSourceWorkspaces, pruneStaleSourceRegistrations } from './workspace-retirement.mjs';
 import { sourceWorkspaceHealth } from './workspace-health.mjs';
@@ -93,8 +93,13 @@ async function main() {
     if (arg === 'create') result = createSourceWorkspace(name, options);
     else if (arg === 'check') result = checkSourceWorkspace(name);
     else if (arg === 'complete') result = completeSourceWorkspace(name, options);
-    else if (arg === 'cancel') result = cancelSourceQueue(name, options);
-    else if (arg === 'recover') result = recoverSourceReservation(name, options);
+    else if (arg === 'cancel') {
+      result = cancelSourceQueue(name, options);
+      if (result.state === 'cancelled') result.promotion = promoteSourceQueue();
+    } else if (arg === 'recover') {
+      result = recoverSourceReservation(name, options);
+      if (result.state === 'cancelled') result.promotion = promoteSourceQueue();
+    }
     else if (arg === 'recover-operation') result = recoverSourceOperation(name, options);
     else if (arg === 'install') {
       requireCanonical();
@@ -104,12 +109,13 @@ async function main() {
     else if (arg === 'cleanup' || arg === 'prune') {
       requireCanonical();
       result = arg === 'prune' ? withCapacityLock(() => pruneStaleSourceRegistrations(options)) : cleanupSourceWorkspaces({ ...options, name, inspect: true });
+      if (options.execute) result.promotion = promoteSourceQueue();
     } else if (arg === 'startup') {
       requireCanonical();
       let cleanup;
       try { cleanup = cleanupSourceWorkspaces({ execute: true }); }
       catch (error) { cleanup = { status: 'unavailable', reason: error.message.split(/\r?\n/)[0] }; }
-      result = { cleanup, health: sourceWorkspaceHealth({ ...options, 'inventory-only': true }) };
+      result = { cleanup, promotion: promoteSourceQueue(), health: sourceWorkspaceHealth({ ...options, 'inventory-only': true }) };
     } else if (arg === 'health') {
       result = sourceWorkspaceHealth(options);
       if (options.output) save(options.output, result);
