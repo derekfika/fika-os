@@ -4,7 +4,7 @@ import { groupSiteMenuEntries, siteMenuFileName, type SiteMenuArtifact } from ".
 import { CANONICAL_ALLERGEN_COLUMNS } from "./allergen-columns";
 import { driveAccessToken, resolveDriveOwner } from "@fika/server-shared/drive-owner";
 import { stableDocumentId } from "@fika/server-shared/stable-document-id";
-import { MenuArtifactError, publishMenuArtifact, resolveMenuTemplate } from "@fika/server-shared/menu-artifact";
+import { MenuArtifactError, menuAllergenLabel, publishMenuArtifact, resolveMenuTemplate } from "@fika/server-shared/menu-artifact";
 import { deliveredInMenuFromDay, deliveredInMenuSiteKey } from "./menu-adapter";
 import { siteMenuDriveConfig } from "./site-menu-drive-config";
 
@@ -26,7 +26,34 @@ async function trashDriveFile(fileId: string, headers: Record<string, string>) {
 export async function retireGoogleSiteMenu(fileId?: string, oplocId?: string) { if (!fileId) return; const token = oplocId ? await driveAccessToken(resolveDriveOwner(siteMenuDriveConfig(oplocId).owner)) : await accessToken(); await trashDriveFile(fileId, { Authorization: `Bearer ${token}`, "content-type": "application/json" }); }
 function slideText(slide: NonNullable<Presentation["slides"]>[number]) { return (slide.pageElements || []).flatMap(element => element.shape?.text?.textElements || []).map(element => element.textRun?.content || "").join(""); }
 function titleCase(value: string) { return value.trim().toLocaleLowerCase("en-GB").replace(/(^|[^A-Za-zÀ-ÿ])([a-zà-ÿ])/g, (_, prefix: string, letter: string) => `${prefix}${letter.toLocaleUpperCase("en-GB")}`); }
-function declaredAllergens(dayEntry: ProjectedDay["entries"][number]) { return [...CANONICAL_ALLERGEN_COLUMNS.filter(([key]) => key !== "no_key_allergens" && (dayEntry.allergens[key] === "contains" || dayEntry.allergens[key] === "may_contain")).map(([, label]) => String(label)), ...(dayEntry.allergenDetailNotes?.trim() ? [`Specific allergens: ${dayEntry.allergenDetailNotes.trim()}`] : []), ...(dayEntry.mayContainNotes?.trim() ? [`May contain: ${dayEntry.mayContainNotes.trim()}`] : [])]; }
+function declaredAllergens(entry: ProjectedDay["entries"][number]) {
+  const labels = new Map<string, string>(CANONICAL_ALLERGEN_COLUMNS);
+  const keys = [...new Set([...labels.keys(), ...Object.keys(entry.allergens)])].filter(key => key !== "no_key_allergens");
+  const names = (state: "contains" | "may_contain") => keys.filter(key => entry.allergens[key] === state).map(key => labels.get(key) ?? menuAllergenLabel(key)).join(", ");
+  const contains = names("contains");
+  const mayContain = names("may_contain");
+  return [
+    contains && `Contains: ${contains}`,
+    mayContain && `May contain: ${mayContain}`,
+    entry.allergenDetailNotes?.trim() && `Specific allergens: ${entry.allergenDetailNotes.trim()}`,
+    entry.mayContainNotes?.trim() && `May contain: ${entry.mayContainNotes.trim()}`,
+  ].filter((line): line is string => Boolean(line));
+}
+
+export function assertPrintableCpuEvidence(day: ProjectedDay) {
+  const packet = day.sourceLineage?.cpu;
+  if (day.cpuReview?.status !== "signed" || packet?.sourceStatus !== "current" || packet.sourceCompleteness !== "complete"
+      || !packet.releaseId || !packet.releaseVersion || !packet.contentHash || packet.sourceBundleHash !== day.contentHash) {
+    throw new MenuArtifactError("MENU_SIGNED_PACKET_REQUIRED", "A current CPU-signed allergen packet for this published day is required to generate its menu.", 409);
+  }
+  for (const entry of day.entries) {
+    const states = Object.values(entry.allergens);
+    if (entry.allergensVisible !== true || (!states.length && entry.cpuAllergenState !== "clear")
+        || states.some(state => state !== "clear" && state !== "contains" && state !== "may_contain")) {
+      throw new MenuArtifactError("MENU_ALLERGENS_UNCONFIRMED", `CPU allergen evidence for "${entry.dishName}" is incomplete. Review the dish before generating its menu.`, 409);
+    }
+  }
+}
 function sectionAnchors(presentation: Presentation, token: string) { return (presentation.slides || []).flatMap(slide => (slide.pageElements || []).filter(element => (element.shape?.text?.textElements || []).map(item => item.textRun?.content || "").join("").includes(token)).map(element => ({ slide, element }))); }
 function textBoxRequest(slideId: string, objectId: string, text: string, x: number, y: number, width: number, height: number, fontSize: number, color: { red: number; green: number; blue: number }, bold: boolean) {
   return [
@@ -78,6 +105,7 @@ async function createSharedSiteMenu(day: ProjectedDay, site: Site, generatedBy: 
 }
 
 export async function createGoogleSiteMenu(day: ProjectedDay, site: Site, generatedBy: string, existingFileId?: string, deliveryId?: string): Promise<SiteMenuArtifact> {
+  assertPrintableCpuEvidence(day);
   if (deliveredInMenuSiteKey(site)) return createSharedSiteMenu(day, site, generatedBy, deliveryId);
   const templateId = resourceId(process.env.GOOGLE_DELIVERED_IN_TEMPLATE_ID); const folderId = resourceId(process.env.GOOGLE_DELIVERED_IN_OUTPUT_FOLDER_ID || process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID_APP_DELIVERED_IN);
   if (!templateId || !folderId) throw new Error("Delivered-In Google Slides template and output folder are not configured.");

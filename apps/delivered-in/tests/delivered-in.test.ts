@@ -3,7 +3,8 @@ import { test } from "node:test";
 import { resolveDeliveredInAccess } from "@fika/server-shared/delivered-in-access";
 import { assertAuthorisedOploc, assertPublishedAllocationIntegrity, isRelevantPublishedWeek, operationalDateLondon, projectPublishedWeeks, siteDayTotal, type SourcePublication } from "../lib/projection";
 import { groupSiteMenuEntries, siteMenuSectionForSlot, siteMenuState, type SiteMenuArtifact } from "../lib/site-menu";
-import { buildDeliveredInMenuRequests, weekFolderName } from "../lib/google-site-menu";
+import { assertPrintableCpuEvidence, buildDeliveredInMenuRequests, createGoogleSiteMenu, weekFolderName } from "../lib/google-site-menu";
+import type { ProjectedDay } from "../lib/projection";
 import { titleCase } from "../lib/text";
 import { applyOrderAction, deliveryCutoff, isBeforeOrderCutoff, orderIdFor, productsForDeliveryDate, rotationWeekForDate, type GrabAndGoProduct } from "../lib/grab-and-go";
 
@@ -124,7 +125,7 @@ test("lowercase Menu Planning names render as title case with attached governed 
   assert.equal(titleCase("fika house salad leaf"), "Fika House Salad Leaf");
   const projected = projectAtTestClock([source([day()])], haleon)[0].days[0];
   const menuDay = { ...projected, entries: [
-    { ...projected.entries[0], slot: "SALAD 1", dishName: "fika house salad leaf", allergens: { gluten: "contains", milk: "contains" } },
+    { ...projected.entries[0], slot: "SALAD 1", dishName: "fika house salad leaf", allergens: { gluten: "contains", milk: "may_contain" } },
     { ...projected.entries[0], sourceEntryId: "entry:2", slot: "Hot Meat", dishName: "mac & cheese", allergens: {} },
   ] as typeof projected.entries };
   const requests = buildDeliveredInMenuRequests(menuDay, { oplocId: haleon, label: "Haleon" }, { pageSize: { width: { magnitude: 10_000_000 }, height: { magnitude: 5_625_000 } }, slides: [
@@ -133,7 +134,7 @@ test("lowercase Menu Planning names render as title case with attached governed 
     { objectId: "empty-sides-slide", pageElements: [{ objectId: "sides-anchor", shape: { text: { textElements: [{ textRun: { content: "{{SIDES_EXTRAS}}" } }] } } }] },
   ] });
   const inserts = requests.filter(request => "insertText" in request).map(request => (request.insertText as { text: string }).text);
-  assert.deepEqual(inserts, ["Fika House Salad Leaf", "(Gluten, Milk)", "Mac & Cheese"]);
+  assert.deepEqual(inserts, ["Fika House Salad Leaf", "(Contains: Gluten, May contain: Milk)", "Mac & Cheese"]);
   const firstShape = requests.find(request => "createShape" in request) as { createShape: { elementProperties: { size: { width: { magnitude: number } } } } };
   assert.ok(firstShape.createShape.elementProperties.size.width.magnitude >= 8_000_000);
   const styles = requests.filter(request => "updateTextStyle" in request).map(request => (request.updateTextStyle as { style: { fontFamily: string; fontSize: { magnitude: number }; bold?: boolean; foregroundColor: { opaqueColor: { rgbColor: { red: number; green: number; blue: number } } } } }).style);
@@ -145,6 +146,40 @@ test("lowercase Menu Planning names render as title case with attached governed 
   assert.equal(requests.some(request => "updateShapeProperties" in request && (request.updateShapeProperties as { shapeProperties: { contentAlignment: string } }).shapeProperties.contentAlignment === "MIDDLE"), true);
   assert.equal(requests.some(request => "deleteObject" in request && (request.deleteObject as { objectId: string }).objectId === "empty-sides-slide"), true);
   assert.equal(requests.some(request => "insertText" in request && (request.insertText as { text: string }).text.includes("Mac & cheese")), false);
+});
+
+test("both menu template paths reject missing CPU evidence before reaching Google", async () => {
+  const published = projectAtTestClock([source([day()])], haleon)[0].days[0];
+  const reviewed: ProjectedDay = {
+    ...published,
+    cpuReview: { status: "signed", signatures: [] },
+    sourceLineage: { cpu: { sourceStatus: "current", sourceCompleteness: "complete", releaseId: "release", releaseVersion: "r1", contentHash: "packet", sourceBundleHash: published.contentHash } },
+    entries: published.entries.map(entry => ({ ...entry, allergensVisible: true })),
+  };
+  const row = reviewed.entries[0];
+  assert.doesNotThrow(() => assertPrintableCpuEvidence(reviewed));
+  assert.doesNotThrow(() => assertPrintableCpuEvidence({ ...reviewed, entries: [{ ...row, allergens: {}, cpuAllergenState: "clear" }] }));
+  for (const oplocId of [haleon, "oploc:66e621fa-6e6f-4f46-9aed-462313abbe8f"]) {
+    const generate = (candidate: ProjectedDay) => createGoogleSiteMenu(candidate, { oplocId, label: "Test site" }, "test");
+    for (const candidate of [
+      published,
+      { ...reviewed, cpuReview: undefined },
+      { ...reviewed, sourceLineage: undefined },
+      { ...reviewed, contentHash: "newer-publication" },
+      { ...reviewed, sourceLineage: { cpu: { ...reviewed.sourceLineage!.cpu, sourceStatus: "partial" as const } } },
+    ]) {
+      await assert.rejects(generate(candidate), { code: "MENU_SIGNED_PACKET_REQUIRED", status: 409 });
+    }
+    const incompleteEntries: ProjectedDay["entries"] = [
+      { ...row, allergensVisible: false },
+      { ...row, allergensVisible: undefined, allergenEvidenceStatus: "confirmed" as const },
+      { ...row, allergens: {} },
+      { ...row, allergens: { milk: "unrecorded" as const } },
+    ];
+    for (const entry of incompleteEntries) {
+      await assert.rejects(generate({ ...reviewed, entries: [entry] }), { code: "MENU_ALLERGENS_UNCONFIRMED", status: 409 });
+    }
+  }
 });
 
 const grabProducts: GrabAndGoProduct[] = [
