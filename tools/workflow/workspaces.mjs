@@ -330,7 +330,7 @@ function generatedPlan(record, options) {
   const ignored = command('git', ['status', '--porcelain', '-z', '--ignored'], { cwd: record.directory }).split('\0').filter(Boolean);
   if (!ignored.length) return [];
   if (!options['preserve-generated']) throw Error('Ignored files remain; --preserve-generated archives only allowlisted ignored dependencies/build outputs, never deletes them');
-  const allowed = ['node_modules', ...Object.values(APPS).flatMap(app => [`${app.path}/node_modules`, `${app.path}/.next`, `${app.path}/tsconfig.tsbuildinfo`])];
+  const allowed = ['node_modules', ...Object.values(APPS).flatMap(app => [`${app.path}/node_modules`, `${app.path}/.next`, `${app.path}/tsconfig.tsbuildinfo`]), 'apps/events-dashboard/.next'];
   for (const entry of ignored) {
     const name = entry.slice(3).replace(/\/$/, '');
     if (!entry.startsWith('!! ') || !allowed.some(a => name === a || name.startsWith(`${a}/`))) throw Error(`Non-disposable ignored file must be preserved separately: ${name}`);
