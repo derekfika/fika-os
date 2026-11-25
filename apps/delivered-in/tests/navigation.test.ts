@@ -19,11 +19,14 @@ test("Delivered-In UI exposes navigation, browser history and conditional Grab &
   const grab = await readFile(new URL("../app/grab-and-go-page.tsx", import.meta.url), "utf8");
   assert.match(page, /aria-label=\"Delivered-In navigation\"/);
   assert.match(page, /addEventListener\(\"popstate\"/);
-  assert.match(page, /selectedSite\?\.services\?\.grabAndGo/);
+  assert.match(page, /readGrabAndGoAccess\(accessRequest\.signal\)/);
+  assert.match(page, /grabAndGoHref &&/);
+  assert.match(page, /hasDeliveredInSites &&/);
   assert.doesNotMatch(page, /AllergenView|Allergens<|view === "allergens"/);
   assert.match(page, /Allergen documentation/);
   assert.match(page, /View signed allergen checker/);
   assert.match(grab, /requested\.oplocId/);
-  assert.match(grab, /oplocId: nextSiteId/);
+  assert.match(grab, /selectGrabAndGoSite\(sites, requested\.oplocId\)/);
+  assert.match(grab, /site\?\.services\?\.deliveredIn/);
   assert.doesNotMatch(grab, /view=allergens|Allergens/);
 });
