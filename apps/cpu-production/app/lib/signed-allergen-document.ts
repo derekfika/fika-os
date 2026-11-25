@@ -3,7 +3,17 @@ import { isAdHocProductionOrder } from "../../lib/ad-hoc-order";
 import { currentAllergenReleaseMatchesOrder, type MatrixArtifact, type ProductionPlan } from "./production-plan";
 
 export type SignedAllergenDocumentState = "ready" | "unsigned" | "pending" | "failed" | "revoked" | "stale" | "unavailable";
-export type SignedAllergenDocumentResult = { state: SignedAllergenDocumentState; message: string; artifact?: MatrixArtifact };
+type ReadyDocument = { state: "ready"; message: string; artifact: MatrixArtifact; releaseId: string; releaseVersion: number };
+export type SignedAllergenDocumentResult = ReadyDocument | { state: Exclude<SignedAllergenDocumentState, "ready">; message: string; artifact?: never };
+
+/** A download may span a revocation, a replacement file or a new signed release. */
+export function assertSameSignedOrderDocument(opened: ReadyDocument, current: SignedAllergenDocumentResult) {
+  if (current.state !== "ready" || current.releaseId !== opened.releaseId || current.releaseVersion !== opened.releaseVersion
+    || current.artifact.id !== opened.artifact.id || current.artifact.driveFileId !== opened.artifact.driveFileId
+    || current.artifact.contentHash !== opened.artifact.contentHash) {
+    throw Object.assign(new Error("The signed document changed while opening. Reload and try again."), { status: 409 });
+  }
+}
 
 const hasRole = (plan: ProductionPlan, role: "production_chef" | "head_chef_site_manager") =>
   Boolean(plan.currentAllergenRelease?.signatures.some(signature => signature.role === role && signature.valid));
@@ -34,5 +44,5 @@ export function signedAllergenDocumentForOrder(plan: ProductionPlan | undefined,
     || artifact.bookingId !== order.sourceBookingId) {
     return { state: "unavailable", message: "The current signed PDF is unavailable. No replacement document was generated." };
   }
-  return { state: "ready", message: "Current signed allergen PDF is ready to view or print.", artifact };
+  return { state: "ready", message: "Current signed allergen PDF is ready to view or print.", artifact, releaseId: release.releaseId, releaseVersion: release.version };
 }

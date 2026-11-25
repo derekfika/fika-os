@@ -1,6 +1,41 @@
 import assert from "node:assert/strict";
+import childProcess from "node:child_process";
+import { EventEmitter } from "node:events";
+import { promises as fs } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import test from "node:test";
-import { isHostedPdfRuntime, renderPdfViaService } from "../app/lib/local-pdf";
+import { isHostedPdfRuntime, renderPdfToBuffer, renderPdfViaService } from "../app/lib/local-pdf";
+
+test("local CPU PDF bytes finish reading before the temporary file is removed", async t => {
+  const env = process.env;
+  process.env = { ...env, FIKA_RUNTIME_MODE: "local", CHROME_PATH: "fixture-renderer" };
+  t.after(() => { process.env = env; });
+
+  const pdf = Buffer.from("%PDF-1.7\nCPU matrix\n%%EOF");
+  let outputPath = "";
+  t.mock.method(childProcess, "spawn", (_browser: string, args: string[]) => {
+    const option = args.find(arg => arg.startsWith("--print-to-pdf="));
+    assert.ok(option);
+    outputPath = option.slice("--print-to-pdf=".length);
+    const child = new EventEmitter();
+    void fs.writeFile(outputPath, pdf).then(() => child.emit("exit", 0), error => child.emit("error", error));
+    return child;
+  });
+  syncBuiltinESMExports();
+  t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
+  const unlink = t.mock.method(fs, "unlink");
+  const wasRemoved = () => unlink.mock.calls.some(call => call.arguments[0] === outputPath);
+  const readFile = fs.readFile;
+  t.mock.method(fs, "readFile", async (file: string) => {
+    await Promise.resolve();
+    assert.equal(wasRemoved(), false, "cleanup started before the PDF read completed");
+    return readFile(file);
+  });
+
+  assert.deepEqual(await renderPdfToBuffer("<p>CPU matrix</p>"), pdf);
+  assert.equal(wasRemoved(), true);
+  await assert.rejects(fs.stat(outputPath), { code: "ENOENT" });
+});
 
 test("hosted CPU PDF selection is explicit and does not depend on system browser paths", () => {
   assert.equal(isHostedPdfRuntime({ FIKA_RUNTIME_MODE: "staging" }, "win32"), true);
