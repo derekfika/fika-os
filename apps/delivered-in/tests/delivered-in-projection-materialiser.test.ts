@@ -38,6 +38,20 @@ test("pending or unsigned CPU review does not suppress the operational menu", as
   assert.equal(projection.state.exceptions[0].code, "CPU_REVIEW_UNSIGNED");
 });
 
+test("only the signed packet can carry an explicit clear summary for a historical row with no matrix", async () => {
+  const sourceDay = { ...day, entries: [{ ...day.entries[0], allergens: {}, cpuAllergenState: "clear" as const }] };
+  const input = { request, site, day: sourceDay, governed: true };
+  const pending = await buildDeliveredInDayProjection({ ...input, loadReview: async () => undefined });
+  assert.equal(pending.entries[0].cpuAllergenState, undefined);
+  const signed = await buildDeliveredInDayProjection({ ...input, loadReview: async () => ({
+    entries: new Map([["dish:1", { allergens: {}, allergenState: "clear" }]]),
+    cpuReview: { status: "signed", signatures: [] },
+    orderIds: [],
+  }) });
+  assert.equal(signed.entries[0].allergensVisible, true);
+  assert.equal(signed.entries[0].cpuAllergenState, "clear");
+});
+
 test("a valid signed CPU review overlays allergens on the same Menu Planning projection", async () => {
   const review = { entries: new Map([["dish:1", { allergens: { milk: "contains" as const }, allergenState: "contains" as const }]]), cpuReview: { status: "signed" as const, signatures: [{ role: "production_chef", printedName: "Chef", signedAt: "2026-09-14T08:00:00Z" }, { role: "head_chef_site_manager", printedName: "Manager", signedAt: "2026-09-14T08:01:00Z" }], drivePdfUrl: "https://example.test/signed.pdf" }, orderIds: ["order:1"], package: { sourceBundleHash: "menu-day-hash", sourceStatus: "current" as const, sourceCompleteness: "complete" as const, releaseId: "release:1", releaseVersion: "r1", signedAt: "2026-09-14T08:01:00Z" } };
   const projection = await buildDeliveredInDayProjection({ request, site, day: { ...day, allergenSignoff: { productionChef: { printedName: "Menu author", signedAt: "2026-09-14T07:00:00Z" } } }, governed: true, loadReview: async () => review });
