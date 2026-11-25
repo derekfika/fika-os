@@ -9,7 +9,7 @@ import { assertStagingDriveResource, driveAccessToken, resolveDriveOwner, stagin
 import { getCpuMasterReview } from "../../../lib/cpu-master-review";
 import { currentSignedMasterDocument, masterReviewIdentity } from "../../lib/signed-master-document";
 import type { MatrixArtifact } from "../../lib/production-plan";
-import { signedAllergenDocumentForOrder } from "../../lib/signed-allergen-document";
+import { assertSameSignedOrderDocument, signedAllergenDocumentForOrder } from "../../lib/signed-allergen-document";
 
 export const dynamic = "force-dynamic";
 const repository = createProductionPlanRepository();
@@ -106,7 +106,11 @@ async function handleGet(request: NextRequest) {
         ? order.destinationOplocId ? resolveDriveOwner({ type: "oploc-workspace", oplocId: order.destinationOplocId }) : undefined
         : resolveDriveOwner({ type: "app-workspace", appId: "cpu-production" });
     if (!owner) return NextResponse.json({ error: { message: "The signed PDF's governed Drive workspace is unavailable." }, state: "unavailable" }, { status: 404, headers: noStore });
-    return await existingPdfResponse(result.artifact, owner);
+    return await existingPdfResponse(result.artifact, owner, async () => {
+      const currentOrder = await authorizeOrder(request, orderId);
+      const currentPlan = await repository.get(orderId);
+      assertSameSignedOrderDocument(result, signedAllergenDocumentForOrder(currentPlan, currentOrder));
+    });
   } catch (error) {
     const response = errorResponse(error);
     for (const [key, value] of Object.entries(noStore)) response.headers.set(key, value);
