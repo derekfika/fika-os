@@ -776,6 +776,8 @@ export default function Studio({
       {page === "home" && <ProductMenuBuilder
         actorName={actor.name}
         canManage={actor.canManage}
+        canPublish={actor.canPublish}
+        publicationPilot={actor.publicationPilot}
         embedded
         requestedProductId={requestedBuilderProductId}
         requestedDestination={requestedBuilderDestination}
@@ -791,14 +793,14 @@ export default function Studio({
         }}
       />}
       {page === "home" && recoverable.length > 0 && (
-        <section className={styles.panelBody}>
-          <h2>Unsaved drafts on this device</h2>
-          <p>Choose a retained copy to review. A newer saved draft stays separate from this copy.</p>
+        <details className={styles.disclosure}>
+          <summary>Recover unsaved edits on this device ({recoverable.length})</summary>
+          <p>Choose a saved copy to continue. It stays separate from the latest saved draft.</p>
           {recoverable.map((copy) => <button type="button" className={styles.listButton} key={copy.key} onClick={() => void recoverDraft(copy)}>
             <strong>{copy.item.name || "Untitled draft"}</strong>
-            <span>{title(copy.kind)} · Started from version {copy.item.version} · {copy.retainedAt ? `Retained ${formatRetainedTime(copy.retainedAt)} ·` : "Time unavailable ·"} Copy {copy.key.slice(-8)} <Icon name="forward" /></span>
+            <span>{title(copy.kind)} · {copy.retainedAt ? `Saved ${formatRetainedTime(copy.retainedAt)}` : "Saved time unavailable"} <Icon name="forward" /></span>
           </button>)}
-        </section>
+        </details>
       )}
       {loading && page !== "home" && <p role="status">Loading menus and dishes…</p>}
       {error && page !== "home" && (
@@ -1009,7 +1011,7 @@ export default function Studio({
                 safetyAvailable={safetyAvailable}
                 checkerOrigin={checkerOrigin}
                 back={dishBack}
-                backLabel={dishContext === "library" ? "Dish collection" : dishContextLabel}
+                backLabel={dishContext === "library" ? "Dish Library" : dishContextLabel}
                 menuContext={contextualDish && menu && section ? {
                   name: menu.name,
                   sectionName: section.name,

@@ -2,11 +2,12 @@
 
 import { useMemo, useRef, useState } from "react";
 import type { CatalogueRow } from "./catalogue-wire";
-import type { ProductMenuSummary } from "../../shared/hospitality-menu-studio-product-content";
-import { StudioButton, StudioField, StudioPageHeader, StudioStatus } from "./studio-design-system";
+import type { ProductMenuListing } from "../../shared/hospitality-menu-studio-product-content";
+import { filterMenuBuilderProducts, menuChoicesForCategory } from "./menu-builder-home-model";
+import { StudioButton, StudioField, StudioPageHeader, StudioSegmentedControl, StudioStatus } from "./studio-design-system";
 import styles from "./menu-builder-home.module.css";
 
-export type { ProductMenuSummary } from "../../shared/hospitality-menu-studio-product-content";
+export type { ProductMenuListing as ProductMenuSummary } from "../../shared/hospitality-menu-studio-product-content";
 
 export type ProductMenuSetup = { kind: "fixed" } | { kind: "rotation"; anchorMonday: string; cycleWeeks: number };
 
@@ -18,14 +19,14 @@ export function MenuBuilderHome({
   onCreate,
 }: {
   products: CatalogueRow[];
-  summaries: ProductMenuSummary[];
+  summaries: ProductMenuListing[];
   canManage?: boolean;
   onOpen: (itemId: string) => void;
   onCreate: (itemId: string, setup: ProductMenuSetup) => Promise<void>;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<"all" | "configured" | "not-configured">("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "published" | "draft" | "not-configured">("all");
   const [selected, setSelected] = useState<CatalogueRow | null>(null);
   const [kind, setKind] = useState<"fixed" | "rotation">("fixed");
   const [weeks, setWeeks] = useState("4");
@@ -34,14 +35,9 @@ export function MenuBuilderHome({
   const [creating, setCreating] = useState(false);
   const configured = useMemo(() => new Map(summaries.map((item) => [item.itemId, item])), [summaries]);
   const visible = useMemo(() => {
-    const needle = query.trim().toLocaleLowerCase("en-GB");
-    return products.filter((item) => {
-      const hasMenu = configured.has(item.itemId);
-      if (filter === "configured" && !hasMenu) return false;
-      if (filter === "not-configured" && hasMenu) return false;
-      return !needle || `${item.name} ${item.category}`.toLocaleLowerCase("en-GB").includes(needle);
-    });
-  }, [configured, filter, products, query]);
+    return filterMenuBuilderProducts(products, new Set(configured.keys()), query, statusFilter,
+      new Set(summaries.filter((item) => item.publicationStatus === "published").map((item) => item.itemId)));
+  }, [configured, products, query, statusFilter, summaries]);
 
   function startCreate(product: CatalogueRow) {
     setSelected(product);
@@ -82,44 +78,41 @@ export function MenuBuilderHome({
 
   return (
     <div className={styles.home}>
-      <StudioPageHeader title="Menu Builder" description="Choose a Hospitality product to create or continue its menu draft." />
-      <p className={styles.draftBoundary}>Menu drafts are not customer offerings. The current verified menu and booking rules remain in effect until a separate approved publication and activation flow is available.</p>
+      <StudioPageHeader title="Menu Builder" description="Choose a Hospitality product to create or continue its menu." />
+      <p className={styles.draftBoundary}>Draft menus do not change customer availability.</p>
       <section className={styles.listPanel} aria-labelledby="products-heading">
         <div className={styles.listHeader}>
-          <div><h2 id="products-heading">Hospitality products</h2><p>Menus use the product’s canonical catalogue identity.</p></div>
+          <div><h2 id="products-heading">Hospitality products</h2><p>Choose a product to open its menu.</p></div>
           <StudioStatus>{products.length} products</StudioStatus>
         </div>
         <div className={styles.filters}>
           <StudioField label="Search products">
-            <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name or category" />
+            <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search products" />
           </StudioField>
-          <StudioField label="Draft status">
-            <select value={filter} onChange={(event) => setFilter(event.target.value as typeof filter)}>
-              <option value="all">All products</option><option value="configured">Product draft exists</option><option value="not-configured">No product draft</option>
-            </select>
-          </StudioField>
+          <StudioSegmentedControl label="Menu status" value={statusFilter} options={[{ value: "all", label: "All" }, { value: "published", label: "Published" }, { value: "draft", label: "Draft" }, { value: "not-configured", label: "Not configured" }]} onChange={setStatusFilter} />
         </div>
-        <div className={styles.rows}>
-          {visible.map((product) => {
-            const summary = configured.get(product.itemId);
-            const description = summary?.kind === "fixed" ? `Fixed menu · ${summary.dishCount ?? 0} dishes`
-              : summary ? `${summary.cycleWeeks}-week rotation` : "No product draft";
-            return <article className={styles.row} key={product.itemId}>
-              <div className={styles.productCopy}>
-                <h3>{product.name}</h3><p>{product.category || "Hospitality product"}</p>
-              </div>
-              <div className={styles.menuInfo}>
-                <p>{description}</p>
-                <StudioStatus tone={summary ? "info" : "neutral"}>{summary ? "Draft" : "No product draft"}</StudioStatus>
-              </div>
-              <div className={styles.rowAction}>
-                {summary
-                  ? <StudioButton variant="primary" onClick={() => onOpen(product.itemId)}>Open menu</StudioButton>
-                  : <StudioButton variant="primary" disabled={!canManage} disabledReason="Your account has read-only access to menu drafts." onClick={() => startCreate(product)}>Create menu</StudioButton>}
-              </div>
-            </article>;
-          })}
-          {!visible.length && <p className={styles.empty} role="status">{products.length ? "No products match this search and filter." : "No Hospitality products are available."}</p>}
+        <div className={styles.tableScroll}>
+          <table className={styles.productTable}>
+            <thead><tr><th scope="col">Product</th><th scope="col">Menu</th><th scope="col"><span className={styles.srOnly}>Action</span></th></tr></thead>
+            <tbody>
+              {visible.map((product) => {
+                const summary = configured.get(product.itemId);
+                const menuChoices = menuChoicesForCategory(product.category);
+                const description = summary?.kind === "fixed" ? `Fixed menu · ${summary.dishCount ?? 0} dishes`
+                  : summary ? `${summary.cycleWeeks}-week rotation` : menuChoices ? "No menu yet" : "No dish menu";
+                return <tr key={product.itemId}>
+                  <th scope="row"><span className={styles.productName}>{product.name}</span><span className={styles.category}>{product.category || "Hospitality product"}</span></th>
+                  <td>{summary ? <><StudioStatus tone={summary.publicationStatus === "published" ? "success" : "info"}>{summary.publicationStatus === "published" ? "Published to Hub" : summary.publicationStatus === "unavailable" ? "Status unavailable" : summary.hasPublishedRevision ? "Draft · prior version published" : "Draft"}</StudioStatus><span className={styles.menuDescription}>{description}</span></> : <span className={menuChoices ? styles.emptyStatus : styles.category}>{description}</span>}</td>
+                  <td className={styles.actionCell}>
+                    {summary
+                      ? <StudioButton variant="primary" onClick={() => onOpen(product.itemId)}>Open menu</StudioButton>
+                      : menuChoices && <StudioButton variant="primary" disabled={!canManage} disabledReason="Your account has read-only access to menu drafts." onClick={() => startCreate(product)}>Create menu</StudioButton>}
+                  </td>
+                </tr>;
+              })}
+              {!visible.length && <tr><td colSpan={3} className={styles.empty} role="status">{products.length ? "No products match this search and menu status." : "No Hospitality products are available."}</td></tr>}
+            </tbody>
+          </table>
         </div>
       </section>
       <dialog className={styles.dialog} ref={dialog} aria-labelledby="create-menu-title" onClose={() => setSelected(null)}>

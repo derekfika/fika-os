@@ -4,8 +4,10 @@ import { isDeepStrictEqual } from "node:util";
 import { dishSchema } from "../../shared/hospitality-menu-studio-content";
 import {
   initialProductMenuConfiguration, productMenuDraft, productMenuSummary,
-  type ProductMenuConfiguration, type ProductMenuDraft, type ProductMenuSetup, type ProductMenuSummary,
+  type ProductMenuConfiguration, type ProductMenuDraft, type ProductMenuListing, type ProductMenuSetup, type ProductMenuSummary,
 } from "../../shared/hospitality-menu-studio-product-content";
+import { decodeStudioProductPublication, studioProductMenuId } from "../../shared/hospitality-menu-studio-product-publication";
+import { publicationIdFor, publicationHash, studioPublicationDescriptor } from "../../shared/hospitality-menu-studio-publication";
 import { productMenuDishKey, type ProductMenuDishReference } from "./product-menu-dishes";
 import { StudioProblem } from "./problem";
 
@@ -22,7 +24,7 @@ type SavedDraft = {
 
 export class ProductMenuStore {
   constructor(private readonly drafts: CollectionReference, private readonly dishes: CollectionReference,
-    private readonly now: () => Date) {}
+    private readonly now: () => Date, private readonly projectId: "demo-fika-os" | "fika-os-dev") {}
 
   async read(itemId: string) {
     const record = await this.drafts.doc(itemId).get();
@@ -40,17 +42,65 @@ export class ProductMenuStore {
     });
   }
 
-  async list(currentItemIds: ReadonlySet<string>, cursor?: string) {
+  async list(currentItemIds: ReadonlySet<string>, cursor?: string): Promise<{ items: ProductMenuListing[]; nextCursor: string | null }> {
     let query = this.drafts.select("summary").orderBy(FieldPath.documentId()).limit(pageSize + 1);
     if (cursor) query = query.startAfter(cursor);
     const page = (await query.get()).docs;
-    const items = page.slice(0, pageSize).filter(record => currentItemIds.has(record.id))
+    const rows = page.slice(0, pageSize).filter(record => currentItemIds.has(record.id))
       .map(record => {
         const summary = productMenuSummary.safeParse(record.get("summary"));
         if (!summary.success || summary.data.itemId !== record.id) throw integrity();
-        return summary.data;
+        return { ref: record.ref, summary: summary.data };
       });
+    const statuses = await this.publicationStatuses(rows);
+    const items = rows.map(({ ref, summary }) => ({ ...summary, ...(statuses.get(ref.id) ?? { publicationStatus: "unavailable" as const }) }));
     return { items, nextCursor: page.length > pageSize ? page[pageSize - 1].id : null };
+  }
+
+  private async publicationStatuses(rows: { ref: DocumentReference; summary: ProductMenuSummary }[]) {
+    if (!rows.length) return new Map<string, Pick<ProductMenuListing, "publicationStatus" | "hasPublishedRevision">>();
+    const latest = await this.drafts.firestore.getAll(...rows.map(({ ref }) => ref.collection("productPublicationState").doc("latest")));
+    const entries = rows.map((row, index) => {
+      const snapshot = latest[index]!;
+      if (!snapshot.exists) return { ...row, status: { publicationStatus: "draft" as const, hasPublishedRevision: false } };
+      const descriptor = studioPublicationDescriptor.safeParse(snapshot.data()?.manifest);
+      if (!descriptor.success || descriptor.data.menuId !== studioProductMenuId(row.ref.id)) {
+        return { ...row, status: { publicationStatus: "unavailable" as const } };
+      }
+      return { ...row, manifest: descriptor.data };
+    });
+    const packageEntries = entries.filter((entry): entry is typeof entry & { manifest: ReturnType<typeof studioPublicationDescriptor.parse> } => "manifest" in entry);
+    const packages = packageEntries.length
+      ? await this.drafts.firestore.getAll(...packageEntries.map(({ ref, manifest }) => ref.collection("productPublicationPackages").doc(manifest.id)))
+      : [];
+    const verifiedPackages = packageEntries.flatMap((entry, index) => {
+      const record = packages[index]!.data();
+      const { manifest } = entry;
+      if (!record || !isDeepStrictEqual(record.manifest, manifest) || typeof record.body !== "string" ||
+          manifest.id !== publicationIdFor(manifest.menuId, manifest.revision) ||
+          !decodeStudioProductPublication(record.body, manifest, this.projectId) ||
+          manifest.sourceDraftVersion > entry.summary.version) return [];
+      return [{ ...entry, body: record.body }];
+    });
+    const outboxes = verifiedPackages.length
+      ? await this.drafts.firestore.getAll(...verifiedPackages.map(({ ref, manifest }) => ref.collection("productPublicationDelivery").doc(manifest.id)))
+      : [];
+    const verifiedStatuses = new Map<string, Pick<ProductMenuListing, "publicationStatus" | "hasPublishedRevision">>();
+    for (const [index, entry] of verifiedPackages.entries()) {
+      const { manifest, summary, ref } = entry;
+      const outbox = outboxes[index]!.data();
+      if (outbox?.action !== "studio-product-content-published" || outbox.source !== "hospitality-menu-studio" ||
+          outbox.actorId !== manifest.publishedBy || outbox.at !== manifest.publishedAt || outbox.status !== "delivered" ||
+          outbox.contentHash !== manifest.contentHash || outbox.publicationId !== manifest.id || outbox.itemId !== ref.id ||
+          outbox.sourceDraftVersion !== manifest.sourceDraftVersion ||
+          outbox.previousPublicationId !== (manifest.revision === 1 ? null : publicationIdFor(manifest.menuId, manifest.revision - 1)) ||
+          publicationHash(entry.body) !== manifest.contentHash) {
+        verifiedStatuses.set(ref.id, { publicationStatus: "unavailable" });
+        continue;
+      }
+      verifiedStatuses.set(ref.id, { publicationStatus: manifest.sourceDraftVersion === summary.version ? "published" : "draft", hasPublishedRevision: true });
+    }
+    return new Map(entries.map(entry => [entry.ref.id, "status" in entry ? entry.status : verifiedStatuses.get(entry.ref.id) ?? { publicationStatus: "unavailable" as const }]));
   }
 
   async createOrOpen(actorId: string, itemId: string, setup: ProductMenuSetup) {

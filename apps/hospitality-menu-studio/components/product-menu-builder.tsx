@@ -1,11 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { ProductMenuChoices, ProductMenuConfiguration, ProductMenuDraft, ProductMenuSummary } from "../../shared/hospitality-menu-studio-product-content";
-import type { Dish } from "../lib/contract";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import type { ProductMenuChoices, ProductMenuConfiguration, ProductMenuDraft, ProductMenuListing, ProductMenuSummary } from "../../shared/hospitality-menu-studio-product-content";
+import type { StudioPublicationDescriptor } from "../../shared/hospitality-menu-studio-publication";
+import { categories, type Dish } from "../lib/contract";
+import type { StudioPublicationPilot } from "../lib/hub-publication";
 import { productMenuDishKey, type ProductMenuDish, type ProductMenuDishReference } from "../lib/product-menu-dishes";
 import type { CataloguePayload, CatalogueRow } from "./catalogue-wire";
 import { MenuBuilderHome, type ProductMenuSetup } from "./menu-builder-home";
+import { filterPickerDishes } from "./product-menu-picker-model";
 import { menuChoiceReferences, removeProductMenuGroup } from "./product-menu-editor-model";
 import { ProductMenuPreview } from "./product-menu-preview";
 import { StudioButton, StudioEditorLayout, StudioField, StudioIcon, StudioPageHeader, StudioPanel, StudioSegmentedControl, StudioShell, StudioStatus, type StudioDestination } from "./studio-design-system";
@@ -34,6 +37,17 @@ async function sendJson<T>(body: unknown): Promise<T> {
   return result as T;
 }
 
+async function sendPublication<T>(body: unknown): Promise<T> {
+  const response = await fetch("/api/studio/product-publication", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || "The product review could not be completed.");
+  return result as T;
+}
+
 function choicesAt(configuration: ProductMenuConfiguration, week: number): ProductMenuChoices {
   return configuration.schedule.kind === "fixed"
     ? configuration.schedule.choices
@@ -49,16 +63,27 @@ function orderedDishes(choices: ProductMenuChoices, groupId?: string) {
   return groupId ? choices.groups.find((group) => group.groupId === groupId)?.dishes || [] : choices.dishes;
 }
 
-function summarizeDraft(draft: ProductMenuDraft): ProductMenuSummary {
+function summarizeDraft(draft: ProductMenuDraft, previous?: ProductMenuListing): ProductMenuListing {
   const { configuration } = draft;
-  return configuration.schedule.kind === "fixed"
+  const summary: ProductMenuSummary = configuration.schedule.kind === "fixed"
     ? { itemId: draft.itemId, version: draft.version, updatedAt: draft.updatedAt, kind: "fixed", dishCount: configuration.schedule.choices.dishes.length + configuration.schedule.choices.groups.reduce((count, group) => count + group.dishes.length, 0) }
     : { itemId: draft.itemId, version: draft.version, updatedAt: draft.updatedAt, kind: "rotation", cycleWeeks: configuration.schedule.weeks.length };
+  const unchanged = previous?.version === draft.version;
+  return { ...summary, publicationStatus: unchanged ? previous.publicationStatus : "draft",
+    hasPublishedRevision: unchanged ? previous.hasPublishedRevision : previous?.hasPublishedRevision ?? false };
 }
 
 type DishDisplay = (reference: ProductMenuDishReference) => string;
 
-function ProductMenuReview({ draft, productName, dishes, onBack }: { draft: ProductMenuDraft; productName: string; dishes: Dish[]; onBack: () => void }) {
+function ProductMenuReview({ draft, productName, dishes, canPublish, pilot, onBack }: { draft: ProductMenuDraft; productName: string; dishes: Dish[]; canPublish: boolean; pilot?: StudioPublicationPilot; onBack: () => void }) {
+  const [effectiveDate, setEffectiveDate] = useState(pilot?.firstDate || "");
+  const [review, setReview] = useState<{ issues: string[]; reviewToken: string | null } | null>(null);
+  const [publicationId, setPublicationId] = useState("");
+  const [activationReason, setActivationReason] = useState("");
+  const [activationAttempt, setActivationAttempt] = useState<{ commandId: string; expectedGeneration: number } | null>(null);
+  const [activated, setActivated] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   const lookup = new Map(dishes.map((dish) => [dish.id, dish]));
   const slots = draft.configuration.schedule.kind === "fixed" ? [draft.configuration.schedule.choices] : draft.configuration.schedule.weeks;
   const allReferences = slots.flatMap(menuChoiceReferences);
@@ -70,11 +95,40 @@ function ProductMenuReview({ draft, productName, dishes, onBack }: { draft: Prod
     const current = lookup.get(reference.dishId);
     return current && current.version > reference.revision;
   });
-  const safetyReason = "Product drafts do not yet have a connected CPU safety review and Hub publication/activation contract.";
+  async function checkReadiness() {
+    if (!pilot || !canPublish || !effectiveDate) return;
+    setBusy(true); setError(""); setReview(null);
+    try {
+      const result = await sendPublication<{ issues: string[]; reviewToken: string | null }>({ action: "review", itemId: draft.itemId, version: draft.version, effectiveDate });
+      setReview(result);
+    } catch (failure) { setError((failure as Error).message || "The CPU and Hub checks could not be completed."); }
+    finally { setBusy(false); }
+  }
+
+  async function publish() {
+    if (!review?.reviewToken || !pilot || !canPublish) return;
+    setBusy(true); setError("");
+    try {
+      const result = await sendPublication<{ publication: StudioPublicationDescriptor }>({ action: "publish", itemId: draft.itemId, version: draft.version, effectiveDate, reviewToken: review.reviewToken, confirmed: true });
+      setPublicationId(result.publication.id);
+    } catch (failure) { setError((failure as Error).message || "The publication was not confirmed by Hub."); }
+    finally { setBusy(false); }
+  }
+
+  async function activate() {
+    if (!pilot?.activateProduct || !publicationId || activationReason.trim().length < 3) return;
+    const attempt = activationAttempt || { commandId: crypto.randomUUID(), expectedGeneration: pilot.generation };
+    setActivationAttempt(attempt); setBusy(true); setError("");
+    try {
+      await sendPublication({ action: "activate", itemId: draft.itemId, publicationId, ...attempt, reason: activationReason });
+      setActivated(true);
+    } catch (failure) { setError((failure as Error).message || "Hub did not confirm activation. Retry the same request."); }
+    finally { setBusy(false); }
+  }
   return <div className={styles.reviewPage}>
     <StudioPageHeader breadcrumbs={[{ label: "Menu Builder" }, { label: productName }, { label: "Review & publish" }]} title="Review & publish" description={`${productName} · ${draft.configuration.schedule.kind === "fixed" ? "Fixed menu" : `${draft.configuration.schedule.weeks.length}-week rotation`}`} actions={<StudioButton onClick={onBack}>Back to editor</StudioButton>} />
     <div className={styles.reviewGrid}>
-      <StudioPanel title="Menu summary" description={`Draft version ${draft.version} · ${draft.configuration.presentation === "dropdown" ? "Single choice" : draft.configuration.presentation === "checkboxes" ? "Multiple choice" : "Quantities"}`}>
+      <StudioPanel title="Menu summary" description={draft.configuration.presentation === "dropdown" ? "Single choice" : draft.configuration.presentation === "checkboxes" ? "Multiple choice" : "Quantities"}>
         {draft.configuration.schedule.kind === "rotation" && <p>Cycle starts Monday {draft.configuration.schedule.anchorMonday}. Repeats every {draft.configuration.schedule.weeks.length} weeks.</p>}
         <div className={styles.reviewSlots}>{slots.map((slot, index) => {
           const title = draft.configuration.schedule.kind === "fixed" ? "Dishes" : `Week ${index + 1}`;
@@ -91,23 +145,35 @@ function ProductMenuReview({ draft, productName, dishes, onBack }: { draft: Prod
           </section>;
         })}</div>
       </StudioPanel>
-      <StudioPanel title="Readiness" description="Only verified checks can approve a menu for customers.">
+      <StudioPanel title="Review and publication" description="The current CPU review and Hub publication contract decide whether this menu can proceed.">
         <ul className={styles.readiness}>
-          <li><StudioStatus tone={emptySlots ? "warning" : "neutral"}>{emptySlots ? "Action needed" : "Not verified"}</StudioStatus><span>{emptySlots ? `${emptySlots} menu ${emptySlots === 1 ? "slot is" : "slots are"} empty.` : "Menu configuration checks are not available for this draft."}</span></li>
+          <li><StudioStatus tone={emptySlots ? "warning" : "neutral"}>{emptySlots ? "Action needed" : "Ready to check"}</StudioStatus><span>{emptySlots ? `${emptySlots} menu ${emptySlots === 1 ? "slot is" : "slots are"} empty.` : "Run the authorised review to check the saved product, menu and safety evidence."}</span></li>
           <li><StudioStatus tone={assigned.loading ? "neutral" : missingReferences.size ? "danger" : "success"}>{assigned.loading ? "Checking" : missingReferences.size ? "Dish unavailable" : "Loaded"}</StudioStatus><span>{assigned.loading ? "Loading assigned dish revisions." : missingReferences.size ? `${missingReferences.size} assigned dish revisions could not be loaded.` : "Assigned dish revisions are available."}</span></li>
           {changedReferences.length > 0 && <li><StudioStatus tone="warning">Re-review needed</StudioStatus><span>{changedReferences.length} dishes have changed since this draft selected their saved revisions.</span></li>}
-          <li><StudioStatus tone="warning">Unavailable</StudioStatus><span>{safetyReason}</span></li>
-          <li><StudioStatus tone="warning">Not checked</StudioStatus><span>Site/date availability and booking impact are not verified for product drafts.</span></li>
+          {review && <li><StudioStatus tone={review.reviewToken ? "success" : "warning"}>{review.reviewToken ? "Checks passed" : "Action needed"}</StudioStatus><span>{review.reviewToken ? "Product and current CPU evidence checks passed. Hub publication is still a separate step." : review.issues.join(" ") || "The review did not approve this draft."}</span></li>}
+          <li><StudioStatus tone="warning">Not checked</StudioStatus><span>Booking impact is unavailable under the current product publication contract.</span></li>
         </ul>
         {assigned.error && <StudioButton onClick={assigned.retry}>Retry saved dish details</StudioButton>}
-        <StudioButton variant="primary" disabled disabledReason={`${safetyReason} The current verified menu remains in effect.`}>Publish menu</StudioButton>
+        {pilot && canPublish ? <>
+          <StudioField label="Effective date"><input type="date" min={pilot.firstDate} max={pilot.lastDate} value={effectiveDate} disabled={Boolean(publicationId)} onChange={(event) => { setEffectiveDate(event.target.value); setReview(null); setPublicationId(""); }} /></StudioField>
+          <StudioButton onClick={() => void checkReadiness()} busy={busy} disabled={Boolean(publicationId) || !effectiveDate || Boolean(emptySlots) || assigned.loading || missingReferences.size > 0}>Check readiness</StudioButton>
+          {review?.reviewToken && <StudioButton variant="primary" onClick={() => void publish()} busy={busy}>Publish to Hub</StudioButton>}
+          {publicationId && <div className={styles.reviewBoundary}>
+            <p><StudioStatus tone="success">Published to Hub</StudioStatus> This menu is published. Customer activation is a separate governed step.</p>
+            {pilot.activateProduct ? <>
+              <StudioField label="Activation reason"><input value={activationReason} maxLength={500} disabled={Boolean(activationAttempt)} onChange={(event) => { setActivationReason(event.target.value); setActivationAttempt(null); }} /></StudioField>
+              <StudioButton variant="primary" onClick={() => void activate()} busy={busy} disabled={activated || activationReason.trim().length < 3}>{activated ? "Activated for customers" : activationAttempt ? "Retry activation" : "Activate for customers"}</StudioButton>
+            </> : <p>Hub has not granted this account and staging scope product activation.</p>}
+          </div>}
+        </> : <p className={styles.reviewBoundary}>CPU review and Hub publication are unavailable to this account or staging scope. The draft remains unpublished.</p>}
+        {error && <p className={styles.error} role="alert">{error}</p>}
         <p className={styles.reviewBoundary}>Reviewing this draft does not publish it or change customer availability. Existing bookings keep their current records.</p>
       </StudioPanel>
     </div>
   </div>;
 }
 
-function ProductMenuEditor({ draft, productName, dishes, dishCursor, loadingDishes, canManage, onLoadMoreDishes, onSave, onReview, onDirtyChange, onBack }: {
+function ProductMenuEditor({ draft, productName, dishes, dishCursor, loadingDishes, canManage, onLoadMoreDishes, onDishCreated, onSave, onReview, onDirtyChange, onBack }: {
   draft: ProductMenuDraft;
   productName: string;
   dishes: Dish[];
@@ -115,6 +181,7 @@ function ProductMenuEditor({ draft, productName, dishes, dishCursor, loadingDish
   loadingDishes: boolean;
   canManage: boolean;
   onLoadMoreDishes: () => void;
+  onDishCreated: (dish: Dish) => void;
   onSave: (configuration: ProductMenuConfiguration) => Promise<void>;
   onReview: () => void;
   onDirtyChange: (dirty: boolean) => void;
@@ -126,7 +193,12 @@ function ProductMenuEditor({ draft, productName, dishes, dishCursor, loadingDish
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [dishQuery, setDishQuery] = useState("");
+  const [dishCategory, setDishCategory] = useState("all");
   const [selectedDishIds, setSelectedDishIds] = useState<string[]>([]);
+  const [creatingDish, setCreatingDish] = useState(false);
+  const [creatingDishBusy, setCreatingDishBusy] = useState(false);
+  const [creatingDishError, setCreatingDishError] = useState("");
+  const [newDish, setNewDish] = useState({ name: "", category: "other" as Dish["category"], temperature: null as Dish["temperature"], customerDescription: "", kitchenDescription: "" });
   const [targetGroupId, setTargetGroupId] = useState("");
   const [newGroupName, setNewGroupName] = useState("");
   const dialog = useRef<HTMLDialogElement>(null);
@@ -135,10 +207,7 @@ function ProductMenuEditor({ draft, productName, dishes, dishCursor, loadingDish
   const allAssigned = useMemo(() => new Set(references.map(dish => dish.dishId)), [references]);
   const assigned = useProductMenuDishes(references, dishes);
   const dishName = (reference: ProductMenuDishReference) => archivedDishName(assigned, reference);
-  const visibleDishes = useMemo(() => {
-    const query = dishQuery.trim().toLocaleLowerCase("en-GB");
-    return dishes.filter((dish) => !allAssigned.has(dish.id) && (!query || `${dish.name} ${dish.category} ${dish.customerDescription}`.toLocaleLowerCase("en-GB").includes(query)));
-  }, [allAssigned, dishes, dishQuery]);
+  const visibleDishes = useMemo(() => filterPickerDishes(dishes, dishQuery, dishCategory, allAssigned), [allAssigned, dishes, dishQuery, dishCategory]);
   const dishById = useMemo(() => new Map(dishes.map((dish) => [dish.id, dish])), [dishes]);
 
   useEffect(() => {
@@ -186,6 +255,17 @@ function ProductMenuEditor({ draft, productName, dishes, dishCursor, loadingDish
     setNewGroupName("");
   }
 
+  function moveGroup(groupId: string, direction: -1 | 1) {
+    change((current) => {
+      const index = current.groups.findIndex((group) => group.id === groupId);
+      const nextIndex = index + direction;
+      if (index < 0 || nextIndex < 0 || nextIndex >= current.groups.length) return current;
+      const groups = [...current.groups];
+      [groups[index], groups[nextIndex]] = [groups[nextIndex]!, groups[index]!];
+      return { ...current, groups };
+    });
+  }
+
   function moveDish(groupId: string | undefined, index: number, direction: -1 | 1) {
     change((current) => withChoices(current, week, (slot) => {
       const target = orderedDishes(slot, groupId);
@@ -208,7 +288,26 @@ function ProductMenuEditor({ draft, productName, dishes, dishCursor, loadingDish
     setTargetGroupId(groupId || configuration.groups[0]?.id || "");
     setSelectedDishIds([]);
     setDishQuery("");
+    setDishCategory("all");
+    setCreatingDish(false);
+    setCreatingDishError("");
     dialog.current?.showModal();
+  }
+
+  async function createDishFromPicker(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!canManage || creatingDishBusy || !newDish.name.trim() || !newDish.customerDescription.trim() || !newDish.kitchenDescription.trim()) return;
+    setCreatingDishBusy(true); setCreatingDishError("");
+    try {
+      const item: Dish = { ...newDish, id: crypto.randomUUID(), version: 0, updatedAt: "", name: newDish.name.trim(), customerDescription: newDish.customerDescription.trim(), kitchenDescription: newDish.kitchenDescription.trim(), assortment: null };
+      const result = await request({ action: "save-dish", item });
+      const saved = result.item as Dish;
+      onDishCreated(saved);
+      setSelectedDishIds((ids) => ids.includes(saved.id) ? ids : [...ids, saved.id]);
+      setNewDish({ name: "", category: "other", temperature: null, customerDescription: "", kitchenDescription: "" });
+      setCreatingDish(false);
+    } catch (failure) { setCreatingDishError((failure as Error).message || "The dish draft could not be saved."); }
+    finally { setCreatingDishBusy(false); }
   }
 
   function addSelectedDishes() {
@@ -225,7 +324,7 @@ function ProductMenuEditor({ draft, productName, dishes, dishCursor, loadingDish
   const weekCount = configuration.schedule.kind === "rotation" ? configuration.schedule.weeks.length : 1;
   const heading = configuration.schedule.kind === "fixed" ? "Fixed menu" : `${weekCount}-week rotation`;
   return <div className={styles.builder}>
-    <StudioPageHeader breadcrumbs={[{ label: "Menu Builder" }, { label: productName }]} title={productName} description={heading} context={<StudioStatus tone="info">Draft · version {draft.version}</StudioStatus>} actions={<StudioButton variant="primary" disabled={!canManage || dirty} disabledReason={!canManage ? "This account cannot review menu drafts." : dirty ? "Save the draft before reviewing it." : undefined} onClick={onReview}>Review &amp; publish</StudioButton>} />
+    <StudioPageHeader breadcrumbs={[{ label: "Menu Builder" }, { label: productName }]} title={productName} description={heading} context={<StudioStatus tone="info">Draft</StudioStatus>} actions={<StudioButton variant="primary" disabled={!canManage || dirty} disabledReason={!canManage ? "This account cannot review menu drafts." : dirty ? "Save the draft before reviewing it." : undefined} onClick={onReview}>Review &amp; publish</StudioButton>} />
     <StudioEditorLayout editor={<>
       {configuration.schedule.kind === "rotation" && <StudioPanel title="Weeks" description="Choose a week to edit its dishes.">
         <div className={styles.weekStrip} role="group" aria-label="Rotation weeks">{configuration.schedule.weeks.map((_, index) => <button key={index} type="button" aria-pressed={week === index} onClick={() => setWeek(index)}>Week {index + 1}</button>)}</div>
@@ -239,7 +338,7 @@ function ProductMenuEditor({ draft, productName, dishes, dishCursor, loadingDish
             const slot = currentChoices.groups.find((item) => item.groupId === group.id);
             const references = slot?.dishes || [];
             return <section className={styles.group} key={group.id}>
-              <div className={styles.groupHeading}><StudioField label={`Group ${groupIndex + 1} name`}><input required value={group.name} maxLength={200} onChange={(event) => change((current) => ({ ...current, groups: current.groups.map((item) => item.id === group.id ? { ...item, name: event.target.value } : item) }))} /></StudioField><StudioField label={`Selection for ${group.name || `group ${groupIndex + 1}`}`}><select value={group.presentation || ""} onChange={(event) => change((current) => ({ ...current, groups: current.groups.map((item) => item.id === group.id ? { ...item, presentation: (event.target.value || undefined) as typeof item.presentation } : item) }))}><option value="">Use menu selection</option><option value="dropdown">Single choice</option><option value="checkboxes">Multiple choice</option><option value="quantities">Quantities</option></select></StudioField><StudioButton variant="tertiary" aria-label={`Remove group ${group.name}`} onClick={() => change(current => removeProductMenuGroup(current, group.id))}>Remove</StudioButton></div>
+              <div className={styles.groupHeading}><StudioField label={`Group ${groupIndex + 1} name`}><input required value={group.name} maxLength={200} onChange={(event) => change((current) => ({ ...current, groups: current.groups.map((item) => item.id === group.id ? { ...item, name: event.target.value } : item) }))} /></StudioField><StudioField label={`Selection for ${group.name || `group ${groupIndex + 1}`}`}><select value={group.presentation || ""} onChange={(event) => change((current) => ({ ...current, groups: current.groups.map((item) => item.id === group.id ? { ...item, presentation: (event.target.value || undefined) as typeof item.presentation } : item) }))}><option value="">Use menu selection</option><option value="dropdown">Single choice</option><option value="checkboxes">Multiple choice</option><option value="quantities">Quantities</option></select></StudioField><StudioButton aria-label={`Move group ${group.name} up`} disabled={groupIndex === 0} onClick={() => moveGroup(group.id, -1)}>↑</StudioButton><StudioButton aria-label={`Move group ${group.name} down`} disabled={groupIndex === configuration.groups.length - 1} onClick={() => moveGroup(group.id, 1)}>↓</StudioButton><StudioButton variant="tertiary" aria-label={`Remove group ${group.name}`} onClick={() => change(current => removeProductMenuGroup(current, group.id))}>Remove</StudioButton></div>
               <DishList references={references} dishes={assigned.byRevision} dishName={dishName} move={(index, direction) => moveDish(group.id, index, direction)} remove={(id) => removeDish(group.id, id)} />
               <StudioButton variant="secondary" onClick={() => openDishPicker(group.id)}>Add to {group.name || "group"}</StudioButton>
             </section>;
@@ -255,13 +354,24 @@ function ProductMenuEditor({ draft, productName, dishes, dishCursor, loadingDish
       {saveError && <p className={styles.error} role="alert">{saveError}</p>}
     </>} preview={<ProductMenuPreview itemId={draft.itemId} productName={productName} configuration={configuration} library={dishes} editorWeek={week} onEditWeek={setWeek} />} secondaryLabel="Customer preview" />
     <dialog className={styles.dishDialog} ref={dialog} aria-labelledby="dish-picker-heading">
-      <div className={styles.dialogHeader}><div><h2 id="dish-picker-heading">Add dishes</h2><p>Selected dishes will use their current saved revisions.</p></div><button type="button" aria-label="Close dish picker" onClick={() => dialog.current?.close()}>×</button></div>
-      <StudioField label="Search dishes"><input type="search" value={dishQuery} onChange={(event) => setDishQuery(event.target.value)} placeholder="Search name or category" /></StudioField>
-      <div className={styles.pickerList}>{visibleDishes.map((dish) => <label className={styles.pickerRow} key={dish.id}><input type="checkbox" checked={selectedDishIds.includes(dish.id)} onChange={(event) => setSelectedDishIds((ids) => event.target.checked ? [...ids, dish.id] : ids.filter((id) => id !== dish.id))} /><span><strong>{dish.name}</strong><small>{dish.category}{dish.customerDescription ? ` · ${dish.customerDescription}` : ""}</small></span></label>)}
-        {!visibleDishes.length && <p className={styles.muted}>{loadingDishes ? "Loading dishes…" : "No dishes match. Add a dish from the Dish Library and return here."}</p>}
-        {dishCursor && <StudioButton onClick={onLoadMoreDishes} disabled={loadingDishes}>{loadingDishes ? "Loading…" : "Load more dishes"}</StudioButton>}
-      </div>
-      <div className={styles.dialogActions}><StudioButton onClick={() => dialog.current?.close()}>Cancel</StudioButton><StudioButton variant="primary" disabled={!selectedDishIds.length} onClick={addSelectedDishes}>Add selected dishes</StudioButton></div>
+      <div className={styles.dialogHeader}><div><h2 id="dish-picker-heading">{creatingDish ? "Create new dish" : "Add dishes"}</h2><p>{creatingDish ? "Create a reusable library draft. Safety approval is reviewed separately." : "Search and select one or more dishes for this menu."}</p></div><button type="button" aria-label="Close dish picker" onClick={() => dialog.current?.close()}>×</button></div>
+      {creatingDish ? <form className={styles.newDishForm} onSubmit={(event) => void createDishFromPicker(event)}>
+        <StudioField label="Dish name"><input required maxLength={200} value={newDish.name} onChange={(event) => setNewDish((current) => ({ ...current, name: event.target.value }))} /></StudioField>
+        <StudioField label="Category"><select value={newDish.category} onChange={(event) => setNewDish((current) => ({ ...current, category: event.target.value as Dish["category"] }))}>{categories.map((category) => <option key={category} value={category}>{category.replaceAll("_", " ")}</option>)}</select></StudioField>
+        <StudioField label="Temperature"><select value={newDish.temperature || ""} onChange={(event) => setNewDish((current) => ({ ...current, temperature: (event.target.value || null) as Dish["temperature"] }))}><option value="">Not set</option><option value="hot">Hot</option><option value="cold">Cold</option></select></StudioField>
+        <StudioField label="Customer description"><textarea required maxLength={4000} value={newDish.customerDescription} onChange={(event) => setNewDish((current) => ({ ...current, customerDescription: event.target.value }))} /></StudioField>
+        <StudioField label="Kitchen description"><textarea required maxLength={12000} value={newDish.kitchenDescription} onChange={(event) => setNewDish((current) => ({ ...current, kitchenDescription: event.target.value }))} /></StudioField>
+        {creatingDishError && <p className={styles.error} role="alert">{creatingDishError}</p>}
+        <div className={styles.dialogActions}><StudioButton type="button" onClick={() => { setCreatingDish(false); setCreatingDishError(""); }}>Back to dishes</StudioButton><StudioButton type="submit" variant="primary" busy={creatingDishBusy} disabled={!canManage || creatingDishBusy || !newDish.name.trim() || !newDish.customerDescription.trim() || !newDish.kitchenDescription.trim()}>{creatingDishBusy ? "Saving dish…" : "Save dish draft"}</StudioButton></div>
+      </form> : <>
+        <div className={styles.pickerTools}><StudioField label="Search dishes"><input type="search" value={dishQuery} onChange={(event) => setDishQuery(event.target.value)} placeholder="Search name or category" /></StudioField><StudioButton variant="secondary" disabled={!canManage} disabledReason="Your account has read-only access to dishes." onClick={() => { setCreatingDish(true); setCreatingDishError(""); }}>Create new dish</StudioButton></div>
+        <div className={styles.categoryFilters} role="group" aria-label="Filter dishes by category"><StudioButton variant={dishCategory === "all" ? "primary" : "secondary"} aria-pressed={dishCategory === "all"} onClick={() => setDishCategory("all")}>All dishes</StudioButton>{categories.map((category) => <StudioButton key={category} variant={dishCategory === category ? "primary" : "secondary"} aria-pressed={dishCategory === category} onClick={() => setDishCategory(category)}>{category.replaceAll("_", " ")}</StudioButton>)}</div>
+        <div className={styles.pickerList}>{visibleDishes.map((dish) => <label className={styles.pickerRow} key={dish.id}><input type="checkbox" checked={selectedDishIds.includes(dish.id)} onChange={(event) => setSelectedDishIds((ids) => event.target.checked ? [...ids, dish.id] : ids.filter((id) => id !== dish.id))} /><span><strong>{dish.name}</strong><small>{dish.category}{dish.customerDescription ? ` · ${dish.customerDescription}` : ""}</small></span></label>)}
+          {!visibleDishes.length && <p className={styles.muted}>{loadingDishes ? "Loading dishes…" : "No dishes match this search and category."}</p>}
+          {dishCursor && <StudioButton onClick={onLoadMoreDishes} disabled={loadingDishes}>{loadingDishes ? "Loading…" : "Load more dishes"}</StudioButton>}
+        </div>
+        <div className={styles.dialogActions}><span aria-live="polite">{selectedDishIds.length} {selectedDishIds.length === 1 ? "dish" : "dishes"} selected</span><StudioButton onClick={() => dialog.current?.close()}>Cancel</StudioButton><StudioButton variant="primary" disabled={!selectedDishIds.length} onClick={addSelectedDishes}>Add selected dishes</StudioButton></div>
+      </>}
     </dialog>
     <div className={styles.stickyActions}>
       <StudioButton onClick={onBack}>Menu Builder</StudioButton>
@@ -286,9 +396,11 @@ function DishList({ references, dishes, dishName, move, remove }: { references: 
   })}</ol>;
 }
 
-export default function ProductMenuBuilder({ actorName, canManage, onNavigate, embedded = false, requestedProductId, requestedDestination, onProductRequestHandled, onNavigationHandled, onDirtyStateChange, onProductsLoaded, onActiveProductChange }: {
+export default function ProductMenuBuilder({ actorName, canManage, canPublish, publicationPilot, onNavigate, embedded = false, requestedProductId, requestedDestination, onProductRequestHandled, onNavigationHandled, onDirtyStateChange, onProductsLoaded, onActiveProductChange }: {
   actorName: string;
   canManage: boolean;
+  canPublish: boolean;
+  publicationPilot?: StudioPublicationPilot;
   onNavigate: (destination: StudioDestination) => void;
   embedded?: boolean;
   requestedProductId?: string | null;
@@ -296,11 +408,11 @@ export default function ProductMenuBuilder({ actorName, canManage, onNavigate, e
   onProductRequestHandled?: () => void;
   onNavigationHandled?: () => void;
   onDirtyStateChange?: (dirty: boolean) => void;
-  onProductsLoaded?: (products: CatalogueRow[], summaries: ProductMenuSummary[]) => void;
+  onProductsLoaded?: (products: CatalogueRow[], summaries: ProductMenuListing[]) => void;
   onActiveProductChange?: (itemId: string | null) => void;
 }) {
   const [products, setProducts] = useState<CatalogueRow[]>([]);
-  const [summaries, setSummaries] = useState<ProductMenuSummary[]>([]);
+  const [summaries, setSummaries] = useState<ProductMenuListing[]>([]);
   const [draft, setDraft] = useState<ProductMenuDraft | null>(null);
   const [dishes, setDishes] = useState<Dish[]>([]);
   const [dishCursor, setDishCursor] = useState<string | null>(null);
@@ -325,11 +437,11 @@ export default function ProductMenuBuilder({ actorName, canManage, onNavigate, e
     setLoading(true); setError("");
     try {
       const catalogue = await readJson<CataloguePayload>("/api/catalogue");
-      const items: ProductMenuSummary[] = [];
+      const items: ProductMenuListing[] = [];
       let cursor: string | null = null;
       for (let page = 0; page < 20; page++) {
         const queryString: string = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
-        const listPage: { items: ProductMenuSummary[]; nextCursor: string | null } = await readJson<{ items: ProductMenuSummary[]; nextCursor: string | null }>(`/api/studio/product-menus${queryString}`);
+        const listPage: { items: ProductMenuListing[]; nextCursor: string | null } = await readJson<{ items: ProductMenuListing[]; nextCursor: string | null }>(`/api/studio/product-menus${queryString}`);
         items.push(...listPage.items);
         cursor = listPage.nextCursor;
         if (!cursor) break;
@@ -418,7 +530,7 @@ export default function ProductMenuBuilder({ actorName, canManage, onNavigate, e
   async function saveConfiguration(configuration: ProductMenuConfiguration) {
     if (!draft) return;
     const result = await sendJson<{ item: ProductMenuDraft }>({ action: "save", item: { ...draft, configuration } });
-    setDraft(result.item); setSummaries((previous) => [summarizeDraft(result.item), ...previous.filter((item) => item.itemId !== result.item.itemId)]);
+    setDraft(result.item); setSummaries((previous) => [summarizeDraft(result.item, previous.find((item) => item.itemId === result.item.itemId)), ...previous.filter((item) => item.itemId !== result.item.itemId)]);
     setDirty(false); setNotice({ kind: "success", message: "Draft saved" });
     onDirtyStateChange?.(false);
   }
@@ -428,11 +540,11 @@ export default function ProductMenuBuilder({ actorName, canManage, onNavigate, e
     onDirtyStateChange?.(value);
   }, [onDirtyStateChange]);
 
-  const headerActions: ReactNode = draft && editing ? <StudioButton variant="primary" disabled disabledReason="Publishing and activation are not available for product drafts yet. Saving a draft does not change customer availability.">Review &amp; publish</StudioButton> : undefined;
+  const headerActions: ReactNode = undefined;
   const content = <>
     {loading && <p role="status">Loading Hospitality products and menu drafts…</p>}
     {error && <div className={styles.errorBox} role="alert"><p>{error}</p><StudioButton onClick={() => void loadIndex()}>Try again</StudioButton></div>}
-    {!loading && !error && (editing && draft ? reviewing ? <ProductMenuReview draft={draft} productName={productName} dishes={dishes} onBack={() => setReviewing(false)} /> : <ProductMenuEditor draft={draft} productName={productName} dishes={dishes} dishCursor={dishCursor} loadingDishes={loadingDishes} canManage={canManage} onLoadMoreDishes={() => void loadDishes(dishCursor || undefined)} onSave={saveConfiguration} onReview={() => setReviewing(true)} onDirtyChange={markDirty} onBack={requestHome} /> : <MenuBuilderHome products={products} summaries={summaries} canManage={canManage} onOpen={(itemId) => { void openProduct(itemId); }} onCreate={createProduct} />)}
+    {!loading && !error && (editing && draft ? reviewing ? <ProductMenuReview draft={draft} productName={productName} dishes={dishes} canPublish={canPublish} pilot={publicationPilot} onBack={() => setReviewing(false)} /> : <ProductMenuEditor draft={draft} productName={productName} dishes={dishes} dishCursor={dishCursor} loadingDishes={loadingDishes} canManage={canManage} onLoadMoreDishes={() => void loadDishes(dishCursor || undefined)} onDishCreated={(dish) => setDishes((previous) => [...previous.filter((item) => item.id !== dish.id), dish])} onSave={saveConfiguration} onReview={() => setReviewing(true)} onDirtyChange={markDirty} onBack={requestHome} /> : <MenuBuilderHome products={products} summaries={summaries} canManage={canManage} onOpen={(itemId) => { void openProduct(itemId); }} onCreate={createProduct} />)}
     {draftError && <p className={styles.errorBox} role="alert">{draftError}</p>}
     <dialog className={styles.discardDialog} ref={discardDialog} aria-labelledby="discard-heading">
       <h2 id="discard-heading">Discard unsaved changes?</h2><p>Your latest edits have not been saved. You can save the draft first, or discard the edits and continue.</p>

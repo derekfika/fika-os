@@ -4,6 +4,7 @@ import test from "node:test";
 import { deleteApp, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import type { ProductMenuDraft } from "../../../shared/hospitality-menu-studio-product-content";
+import { studioProductMenuId } from "../../../shared/hospitality-menu-studio-product-publication";
 import type { Dish, Menu } from "../../lib/contract";
 import { productMenuHandlers } from "../../lib/product-menu-http";
 import { StudioProblem } from "../../lib/problem";
@@ -18,7 +19,9 @@ test("canonical product drafts coalesce creation, retain exact dish revisions an
   const itemId = `item:${randomUUID()}`;
   const url = "http://localhost:13686/api/studio/product-menus";
   let catalogueItems = [{ id: itemId, name: "Product", category: "Hospitality", defaultPrices: [], dietaryInformation: [], allergenInformation: [] }];
-  let actor = { id: "test-author", name: "Test author", canManage: true, canPublish: false };
+  let actor = { id: "test-author", name: "Test author", canManage: true, canPublish: false,
+    publicationPilot: { publish: false, activateSeasonal: false, activateCollection: false, activateProduct: false,
+      oplocId: "fixture-site", menuId: studioProductMenuId(itemId), firstDate: "2026-11-25", lastDate: "2026-12-31", generation: 0 } };
   const handlers = productMenuHandlers({
     authorise: async () => actor,
     readCatalogue: async () => ({ source: "network", contentHash: "a".repeat(64), generatedAt: versionTime.toISOString(), downloaded: true, notes: [],
@@ -86,7 +89,8 @@ test("canonical product drafts coalesce creation, retain exact dish revisions an
     actor = { ...actor, canManage: false };
     assert.equal((await post(create)).status, 403);
     assert.deepEqual(await (await get(`?itemId=${itemId}`)).json(), { item: winner });
-    assert.deepEqual(await (await get()).json(), { items: [{ itemId, updatedAt: winner.updatedAt, version: 2, kind: "fixed", dishCount: 1 }], nextCursor: null });
+    assert.deepEqual(await (await get()).json(), { items: [{ itemId, updatedAt: winner.updatedAt, version: 2, kind: "fixed", dishCount: 1,
+      publicationStatus: "draft", hasPublishedRevision: false }], nextCursor: null });
     catalogueItems = [];
     assert.equal((await get(`?itemId=${itemId}`)).status, 404);
     assert.deepEqual((await (await get()).json()).items, []);

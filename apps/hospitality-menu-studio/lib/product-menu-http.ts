@@ -46,7 +46,7 @@ export function productMenuHandlers(dependencies: {
 
   return {
     GET: (request: Request) => response(async () => {
-      await dependencies.authorise(request);
+      const actor = await dependencies.authorise(request);
       const params = new URL(request.url).searchParams;
       const query = readQuery.parse(Object.fromEntries(params));
       if ([...params].length > 1) throw new StudioProblem(422, "INVALID_REQUEST", "Choose a single product or page.");
