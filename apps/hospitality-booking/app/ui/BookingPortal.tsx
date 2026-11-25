@@ -783,7 +783,12 @@ export default function BookingPortal({
               gallagher={gallagher}
               minimumContext={minimumContext}
               errors={fieldErrors}
-              buffet={buffet}
+              buffet={{
+                ...buffet,
+                bookingChrome: { logoPath: site.logoPath, logoAlt: site.displayName, background: site.theme.heroBackground, steps, activeStep: step },
+                // Use the booking form's current validation after React commits the saved selection.
+                onContinue: () => document.querySelector<HTMLButtonElement>("form.workspace > footer > button.primary")?.click(),
+              }}
               menu={menu}
               dietaryNotes={dietaries.freeText}
               onSaveBuffet={(oldId: string, target: PortalMenuItem, preview: BuffetPreview, notes: string) => { setLines(current => current.map(line => line.itemId === oldId ? { ...line, itemId: target.id, quantity: details.guestCount, choices: oldId === target.id ? line.choices : {}, buffetPreview: preview } : line)); setDietaries(current => ({ ...current, freeText: notes })); }}
@@ -1210,7 +1215,7 @@ function Plan({
                   </>
                 );
               })()}
-              {line?.quantity > 0 && <BuffetMenuPicker config={buffet.config} item={item} catalogue={menu} selectedItemIds={lines.filter((value: Line) => value.quantity > 0).map((value: Line) => value.itemId)} guestCount={details.guestCount} preview={line.buffetPreview} dietaryNotes={dietaryNotes} onSave={(target, preview, notes) => onSaveBuffet(item.id, target, preview, notes)} />}
+              {line?.quantity > 0 && <BuffetMenuPicker bookingChrome={buffet.bookingChrome} onContinue={buffet.onContinue} config={buffet.config} item={item} catalogue={menu} selectedItemIds={lines.filter((value: Line) => value.quantity > 0).map((value: Line) => value.itemId)} guestCount={details.guestCount} preview={line.buffetPreview} dietaryNotes={dietaryNotes} onSave={(target, preview, notes) => onSaveBuffet(item.id, target, preview, notes)} />}
               {!item.studioChoices && minimumQuantityFor(item, minimumContext) > 1 && (
                 <p className="minimum-quantity-note">
                   Minimum {minimumQuantityFor(item, minimumContext)} boxes

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { after, afterEach, test } from "node:test";
 import { register } from "node:module";
 import { JSDOM } from "jsdom";
-import type { BuffetMenu, BuffetSelection } from "../app/ui/BuffetMenuDialog";
+import type { BuffetMenu, BuffetSelection } from "../app/ui/BuffetMenuBuilder";
 
 register("data:text/javascript," + encodeURIComponent("export async function load(url, context, next) { if (url.endsWith('.css')) return { format: 'module', source: 'export default new Proxy({}, { get: (_, key) => String(key) })', shortCircuit: true }; return next(url, context); }"));
 const dom = new JSDOM("<!doctype html><html><body></body></html>", { url: "http://localhost/" });
@@ -10,7 +10,6 @@ for (const [key, value] of Object.entries({ window: dom.window, document: dom.wi
 const React = await import("react");
 const { cleanup, fireEvent, render, screen, within, waitFor } = await import("@testing-library/react");
 const { default: userEvent } = await import("@testing-library/user-event");
-const { BuffetMenuDialog } = await import("../app/ui/BuffetMenuDialog");
 const { BuffetMenuBuilder } = await import("../app/ui/BuffetMenuBuilder");
 const { BuffetMenuPicker } = await import("../app/ui/BuffetMenuPicker");
 afterEach(cleanup); after(() => dom.window.close());
@@ -117,8 +116,10 @@ test("switching package keeps focus on the new basket item and saves notes", asy
   ], dishes: menu.dishes.map(dish => ({ ...dish, allergenStatus: "unrecorded", dietaryStatus: "unrecorded", selectionStatus: dish.selectionStatus === "review_required" ? "review_required" : "source_listed" })) } as import("../lib/buffet-menu-client").BuffetConfig;
   const items = [{ id: "gold-item", canonicalId: "gold-item", name: "Gold", category: "Buffet", unitPrice: 28, vatRate: null, dietaryInformation: [], allergenInformation: [] }, { id: "silver-item", canonicalId: "silver-item", name: "Silver", category: "Buffet", unitPrice: 20, vatRate: null, dietaryInformation: [], allergenInformation: [] }];
   let savedNotes = "";
-  function Harness() { const [item, setItem] = React.useState<import("../lib/mnk-contract").PortalMenuItem>(items[0]); const [preview, setPreview] = React.useState<import("../lib/buffet-menu-client").BuffetPreview>(); return React.createElement(BuffetMenuPicker, { fullScreen: true, config, item, catalogue: items, selectedItemIds: [item.id], guestCount: 30, preview, dietaryNotes: "", onSave(target, next, notes) { savedNotes = notes; setItem(target); setPreview(next); } }); }
+  function Harness() { const [item, setItem] = React.useState<import("../lib/mnk-contract").PortalMenuItem>(items[0]); const [preview, setPreview] = React.useState<import("../lib/buffet-menu-client").BuffetPreview>(); return React.createElement(BuffetMenuPicker, { config, item, catalogue: items, selectedItemIds: [item.id], guestCount: 30, preview, dietaryNotes: "", onSave(target, next, notes) { savedNotes = notes; setItem(target); setPreview(next); } }); }
   render(React.createElement(Harness)); fireEvent.click(screen.getByRole("button", { name: "Choose Menu" }));
+  assert.ok(screen.getByTestId("buffet-menu-screen"));
+  assert.equal(screen.queryByRole("dialog"), null);
   fireEvent.click(screen.getByRole("radio", { name: /Silver ·/ }));
   fireEvent.click(screen.getByRole("radio", { name: /Fixture meat/ })); fireEvent.click(screen.getByRole("radio", { name: /Fixture vegetable/ }));
   fireEvent.change(screen.getByRole("spinbutton", { name: "Fixture meat" }), { target: { value: "16" } }); fireEvent.change(screen.getByRole("spinbutton", { name: "Fixture vegetable" }), { target: { value: "14" } });

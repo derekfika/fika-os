@@ -1,6 +1,5 @@
 "use client";
 import { useEffect, useState } from "react";
-import { BuffetMenuDialog } from "./BuffetMenuDialog";
 import { BuffetMenuBuilder, type BuffetBookingChrome } from "./BuffetMenuBuilder";
 import { buffetMenuView, buffetPackageForItem, buffetSubmissionEnabled, loadBuffetConfig, parseBuffetPreview, type BuffetConfig, type BuffetPreview } from "../../lib/buffet-menu-client";
 import type { PortalMenuItem } from "../../lib/mnk-contract";
@@ -18,7 +17,7 @@ export function useBuffetConfig(enabled = true) {
   return { config, error };
 }
 
-export function BuffetMenuPicker({ config, item, catalogue, selectedItemIds, guestCount, preview, dietaryNotes, fullScreen = false, bookingChrome, onContinue, onSave }: { config?: BuffetConfig; item: PortalMenuItem; catalogue: readonly PortalMenuItem[]; selectedItemIds: readonly string[]; guestCount: number; preview?: BuffetPreview; dietaryNotes: string; fullScreen?: boolean; bookingChrome?: BuffetBookingChrome; onContinue?: () => void; onSave: (item: PortalMenuItem, preview: BuffetPreview, dietaryNotes: string) => void }) {
+export function BuffetMenuPicker({ config, item, catalogue, selectedItemIds, guestCount, preview, dietaryNotes, bookingChrome, onContinue, onSave }: { config?: BuffetConfig; item: PortalMenuItem; catalogue: readonly PortalMenuItem[]; selectedItemIds: readonly string[]; guestCount: number; preview?: BuffetPreview; dietaryNotes: string; bookingChrome?: BuffetBookingChrome; onContinue?: () => void; onSave: (item: PortalMenuItem, preview: BuffetPreview, dietaryNotes: string) => void }) {
   const [open, setOpen] = useState(false);
   if (!config) return null;
   const pkg = buffetPackageForItem(config, item.id);
@@ -44,12 +43,18 @@ export function BuffetMenuPicker({ config, item, catalogue, selectedItemIds, gue
     {needsResave && <p role="status">The buffet rules have changed. Please review and save your selection again.</p>}
     {validSelection && <BuffetSelectionSummary config={config} preview={preview} />}
     <button type="button" className={styles.secondary} onClick={() => setOpen(true)}>{validSelection ? "Edit menu" : "Choose Menu"}</button>
-    {open && (fullScreen ? <BuffetMenuBuilder menu={view} guestCount={guestCount} initialPackageId={pkg.id} priceByPackageId={priceByPackageId} bookingChrome={bookingChrome} selection={validSelection} dietaryNotes={dietaryNotes} onCancel={() => setOpen(false)} onContinue={() => window.setTimeout(() => onContinue?.(), 0)} onSave={(selection, notes, stayOpen) => saveChoice(selection, notes, stayOpen)} /> : <BuffetMenuDialog menu={view} guestCount={guestCount} initialPackageId={pkg.id} selection={validSelection} dietaryNotes={dietaryNotes} onCancel={() => setOpen(false)} onSave={(selection, notes) => {
-      const target = config.packages.find(candidate => candidate.id === selection.packageId);
-      const targetItem = catalogue.find(candidate => target?.canonicalItemIds.includes(candidate.id));
-      if (!targetItem) return;
-      onSave(targetItem, { menuVersion: config.menuVersion, rulesVersion: config.rulesVersion, selection }, notes); setOpen(false);
-    }} />)}
+    {open && <BuffetMenuBuilder
+      menu={view}
+      guestCount={guestCount}
+      initialPackageId={pkg.id}
+      priceByPackageId={priceByPackageId}
+      bookingChrome={bookingChrome}
+      selection={validSelection}
+      dietaryNotes={dietaryNotes}
+      onCancel={() => setOpen(false)}
+      onContinue={onContinue ? () => window.setTimeout(onContinue, 0) : undefined}
+      onSave={saveChoice}
+    />}
   </div>;
 }
 
