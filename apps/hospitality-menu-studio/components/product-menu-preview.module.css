@@ -4,6 +4,8 @@
 .choices { display: grid; gap: var(--space-3); }
 .group { display: grid; min-width: 0; gap: var(--space-2); margin: 0; padding: var(--space-3); border: 1px solid var(--fika-border-default); border-radius: var(--radius-sm); }
 .group legend { padding: 0 var(--space-1); font-weight: 600; }
+.group > label { display: grid; gap: var(--space-1); }
+.group :is(select, input[type="number"]) { min-height: var(--fika-control-height); border: 1px solid var(--fika-border-default); border-radius: var(--radius-sm); padding: var(--space-2); background: var(--fika-surface-card); color: var(--fika-text-primary); font: inherit; }
 .row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: var(--fika-control-height); }
 .row > span { display: grid; min-width: 0; gap: var(--space-1); overflow-wrap: anywhere; }
 .row > span > span, .note { color: var(--fika-text-secondary); font-size: var(--text-xs); }

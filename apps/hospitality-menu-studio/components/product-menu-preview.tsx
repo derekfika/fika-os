@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { createElement, useEffect, useState } from "react";
 import type { ProductMenuConfiguration } from "../../shared/hospitality-menu-studio-product-content";
 import type { StudioChoicePresentation, StudioPreviewOffering } from "../../shared/hospitality-menu-studio-selection";
+import { renderStudioDishChoiceControls } from "../../shared/hospitality-menu-studio-choice-controls";
 import { productMenuDishKey, type ProductMenuDish, type ProductMenuDishReference } from "../lib/product-menu-dishes";
 import { menuChoiceReferences } from "./product-menu-editor-model";
 import { previewChoices, previewScopeMatches } from "./product-menu-preview-model";
@@ -90,17 +91,18 @@ function ChoiceSimulation({ configuration, choices, dishes, offering }: {
   dishes: Map<string, ProductMenuDish>; offering: Extract<StudioPreviewOffering, { state: "priced" }>;
 }) {
   const [selected, setSelected] = useState<Record<string, string>>({});
-  const [quantities, setQuantities] = useState<Record<string, string>>({});
+  const [quantities, setQuantities] = useState<Record<string, number>>({});
   const groups = configuration.groups.length ? configuration.groups.map(group => ({ id: group.id, name: group.name, presentation: group.presentation || configuration.presentation, dishes: choices.groups.find(slot => slot.groupId === group.id)?.dishes || [] })) : [{ id: "menu", name: "Dishes", presentation: configuration.presentation, dishes: choices.dishes }];
   const supported = (mode: StudioChoicePresentation) => offering.supportedPresentations.includes(mode) && (!configuration.groups.length || mode === "quantities");
   function display(reference: ProductMenuDishReference) { return dishes.get(productMenuDishKey(reference))!; }
-  return <div className={styles.choices}>{groups.map(group => <fieldset key={group.id} className={styles.group}>
-    <legend>{group.name}</legend>
-    {!group.dishes.length ? <p>No dishes for this date.</p> : !supported(group.presentation) ? <p>These selection rules are not available to preview for this site.</p> : group.presentation === "dropdown" ?
-      <StudioField label={`Choose ${group.name}`}><select value={selected[group.id] || ""} onChange={event => setSelected(previous => ({ ...previous, [group.id]: event.target.value }))}><option value="">Choose a dish</option>{group.dishes.map(reference => <option key={productMenuDishKey(reference)} value={productMenuDishKey(reference)}>{display(reference).name}</option>)}</select></StudioField> :
-      group.presentation === "quantities" ? <><p>Enter a quantity for each dish.{offering.minimumDishQuantity ? ` Minimum ${offering.minimumDishQuantity} per selected dish.` : ""}</p>{group.dishes.map(reference => {
-        const key = productMenuDishKey(reference), dish = display(reference);
-        return <label key={key} className={styles.row}><span><strong>{dish.name}</strong>{dish.customerDescription && <span>{dish.customerDescription}</span>}</span><input aria-label={`Quantity for ${dish.name}`} type="number" min="0" step="1" value={quantities[key] || ""} onChange={event => setQuantities(previous => ({ ...previous, [key]: event.target.value }))} /></label>;
-      })}</> : <p>Multiple selection is unavailable until its ordering rules are verified.</p>}
-  </fieldset>)}<p className={styles.note}>Preview selections are temporary and do not create a booking or change availability.</p></div>;
+  return <div className={styles.choices}>{groups.map(group => {
+    if (!group.dishes.length || !supported(group.presentation)) return <fieldset key={group.id} className={styles.group}><legend>{group.name}</legend><p>{!group.dishes.length ? "No dishes for this date." : "These selection rules are not available to preview for this site."}</p></fieldset>;
+    const customerDishes = group.dishes.map(reference => { const dish = display(reference); return { id: dish.id, name: dish.name, description: dish.customerDescription }; });
+    return renderStudioDishChoiceControls(createElement, { label: group.name, presentation: group.presentation, dishes: customerDishes,
+      groups: [{ id: group.id, name: group.name, presentation: group.presentation, dishIds: customerDishes.map(dish => dish.id) }],
+      quantities, dropdownChoices: selected,
+      onDropdownChange: (id, dishId) => { setSelected(previous => ({ ...previous, [id]: dishId })); setQuantities({}); },
+      onQuantityChange: (dishId, quantity) => setQuantities(previous => ({ ...previous, [dishId]: quantity })),
+      fieldClassName: styles.group, rowClassName: styles.row });
+  })}<p className={styles.note}>Preview selections are temporary and do not create a booking or change availability.</p></div>;
 }

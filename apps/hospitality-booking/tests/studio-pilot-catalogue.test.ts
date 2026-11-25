@@ -62,3 +62,14 @@ test("activated Studio choices replace only the group named by Hub and retain it
     assert.equal(item.optionGroups?.find(group => group.id === studioDishChoiceId)?.minimumQuantity, 12);
   } finally { globalThis.fetch = original; }
 });
+
+test("unsupported product choices are not replaced by an old catalogue option", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => Response.json({ offerings: [{
+    itemId: "item:fixture", offeringMode: "standard", name: "Fixture", category: "Food", price: { amount: 4, vatRate: 0.2 }, constraints: {},
+    configuration: { choices: [{ id: "variety", label: "Variety", controlType: "quantities", options: [{ id: "old", label: "Old" }] }] },
+    studioChoices: { publicationHash: "a".repeat(64), replacesChoiceGroupId: "variety", presentation: "checkboxes", dishes: [{ id: "dish:a", name: "Dish", description: "" }] },
+  }] });
+  try { assert.deepEqual(await loadStudioPortalMenu("2026-12-07"), []); }
+  finally { globalThis.fetch = original; }
+});

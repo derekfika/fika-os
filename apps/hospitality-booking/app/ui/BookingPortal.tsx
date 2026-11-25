@@ -5,7 +5,7 @@ import { buffetChoice, buffetPackageForItem, buffetPreviewIssue, type BuffetPrev
 import { BookingDatePicker, useBookingClock } from "./BookingDatePicker";
 import { BOOKING_NOTICE_SHORT } from "../../lib/booking-notice";
 import { assertBookingDate, bookingDateIssue, bookingPolicyFor, type CutoffItem } from "@fika/server-shared/hospitality-effective-offering";
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { createElement, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   BookingInput,
   type PortalMenuItem,
@@ -17,6 +17,8 @@ import { MUNICH_RE_LOCATIONS, munichReLocationDisplay, munichReLocationFields, m
 import { quantityFromInput, quantityMinimumMessage, stepQuantityDown, stepQuantityUp } from "@/lib/quantity-entry";
 import { loadHospitalityPortalMenu, loadStudioPortalMenu } from "@/lib/hospitality-portal-catalogue";
 import { studioDishChoiceId } from "../../../shared/hospitality-menu-studio-selection";
+import { flatStudioChoiceGroupId, renderStudioDishChoiceControls } from "../../../shared/hospitality-menu-studio-choice-controls";
+import { serializeStudioPortalChoice, validStudioPortalAllocation } from "../../lib/studio-portal-selection";
 import { catalogueMinimums, effectiveProductMinimum, validateCatalogueRules, type MinimumContext } from "@fika/server-shared/hospitality-effective-offering";
 import StartAgainButton from "./StartAgainButton";
 import GuestCountInput, { GuestCountNotice } from "./GuestCountInput";
@@ -385,6 +387,12 @@ export default function BookingPortal({
           : line,
       );
     });
+  const setStudioChoice = (item: PortalMenuItem, allocation: Record<string, number>) => setLines(current => {
+    const existing = current.find(line => line.itemId === item.id);
+    const quantity = Object.values(allocation).reduce((total, count) => total + count, 0);
+    const next = { ...existing, itemId: item.id, quantity, choices: { ...existing?.choices, [studioDishChoiceId]: allocation } };
+    return [...current.filter(line => line.itemId !== item.id), next];
+  });
   const detailsValid = () =>
     contact.requesterName &&
     contact.requesterCompany &&
@@ -458,9 +466,7 @@ export default function BookingPortal({
       for (const { item, quantity, choices } of selected) {
         if (!item.studioChoices) continue;
         const picked = choices[studioDishChoiceId];
-        if (!picked || typeof picked !== "object" || Array.isArray(picked) ||
-            Object.values(picked).reduce((sum, count) => sum + count, 0) !== quantity ||
-            Object.entries(picked).some(([id, count]) => !item.studioChoices!.dishes.some(dish => dish.id === id) || !Number.isSafeInteger(count) || count < 0 || (count > 0 && count < (item.optionGroups?.find(group => group.id === studioDishChoiceId)?.minimumQuantity ?? 1)))) {
+        if (!validStudioPortalAllocation(item.studioChoices, picked, quantity)) {
           throw new Error(`Choose current published dishes for ${item.name}.`);
         }
       }
@@ -579,8 +585,8 @@ export default function BookingPortal({
           lineTotal: Number(
             (value.item.unitPrice * value.quantity).toFixed(2),
           ),
-          choices: [...Object.entries(value.choices).map(([id, choice]) => id === studioDishChoiceId
-            ? { id, quantities: choice, publicationHash: value.item.studioChoices?.publicationHash }
+          choices: [...Object.entries(value.choices).map(([id, choice]) => id === studioDishChoiceId && value.item.studioChoices
+            ? serializeStudioPortalChoice(value.item.studioChoices, choice, value.quantity)
             : typeof choice === "object" && !Array.isArray(choice) ? { id, quantities: choice } : { id, value: choice }),
             ...(value.buffetPreview ? [buffetChoice(value.buffetPreview)] : [])],
         })),
@@ -779,6 +785,7 @@ export default function BookingPortal({
               lines={lines}
               setQuantity={setQuantity}
               setChoice={setChoice}
+              setStudioChoice={setStudioChoice}
               details={details}
               gallagher={gallagher}
               minimumContext={minimumContext}
@@ -1086,6 +1093,7 @@ function Plan({
   lines,
   setQuantity,
   setChoice,
+  setStudioChoice,
   gallagher,
   minimumContext,
   errors,
@@ -1131,8 +1139,8 @@ function Plan({
                 if (group.selectionType === "quantities") {
                   const quantities = saved && typeof saved === "object" && !Array.isArray(saved) ? saved : {};
                   if (group.id !== studioDishChoiceId) return <fieldset className="choice-field" key={group.id}><legend>{group.label} — minimum {group.minimumQuantity} per selected variety</legend>{group.options.map(option => <label key={option.id}>{option.label}<input type="number" min="0" step="1" value={quantities[option.id] || ""} onChange={event => { const next: Record<string, number> = { ...quantities, [option.id]: quantityFromInput(event.target.value) }; const quantity = Object.values(next).reduce((sum, n) => sum + n, 0); setQuantity(item, quantity); setChoice(item.id, group.id, next); }} /></label>)}</fieldset>;
-                  return <fieldset className="choice-field studio-dish-choices" key={group.id}><legend>{group.label} — minimum {group.minimumQuantity} per selected variety</legend><p>Enter a quantity for each dish you would like. The total updates automatically.</p>{group.options.map(option => <label className="studio-dish-row" key={option.id}><span><strong>{option.label}</strong>{group.id === studioDishChoiceId && <span>{item.studioChoices?.dishes.find(dish => dish.id === option.id)?.description}</span>}</span>
-                    <input aria-label={`${option.label} quantity`} inputMode="numeric" type="number" min="0" step="1" value={quantities[option.id] || ""} onChange={event => { const next: Record<string, number> = { ...quantities, [option.id]: quantityFromInput(event.target.value) }; const quantity = Object.values(next).reduce((sum, n) => sum + n, 0); setQuantity(item, quantity); setChoice(item.id, group.id, next); }} /></label>)}<p aria-live="polite">Total: {line?.quantity || 0} (minimum {minimumQuantityFor(item, minimumContext)} total)</p></fieldset>;
+                  if (!item.studioChoices) return null;
+                  return <StudioPortalChoice key={`${item.id}:${item.studioChoices.publicationHash}:${item.studioChoices.dishes.map(dish => dish.id).join(",")}`} item={item} quantities={quantities as Record<string, number>} minimum={minimumQuantityFor(item, minimumContext)} setStudioChoice={setStudioChoice} />;
                 }
                 if (isMulti) {
                   const selectedOptions = Array.isArray(saved) ? saved : [];
@@ -1230,6 +1238,25 @@ function Plan({
     </section>
   );
 }
+function StudioPortalChoice({ item, quantities, minimum, setStudioChoice }: {
+  item: PortalMenuItem; quantities: Record<string, number>; minimum: number;
+  setStudioChoice: (item: PortalMenuItem, allocation: Record<string, number>) => void;
+}) {
+  const studio = item.studioChoices!;
+  const [selected, setSelected] = useState(() => Object.keys(quantities).find(id => quantities[id] > 0) || "");
+  const update = (next: Record<string, number>) => setStudioChoice(item, next);
+  return <div className="studio-dish-choices">
+    <p>Minimum {studio.minimumQuantity ?? 1} per selected dish. The total updates automatically.</p>
+    {renderStudioDishChoiceControls(createElement, { label: "Choose published dishes", presentation: studio.presentation ?? "quantities",
+      dishes: studio.dishes.map(dish => ({ ...dish, description: dish.description || "" })), groups: studio.groups,
+      quantities, dropdownChoices: { [flatStudioChoiceGroupId]: selected },
+      onDropdownChange: (_groupId, dishId) => { setSelected(dishId); update({}); },
+      onQuantityChange: (dishId, quantity) => update(studio.presentation === "dropdown" ? { [dishId]: quantity } : { ...quantities, [dishId]: quantity }),
+      fieldClassName: "choice-field studio-dish-choices", rowClassName: "studio-dish-row" })}
+    <p aria-live="polite">Total: {Object.values(quantities).reduce((total, count) => total + count, 0)} (minimum {minimum} total)</p>
+  </div>;
+}
+
 function Submit({
   contact,
   setContact,
