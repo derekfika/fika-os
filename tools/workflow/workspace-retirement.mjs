@@ -1,11 +1,11 @@
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmdirSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmdirSync, unlinkSync } from 'node:fs';
 import { ancestor, command, common, git, ref, save, stateDir } from './runtime.mjs';
 import { REPO, exactSha } from './policy.mjs';
 import { canonical, completionFile, localEntry, managedRoot, optionalJson, pathKey, registrations, samePath, sourceTaskFile, split,
   stateRecords, withCapacityLock, workspaceName } from './workspace-capacity.mjs';
-import { generatedEntries, generatedRetirementPlan } from './workspace-cache.mjs';
+import { generatedEntries, generatedRetirementPlan, verifiedTypeScriptBuildInfo } from './workspace-cache.mjs';
 import { dependencyLinkPlan, readArchivedRetirement, removeRetirementResidue, retirementResidue } from './workspace-residue.mjs';
 
 export const githubOrigin = () => new RegExp(`github\\.com[:/]${REPO}(?:\\.git)?$`, 'i').test(git('remote', 'get-url', 'origin'));
@@ -42,6 +42,18 @@ const retirementArchive = name => path.join(stateDir(), 'source-recovery', 'reti
 const preservedHead = (name, head) => ref('refs/preserve/source-recovery/retirements/' + name + '/' + head);
 const gitOperationFiles = ['index.lock', 'MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'rebase-merge', 'rebase-apply', 'sequencer', 'BISECT_LOG'];
 
+function removeEmptyGeneratedParents(directory, relative) {
+  let current = path.dirname(path.join(directory, relative));
+  while (!samePath(current, directory)) {
+    const relativeParent = path.relative(directory, current);
+    if (!relativeParent || relativeParent.startsWith('..') || path.isAbsolute(relativeParent) ||
+        !localEntry(current)?.isDirectory() || !samePath(realpathSync(current), current)) return;
+    try { rmdirSync(current); }
+    catch (error) { if (['ENOTEMPTY', 'EEXIST'].includes(error.code)) return; throw error; }
+    current = path.dirname(current);
+  }
+}
+
 function assertLocalIdentity(task, completion, tree, operations, historical, management) {
   if (!workspaceName(task.name) || !task.owner?.trim() || task.branch !== 'codex/' + task.name || task.state === 'creating' ||
     completion.name !== task.name || completion.owner !== task.owner || completion.branch !== task.branch ||
@@ -69,7 +81,8 @@ function registeredRetirement(task, completion) {
   if (operation) throw Error('Unresolved Git operation: ' + operation);
   if (split(run('ls-files', '-v', '-z')).some(line => /^[a-zS]/.test(line))) throw Error('Index contains assume-unchanged or skip-worktree paths');
   const status = sourceStatus(run);
-  return generatedRetirementPlan(task, status, completion.finalSha);
+  const links = generatedRetirementPlan(task, status, completion.finalSha);
+  return { links, generated: links.verifiedGenerated || [] };
 }
 
 function unregisteredRetirement(task, completion, proof) {
@@ -87,7 +100,19 @@ function unregisteredRetirement(task, completion, proof) {
     throw Error('Saved retirement link plan no longer matches the dependency lockfile');
   }
   const links = recorded === undefined ? allowed : new Map(recorded);
-  retirementResidue(task.directory, links);
+  if (completion.retirementGenerated !== undefined && !Array.isArray(completion.retirementGenerated)) {
+    throw Error('Saved generated-cache retirement plan is malformed');
+  }
+  for (const relative of completion.retirementGenerated || []) {
+    if (!/^(?:apps\/[^/]+)\/tsconfig\.tsbuildinfo$/.test(relative)) throw Error(`Unverified generated cache residue: ${relative}`);
+    const file = path.join(task.directory, relative);
+    if (!localEntry(file)) continue;
+    if (!verifiedTypeScriptBuildInfo(task, relative, completion.finalSha)) throw Error(`Unverified generated cache residue: ${relative}`);
+    unlinkSync(file);
+    removeEmptyGeneratedParents(task.directory, relative);
+  }
+  retirementResidue(task.directory, links, completion.retirementGenerated || []);
+  for (const relative of completion.retirementGenerated || []) removeEmptyGeneratedParents(task.directory, relative);
   return links;
 }
 
@@ -235,8 +260,8 @@ export function cleanupSourceWorkspaces({ execute = false, name, inspect = false
           gitAdminSnapshot(current, task.name, sha => main.has(sha));
           // Recheck ignored and source content after archiving Git evidence. Record the
           // exact link paths before native Git may delete their targets.
-          const links = registeredRetirement(currentTask, latest);
-          latest = { ...latest, retirement: 'removing', mergedPr: proof, retirementLinks: [...links] };
+          const plan = registeredRetirement(currentTask, latest);
+          latest = { ...latest, retirement: 'removing', mergedPr: proof, retirementLinks: [...plan.links], retirementGenerated: plan.generated };
           save(file, latest);
           try { removeWorktree(currentTask.directory); }
           catch (error) {
@@ -247,7 +272,7 @@ export function cleanupSourceWorkspaces({ execute = false, name, inspect = false
         }
         if (registrations().some(item => samePath(item.worktree, currentTask.directory))) throw Error('Git worktree registration remains');
         const links = unregisteredRetirement(currentTask, latest, proof);
-        if (localEntry(currentTask.directory)) removeRetirementResidue(currentTask.directory, links);
+        if (localEntry(currentTask.directory)) removeRetirementResidue(currentTask.directory, links, latest.retirementGenerated || []);
         if (localEntry(currentTask.directory)) throw Error('Physical workspace directory remains after retirement');
         save(file, { ...latest, retirement: 'removed', mergedPr: proof });
         if (registrations().some(item => item.branch === branchRef(task.branch))) throw Error('Branch is checked out in another workspace');
