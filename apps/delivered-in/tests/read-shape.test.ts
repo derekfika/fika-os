@@ -97,11 +97,15 @@ test("Hub session admission survives the Delivered-In access boundary", async ()
 
 test("session failures are redirected to the standard Hub sign-in flow without retries", async () => {
   const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  const direct = await readFile(new URL("../app/grab-and-go-page.tsx", import.meta.url), "utf8");
+  const access = await readFile(new URL("../app/lib/grab-and-go-access.ts", import.meta.url), "utf8");
   const dashboardRoute = await readFile(new URL("../app/api/delivered-in/route.ts", import.meta.url), "utf8");
   const hubRoute = await readFile(new URL("../../integration-hub/app/api/delivered-in/access/route.ts", import.meta.url), "utf8");
-  assert.match(page, /FIKA_SESSION_MISSING/);
-  assert.match(page, /FIKA_SESSION_INVALID/);
-  assert.match(page, /launchError/);
+  assert.match(page, /redirectForSessionFailure\(headResponse, current\)/);
+  assert.match(direct, /readGrabAndGoAccess\(request\.signal, true\)/);
+  assert.match(access, /FIKA_SESSION_MISSING/);
+  assert.match(access, /FIKA_SESSION_INVALID/);
+  assert.match(access, /launchError/);
   assert.doesNotMatch(page, /setInterval|setTimeout/);
   assert.match(dashboardRoute, /deliveredInErrorBody/);
   assert.match(hubRoute, /admissionJson/);
