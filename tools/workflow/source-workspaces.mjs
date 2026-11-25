@@ -40,44 +40,114 @@ function openOverlap(paths, base) {
   }
 }
 
+function assertClaimAvailable(task, inventory) {
+  if (localEntry(task.directory) || localEntry(sourceTaskFile(task.name)) || ref('refs/heads/' + task.branch)) {
+    throw Error('Task name, path or branch already exists; choose a new name');
+  }
+  if (inventory.entries.some(entry => entry.owner === task.owner && ['awaiting-cleanup', 'retirement-residue'].includes(entry.state))) {
+    throw Error('Your prior task is awaiting cleanup. Complete its merge or resolve its cleanup blocker before starting another task');
+  }
+}
+
+function reserveSourceTask(task, queued) {
+  mkdirSync(managedRoot(), { recursive: true });
+  if (!samePath(realpathSync(managedRoot()), managedRoot())) throw Error('Managed workspace root resolves through a link');
+  const reservation = { ...task, startedAt: new Date().toISOString(), state: 'creating',
+    ...(queued ? { queuedAt: queued.queuedAt } : {}) };
+  save(sourceTaskFile(task.name), { ...reservation, pid: process.pid });
+  if (queued) unlinkSync(queueFile(task.name));
+  return reservation;
+}
+
+function materializeSourceTask(claim) {
+  // The reservation occupies a slot before Git creates the registration.
+  git('worktree', 'add', '--quiet', '-b', claim.branch, claim.directory, claim.baseline);
+  return withCapacityLock(() => {
+    const active = { ...claim, state: 'active' };
+    save(sourceTaskFile(claim.name), active);
+    return active;
+  });
+}
+
+function taskClaim(name, owner, baseline, paths) {
+  return { name, owner, branch: 'codex/' + name, directory: path.join(managedRoot(), name), baseline, paths };
+}
+
+function annotatedTask(task) {
+  return { ...task, risk: task.paths.length ? risk(task.paths) : 'unclassified', review: openOverlap(task.paths, task.baseline) };
+}
+
+function alreadyPromoted(name, owner) {
+  const task = optionalJson(sourceTaskFile(name));
+  if (task?.owner !== owner || !task.queuedAt) return null;
+  if (task.state === 'creating') return { name, owner, state: 'creating' };
+  if (task.state !== 'active' || optionalJson(completionFile(name))) return null;
+  sourceWorkspace(name);
+  return task;
+}
+
 export function createSourceWorkspace(name, options) {
   requireCanonical();
   validateName(name);
   if (!options.owner?.trim()) throw Error('--owner is required for task metadata');
+  const promoted = alreadyPromoted(name, options.owner);
+  if (promoted) return promoted.state === 'active' ? annotatedTask(promoted) : promoted;
   const paths = options.scope ? options.scope.split(',').map(safeScope) : [];
-  const baseline = fetchMain();
-  const branch = `codex/${name}`, directory = path.join(managedRoot(), name);
-  const file = sourceTaskFile(name);
-  if (git('ls-remote', '--heads', 'origin', `refs/heads/${branch}`)) throw Error('Task name, path or branch already exists; choose a new name');
-  const review = openOverlap(paths, baseline);
+  const task = taskClaim(name, options.owner, fetchMain(), paths);
+  if (git('ls-remote', '--heads', 'origin', 'refs/heads/' + task.branch)) throw Error('Task name, path or branch already exists; choose a new name');
   const claim = withCapacityLock(() => {
-    if (localEntry(directory) || localEntry(file) || ref(`refs/heads/${branch}`)) throw Error('Task name, path or branch already exists; choose a new name');
+    const promoted = alreadyPromoted(name, options.owner);
+    if (promoted) return { ...promoted, alreadyPromoted: true };
     const inventory = workspaceInventory();
-    if (inventory.entries.some(entry => entry.owner === options.owner && entry.state === 'awaiting-cleanup')) {
-      throw Error('Your prior task is awaiting cleanup. Complete its merge or resolve its cleanup blocker before starting another task');
-    }
+    assertClaimAvailable(task, inventory);
     const existing = inventory.queue.find(entry => entry.name === name);
     if (existing && existing.owner !== options.owner) throw Error('This task is queued by a different owner');
     if (!inventory.available || (inventory.queue.length && inventory.queue[0].name !== name)) {
-      const queued = existing || { name, owner: options.owner, position: (inventory.queue.at(-1)?.position || 0) + 1, queuedAt: new Date().toISOString() };
+      const queued = existing || { name, owner: options.owner, paths, position: (inventory.queue.at(-1)?.position || 0) + 1, queuedAt: new Date().toISOString() };
       if (!existing) save(queueFile(name), queued);
       return { ...queued, state: 'queued', occupied: inventory.occupied, available: inventory.available, limit: inventory.limit };
     }
-    mkdirSync(managedRoot(), { recursive: true });
-    if (!samePath(realpathSync(managedRoot()), managedRoot())) throw Error('Managed workspace root resolves through a link');
-    const task = { name, owner: options.owner, branch, baseline, directory, paths, startedAt: new Date().toISOString(), state: 'creating' };
-    save(file, { ...task, pid: process.pid });
-    if (existing) unlinkSync(queueFile(name));
-    return task;
+    return reserveSourceTask(task, existing);
   });
-  if (claim.state === 'queued') return claim;
-  // The reservation occupies a slot even before Git creates the registration.
-  git('worktree', 'add', '--quiet', '-b', branch, directory, baseline);
-  return withCapacityLock(() => {
-    const active = { ...claim, state: 'active' };
-    save(file, active);
-    return { ...active, risk: paths.length ? risk(paths) : 'unclassified', review };
-  });
+  if (claim.state === 'queued' || (claim.alreadyPromoted && claim.state === 'creating')) return claim;
+  return annotatedTask(claim.alreadyPromoted ? claim : materializeSourceTask(claim));
+}
+
+/** Reserve each released slot at the head of the FIFO queue. If Git or a head
+ * claim fails, report it and preserve the reservation or queue entry. */
+export function promoteSourceQueue() {
+  requireCanonical();
+  const result = { admitted: [] };
+  const initial = workspaceInventory();
+  if (!initial.available || !initial.queue.length) return result;
+  let name = initial.queue[0].name;
+  try {
+    const baseline = fetchMain();
+    while (true) {
+      // Fetch and remote branch inspection happen outside the capacity lock.
+      const observed = workspaceInventory();
+      const head = observed.queue[0];
+      if (!observed.available || !head) return result;
+      name = validateName(head.name);
+      if (!head.owner?.trim()) throw Error('Queued claim is missing its owner');
+      const paths = (head.paths ?? []).map(safeScope);
+      const task = taskClaim(name, head.owner, baseline, paths);
+      if (git('ls-remote', '--heads', 'origin', 'refs/heads/' + task.branch)) throw Error('Queued branch already exists remotely');
+      const claim = withCapacityLock(() => {
+        const inventory = workspaceInventory();
+        const next = inventory.queue[0];
+        if (!inventory.available || !next) return null;
+        if (next.name !== name || next.owner !== head.owner || next.queuedAt !== head.queuedAt) return false;
+        assertClaimAvailable(task, inventory);
+        return reserveSourceTask({ ...task, promotedAt: new Date().toISOString() }, next);
+      });
+      if (claim === null) return result;
+      if (claim === false) continue;
+      result.admitted.push(materializeSourceTask(claim));
+    }
+  } catch (error) {
+    return { ...result, blocked: { name, reason: error.message.split(/\r?\n/)[0] } };
+  }
 }
 
 export function cancelSourceQueue(name, options) {
@@ -193,13 +263,15 @@ export function recoverSourceOperation(id, options) {
 export function completeSourceWorkspace(name, options, dependencies) {
   requireCanonical();
   validateName(name);
-  return withCapacityLock(() => completeUnderLock(name, options, dependencies));
+  const completion = withCapacityLock(() => completeUnderLock(name, options, dependencies));
+  return completion.retirement === 'retired' && !localEntry(completion.directory)
+    ? { ...completion, promotion: promoteSourceQueue() } : completion;
 }
 
 function completeUnderLock(name, options, { readPrs = pullInventory } = {}) {
   const previous = optionalJson(completionFile(name));
-  if (previous?.retirement === 'retired' && previous.owner === options.owner) return previous;
-  if (['removing', 'removed'].includes(previous?.retirement) && previous.owner === options.owner) {
+  if (previous?.retirement === 'retired' && previous.owner === options.owner && !localEntry(previous.directory)) return previous;
+  if (['removing', 'removed', 'retired'].includes(previous?.retirement) && previous.owner === options.owner) {
     const cleanup = cleanupSourceWorkspaces({ execute: true, name, locked: true, readPulls: () => readPrs(previous.branch) });
     return { ...optionalJson(completionFile(name)), cleanup };
   }

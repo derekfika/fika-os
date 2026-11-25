@@ -40,6 +40,7 @@ export function sourceWorkspaceHealth(options = {}) {
   }
   return { observedAt: new Date().toISOString(), ...inventory, disk, minimumFreeGB,
     completedAwaitingCleanup: inventory.entries.filter(entry => entry.state === 'awaiting-cleanup').length,
+    retirementResidues: inventory.entries.filter(entry => entry.state === 'retirement-residue').length,
     activeWorktrees: inventory.entries.filter(entry => entry.state === 'active').length,
     ...(cleanup ? { readyForCleanup: cleanup.ready, cleanupBlocked: cleanup.protected } : {}),
     warnings: [

@@ -86,7 +86,8 @@ export function workspaceInventory() {
       state = legacy.state === 'finished' && legacy.finalSha === tree.HEAD ? 'awaiting-cleanup' : 'protected-history';
     }
     occupied.set(pathKey(tree.worktree), { name: managed ? task.name : legacy?.name || null, directory: tree.worktree, branch, head: tree.HEAD,
-      owner: managed ? task.owner : legacy?.owner || null, state, locked: Boolean(tree.locked), prunable: Boolean(tree.prunable) });
+      owner: managed ? task.owner : legacy?.owner || null, state,
+      ...(managed && task.bootstrapException ? { bootstrapException: task.bootstrapException } : {}), locked: Boolean(tree.locked), prunable: Boolean(tree.prunable) });
   }
   if (localEntry(management)) {
     if (!samePath(realpathSync(management), management)) throw Error('Managed workspace root resolves through a link');
@@ -95,7 +96,12 @@ export function workspaceInventory() {
       const directory = path.join(management, item.name), key = pathKey(directory);
       if (occupied.has(key)) continue;
       const task = tasks.get(key);
-      occupied.set(key, { name: task?.name || null, directory, owner: task?.owner || null, state: 'unregistered-directory' });
+      const completion = task && completions.get(task.name);
+      const residue = completion?.outcome === 'completed' && completion.owner === task.owner &&
+        completion.branch === task.branch && samePath(completion.directory, directory) &&
+        ['removing', 'removed', 'retired'].includes(completion.retirement);
+      occupied.set(key, { name: task?.name || null, directory, owner: task?.owner || null,
+        state: residue ? 'retirement-residue' : 'unregistered-directory' });
     }
   }
   for (const task of known.filter(item => item.state === 'creating')) {
@@ -103,11 +109,12 @@ export function workspaceInventory() {
     if (!occupied.has(key)) occupied.set(key, { name: task.name, owner: task.owner, directory: task.directory, state: 'interrupted-reservation' });
   }
   const entries = [...occupied.values()];
-  const queue = stateRecords('source-queue').sort((a, b) => a.position - b.position);
+  const queue = stateRecords('source-queue').filter(entry => !known.some(task => task.name === entry.name && task.owner === entry.owner &&
+    task.queuedAt === entry.queuedAt && ['creating', 'active'].includes(task.state))).sort((a, b) => a.position - b.position);
   return { limit: workspaceLimit, occupied: entries.length, available: Math.max(0, workspaceLimit - entries.length),
     entries, staleRegistrations, queue, violations: [
       ...(entries.length > workspaceLimit ? [`${entries.length} occupied workspaces exceed the limit of ${workspaceLimit}`] : []),
-      ...entries.filter(entry => ['unmanaged', 'unregistered-directory', 'interrupted-reservation'].includes(entry.state))
+      ...entries.filter(entry => ['unmanaged', 'unregistered-directory', 'retirement-residue', 'interrupted-reservation'].includes(entry.state))
         .map(entry => `${entry.state}: ${entry.directory}`),
     ] };
 }

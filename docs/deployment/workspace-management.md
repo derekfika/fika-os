@@ -19,9 +19,13 @@ npm run fika -- workspace complete <task> --owner <agent-task>
 Windows and other supported hosts use the shared Git directory for registration and an
 OS-released SQLite lock for slot changes. Node 22.13 or later is required. A claim
 reserves its slot before Git creates the checkout. With ten occupied slots, the next
-claim queues. The oldest queued claim has first access to an available slot. Retry
-`create` with the same name and owner when capacity becomes available. Withdraw a claim with `workspace cancel
-<task> --owner <agent-task>`. Never dispatch a queued worker as though it has a checkout.
+claim queues with its task name, owner and advisory scope. Startup, executed cleanup
+and verified completion promote queued claims in FIFO order as physical slots open.
+The result lists admitted tasks and any reason the head claim is blocked. Use
+`workspace create <task> --owner <agent-task>` to retrieve an automatically admitted
+checkout or retry the oldest claim. Review advisory overlap before editing. Withdraw
+a claim with `workspace cancel <task> --owner <agent-task>`. Dispatch the worker only
+after the checkout is active.
 
 `--scope` provides an optional PR-overlap hint. If the inventory is partial, inspect
 GitHub directly. Validate in the task checkout, commit, push, and open the PR. Refresh
@@ -44,7 +48,15 @@ eligible prior completion has retired or a genuine blocker has been documented.
 
 The CLI preserves Git admin evidence and reflog-only commits under
 `<git-common-dir>/fika-workflow/source-recovery/` and `refs/preserve/source-recovery/`.
-It deletes only the verified local branch after removal. Use `workspace prune` to
+It deletes only the verified local branch after both the registration and physical
+path are gone. If native Git leaves an unregistered directory, the slot stays
+occupied and health reports it as retirement residue. Run `workspace cleanup <task>`
+to preview the recovery. The same command with `--execute` can finish an interrupted
+or previously recorded retirement when the archive, completion and merged PR match.
+Only dangling npm dependency links proven by the governed install and the tracked
+lockfile at the completed source, plus their empty parent directories, are eligible.
+Any other content or ambiguous Git state holds the workspace and is reported with a
+reason. Use `workspace prune` to
 preview already missing checkouts and `workspace prune --execute` to preserve their
 Git admin index and reflog before native pruning. An unresolved path or unexpected Git
 prune result requires inspection. Archived data, deployment evidence and stashes
@@ -75,9 +87,11 @@ Successful validation refreshes an existing output's fingerprint only when its
 previous fingerprint still matched at launch and its paths and file types were
 covered by that fingerprint. Interactive dev sessions do not register generated
 output for removal. Retirement checks each ignored output against its recorded
-fingerprint. Outputs with
-unknown or changed content, links outside the checkout, browser evidence, user
-attachments, env files and unknown scratch files still require explicit review.
+fingerprint. Validation includes Next's `next-env.d.ts`. For an existing unrecorded
+declaration, retirement can independently verify the complete generated Next 16
+template against the completed app's tracked lockfile and TypeScript configuration.
+Other unrecorded or changed content, links outside the checkout, browser evidence,
+user attachments, env files and unknown scratch files remain protected.
 Keep emulator databases, runtime state and build output checkout-local. Check
 available CPU, memory, disk and isolated ports before starting intensive work.
 Stagger builds and emulator runs when resources are constrained. Use the standard per-user Firebase
