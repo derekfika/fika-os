@@ -10,11 +10,11 @@
 .hcs-live > :is(.hc-success,.hc-error) { margin: 0; }
 .hcs-site-picker { display: grid; gap: var(--space-2); max-width: 520px; }
 .hcs-site-picker .hc-hint { margin: 0; }
-.hcs-layout { display: grid; grid-template-columns: minmax(230px, 300px) minmax(0, 1fr); align-items: start; gap: var(--space-4); min-width: 0; }
+.hcs-layout { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: var(--space-4); min-width: 0; }
 .hcs-list, .hcs-editor, .hcs-section, .hcs-save { min-width: 0; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); }
 .hcs-list { display: grid; gap: var(--space-3); padding: var(--space-3); }
 .hcs-list .hc-field { gap: var(--space-1); }
-.hcs-list ul { display: grid; gap: var(--space-2); max-height: min(66vh, 720px); overflow: auto; margin: 0; padding: 0; list-style: none; }
+.hcs-list ul { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr)); gap: var(--space-2); max-height: none; overflow: visible; margin: 0; padding: 0; list-style: none; }
 .hcs-list li { min-width: 0; }
 .hcs-service-choice { display: grid; gap: var(--space-1); width: 100%; min-height: 64px; padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); color: var(--color-text-primary); font: inherit; text-align: left; cursor: pointer; }
 .hcs-service-choice:hover, .hcs-service-choice:focus-visible { border-color: var(--color-brand-primary); background: var(--color-surface-muted); }
@@ -33,6 +33,11 @@
 .hcs-toggle input { flex: 0 0 auto; }
 .hcs-review { display: grid; gap: var(--space-1); padding: var(--space-3); border-left: 4px solid var(--color-brand-primary); border-radius: var(--radius-sm); background: var(--color-status-info-bg); color: var(--color-text-primary); }
 .hcs-review > p { margin: 0; font-size: var(--text-sm); line-height: 1.5; overflow-wrap: anywhere; }
+.hcs-add-category { display: grid; grid-template-columns: minmax(220px, 1fr) auto; gap: var(--space-2) var(--space-3); align-items: end; padding: var(--space-3); border: 1px dashed var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface-muted); }
+.hcs-add-category .hc-field { gap: var(--space-1); }
+.hcs-add-category input { min-height: 44px; padding: 0 var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); color: var(--color-text-primary); font: inherit; }
+.hcs-add-category > small { grid-column: 1 / -1; color: var(--color-text-secondary); font-size: var(--text-xs); }
+.hcs-add-category :where(input, button):focus-visible { outline: 3px solid var(--color-focus); outline-offset: 2px; }
 .hcs-categories { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
 .hcs-categories > li { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); min-width: 0; padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); }
 .hcs-categories .hc-check { align-items: flex-start; min-width: 0; flex: 1; }
@@ -51,14 +56,15 @@
 .hcs :where(button, input, select):focus-visible { outline: 3px solid var(--color-focus); outline-offset: 2px; }
 
 @media (max-width: 960px) {
-  .hcs-layout { grid-template-columns: minmax(0, 1fr); }
-  .hcs-list ul { grid-template-columns: repeat(2, minmax(0, 1fr)); max-height: 360px; }
+  .hcs-list ul { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 640px) {
   .hcs-head, .hcs-editor-head, .hcs-section-head { display: grid; }
-  .hcs-list ul { grid-template-columns: minmax(0, 1fr); max-height: 300px; }
+  .hcs-list ul { grid-template-columns: minmax(0, 1fr); }
   .hcs-categories { grid-template-columns: minmax(0, 1fr); }
+  .hcs-add-category { grid-template-columns: minmax(0, 1fr); }
+  .hcs-add-category > small { grid-column: auto; }
   .hcs-editor, .hcs-section, .hcs-save { padding: var(--space-3); }
   .hcs-actions { align-items: stretch; }
   .hcs-actions .hc-btn { width: 100%; }
