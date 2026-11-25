@@ -25,5 +25,8 @@ test("the draft endpoint never opens storage for an unverified catalogue or a pu
   assert.equal((await post({ action: "publish", itemId: "item:one" })).status, 422);
   assert.equal((await post({ action: "create", itemId: "item:one", setup: { kind: "fixed" }, price: 15 })).status, 422);
   assert.equal((await handlers.GET(new Request(url + "?itemId=item:one&itemId=item:two"))).status, 422);
+  for (const value of ["dish@0", "dish@01", "dish@1@2", "other/dish@1", Array(25).fill("dish@1").join(",")]) {
+    assert.equal((await handlers.GET(new Request(url + "?dishRevisions=" + encodeURIComponent(value)))).status, 422);
+  }
   assert.equal(opened, 0);
 });
