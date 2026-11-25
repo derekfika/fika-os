@@ -114,8 +114,7 @@ function visibleWeekDetail(source: RollingWeek, actor: MenuActor): RollingWeek {
   const week = visibleWeekSummary(source, actor);
   const menu = source.supplementaryMenu;
   // Full menu editors need the saved notes in the explicit detail view. Summaries never carry notes.
-  const canEditMenu = menu && ((actor.allOplocs && actorCanManageOrganisation(actor))
-    || (menu.siteIds.length > 0 && menu.siteIds.every(id => actorCanWriteOploc(actor, id, "manage"))));
+  const canEditMenu = menu && menu.siteIds.length > 0 && menu.siteIds.every(id => actorCanWriteOploc(actor, id, "manage"));
   const supplementaryMenu = menu?.kitchenNotes && canEditMenu && week.supplementaryMenu
     ? { ...week.supplementaryMenu, kitchenNotes: menu.kitchenNotes } : week.supplementaryMenu;
   return { ...(actor.allOplocs ? source : week), supplementaryMenu };

@@ -36,12 +36,13 @@ test("rolling-menu API scopes menus and labels, including date navigation, week 
   for (const snapshot of [main, shared, hidden]) await createRollingSnapshot(snapshot);
   let allSites = false;
   let organisationManager = false;
+  let writableSites: string[] = [];
   t.mock.method(globalThis, "fetch", async (input: RequestInfo | URL) => {
     switch (new URL(String(input)).pathname) {
       case "/api/menu-planning/access":
         return Response.json({
           principal: { id: "fixture-user" }, scope: { all: allSites, ids: allSites ? [permitted, other] : [permitted] },
-          permissions: { manageOplocIds: organisationManager ? [permitted, other] : [], canManageOrganisation: organisationManager },
+          permissions: { manageOplocIds: writableSites, canManageOrganisation: organisationManager },
           oplocRedirects: { [historical]: permitted },
         });
       case "/api/service-arrangements": return Response.json({ arrangements: [], oplocs: [] });
@@ -80,6 +81,11 @@ test("rolling-menu API scopes menus and labels, including date navigation, week 
   assert.equal(viewerResponse.status, 200);
   assert.ok(!JSON.stringify(await viewerResponse.json()).includes(privateNotes));
   organisationManager = true;
+  writableSites = [permitted];
+  const partialManagerResponse = await read({ weekId: shared.week.id });
+  assert.equal(partialManagerResponse.status, 200);
+  assert.ok(!JSON.stringify(await partialManagerResponse.json()).includes(privateNotes));
+  writableSites = [permitted, other];
   const managerResponse = await read({ weekId: shared.week.id });
   assert.equal(managerResponse.status, 200);
   const manager = await managerResponse.json();
@@ -88,4 +94,5 @@ test("rolling-menu API scopes menus and labels, including date navigation, week 
   assert.ok(!JSON.stringify(manager.weeks).includes(privateNotes));
   assert.ok(!JSON.stringify(manager.weeks).includes("Unrelated label"));
   assert.notEqual(managerResponse.headers.get("x-fika-menu-cache-scope"), viewerResponse.headers.get("x-fika-menu-cache-scope"));
+  assert.notEqual(managerResponse.headers.get("x-fika-menu-cache-scope"), partialManagerResponse.headers.get("x-fika-menu-cache-scope"));
 });
