@@ -72,6 +72,6 @@ export async function renderPdfToBuffer(html: string) {
   const outputPath = path.join(os.tmpdir(), `fika-cpu-matrix-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);
   try {
     await renderPdfLocally(html, outputPath);
-    return fs.readFile(outputPath);
+    return await fs.readFile(outputPath);
   } finally { await fs.unlink(outputPath).catch(() => undefined); }
 }
