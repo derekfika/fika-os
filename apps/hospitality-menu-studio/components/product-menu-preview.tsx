@@ -62,6 +62,7 @@ export function ProductMenuPreview({ itemId, productName, configuration, library
   const current = offering?.status === "ready" && previewScopeMatches(offering.value, itemId, siteId, eventDate) ? offering.value : null;
   const ready = current?.state === "priced" && dateChoices && !assigned.loading && !assigned.error && references.every(reference => assigned.byRevision.has(productMenuDishKey(reference)));
   const selectionKey = JSON.stringify([itemId, siteId, eventDate, configuration, current?.state]);
+  const dateWeek = dateChoices && "week" in dateChoices ? dateChoices.week : undefined;
 
   return <StudioPanel title="Customer preview" description="Try this draft without creating a booking." className={styles.preview}>
     <StudioStatus tone="warning">Draft · not bookable</StudioStatus>
@@ -70,7 +71,7 @@ export function ProductMenuPreview({ itemId, productName, configuration, library
     {sites.status === "error" && <p role="alert">Sites could not be verified. <button type="button" onClick={() => { setSites({ status: "loading" }); setSiteAttempt(value => value + 1); }}>Try again</button></p>}
     {sites.status === "ready" && <StudioField label="Preview site"><select value={siteId} onChange={event => { setOffering(null); setSiteId(event.target.value); }}><option value="">Choose a site</option>{sites.value.map(site => <option key={site.id} value={site.id}>{site.name}</option>)}</select></StudioField>}
     <StudioField label="Preview date"><input type="date" value={eventDate} onChange={event => { setOffering(null); setEventDate(event.target.value); }} /></StudioField>
-    {dateChoices && "week" in dateChoices && <p>Previewing week {dateChoices.week} for this date. <button type="button" onClick={() => onEditWeek(dateChoices.week - 1)}>Edit this week</button></p>}
+    {dateWeek !== undefined && <p>Previewing week {dateWeek} for this date. <button type="button" onClick={() => onEditWeek(dateWeek - 1)}>Edit this week</button></p>}
     {siteId && eventDate && !dateChoices && <p role="alert">Choose a valid date.</p>}
     {siteId && dateChoices && (!offering || offering.status === "loading" || (offering.status === "ready" && !current)) && <p role="status">Checking site and date…</p>}
     {siteId && dateChoices && offering?.status === "error" && <p role="alert">Site and date rules could not be verified. <button type="button" onClick={() => { setOffering({ status: "loading" }); setOfferingAttempt(value => value + 1); }}>Try again</button></p>}
