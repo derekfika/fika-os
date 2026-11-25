@@ -69,7 +69,7 @@ test("hosted rolling reads use targeted week and publication paths", () => {
   assert.match(planner, /operationRef/);
   assert.match(planner, /scope === cached\.identity/);
   assert.match(planner, /Number\(summary\.version\) === cached\.version/);
-  assert.match(planner, /if \(cached && await revalidateWeek\(target!, cached\)\)/);
+  assert.match(planner, /cached && await revalidateWeek\(target!, cached\)/);
   assert.match(planner, /persistCachedWeek/);
   assert.match(planner, /history\.pushState/);
   assert.match(planner, /popstate/);
