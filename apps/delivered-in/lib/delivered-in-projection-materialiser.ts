@@ -39,11 +39,12 @@ export async function buildDeliveredInDayProjection(input: { request: NextReques
       ? Object.fromEntries(allergenKeys.map(key => [key, packetReviewed.allergens[key] || "unrecorded" as const]))
       : Object.fromEntries(allergenKeys.map(key => [key, "unrecorded" as const]));
     const allergensVisible = review?.cpuReview.status === "signed" && !cpuFailure && packetReviewed?.allergenState !== "unrecorded" && Object.values(allergens).every(state => state !== "unrecorded");
-    const { mayContainNotes: _unverifiedNotes, allergenDetailNotes: _unverifiedDetails, ...sourceEntry } = entry;
+    const { mayContainNotes: _unverifiedNotes, allergenDetailNotes: _unverifiedDetails, cpuAllergenState: _previousCpuState, ...sourceEntry } = entry;
     return {
       ...sourceEntry,
       allergensVisible,
       allergens,
+      ...(allergensVisible && packetReviewed?.allergenState === "clear" ? { cpuAllergenState: "clear" as const } : {}),
       ...(allergensVisible && packetReviewed?.mayContainNotes ? { mayContainNotes: packetReviewed.mayContainNotes } : {}),
       ...(allergensVisible && packetReviewed?.allergenDetailNotes ? { allergenDetailNotes: packetReviewed.allergenDetailNotes } : {}),
     };
