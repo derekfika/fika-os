@@ -3,8 +3,10 @@ import type { DocumentReference, Transaction } from "firebase-admin/firestore";
 import { stableDocumentId } from "@fika/server-shared/stable-document-id";
 import { z } from "zod";
 import { readStudioKitchenSpec, type StudioKitchenSpec } from "../../shared/hospitality-menu-studio-kitchen";
+import { isStudioDishChoice } from "../../shared/hospitality-menu-studio-selection";
 import type { QuoteRevision } from "./booking-workflow";
 import type { CanonicalBooking } from "./hospitality-booking-service";
+import { kitchenSpecsMatchBookedChoices } from "./hospitality-studio-choice-evidence";
 import { QUOTE_ENGINE_CONTRACT_VERSION, type QuoteCommercialSnapshot } from "./quote-engine";
 
 export const ACCEPTED_STUDIO_KITCHEN_CONTRACT = "fika.hospitality-accepted-studio-kitchen.v1";
@@ -39,14 +41,21 @@ export function invalidStudioKitchenEvidence() {
   });
 }
 
+export function requiresStudioKitchenEvidence(booking: CanonicalBooking) {
+  if (booking.studioKitchenEvidenceVersion === 1) return true;
+  if (booking.studioKitchenEvidenceVersion !== undefined || booking.order.items.some(line => line.choices?.some(isStudioDishChoice))) {
+    throw invalidStudioKitchenEvidence();
+  }
+  return false;
+}
+
 /** Reads only Hub-owned accepted evidence. The booking acceptance flow must verify the immutable
  * publication and signed evidence, then persist this private record atomically with activation.
  * A Studio booking has a server-written marker and a private record per immutable quote.
  */
 export async function acceptedStudioKitchenSpecs(transaction: Transaction, bookingRef: DocumentReference, booking: CanonicalBooking, quote: QuoteRevision) {
   const specs = new Map<string, StudioKitchenSpec>();
-  if (booking.studioKitchenEvidenceVersion === undefined) return specs;
-  if (booking.studioKitchenEvidenceVersion !== 1) throw invalidStudioKitchenEvidence();
+  if (!requiresStudioKitchenEvidence(booking)) return specs;
   const snapshot = await transaction.get(acceptedStudioKitchenEvidenceRef(bookingRef, quote.id));
   if (!snapshot.exists) throw invalidStudioKitchenEvidence();
 
@@ -81,5 +90,7 @@ export async function acceptedStudioKitchenSpecs(transaction: Transaction, booki
     }
     specs.set(spec.bookingLineId, spec);
   }
+  if (!kitchenSpecsMatchBookedChoices(booking.order.items,
+    index => specs.get(hospitalityBookingLineId(booking.canonicalId, index)), specs.size)) throw invalidStudioKitchenEvidence();
   return specs;
 }
