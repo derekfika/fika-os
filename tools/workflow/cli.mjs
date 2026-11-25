@@ -10,7 +10,7 @@ import { cancelSourceQueue, checkSourceWorkspace, completeSourceWorkspace, creat
 import { requireCanonical, withCapacityLock, workspaceInventory } from './workspace-capacity.mjs';
 import { cleanupSourceWorkspaces, pruneStaleSourceRegistrations } from './workspace-retirement.mjs';
 import { sourceWorkspaceHealth } from './workspace-health.mjs';
-import { installSourceDependencies, newValidationOutputs, recordGenerated } from './workspace-cache.mjs';
+import { installSourceDependencies, validationOutputCandidates, recordGenerated } from './workspace-cache.mjs';
 import { migrateSourceHistory } from './source-migration.mjs';
 import { bootstrap, deploy, inspectHotfixBaseline, reconcile, reconcileServingBaseline } from './releases.mjs';
 import { hostedTrust, assertHostedContext } from './hosted.mjs';
@@ -82,7 +82,7 @@ async function main() {
     }
     if (options.plan) result = { scope, commands, executed: false };
     else result = runSourceOperation('validate', workspace => {
-      const candidates = workspace && !options['tools-only'] ? newValidationOutputs(workspace, scope.apps.map(app => APPS[app])) : [];
+      const candidates = workspace && !options['tools-only'] ? validationOutputCandidates(workspace, scope.apps.map(app => APPS[app])) : [];
       for (const item of commands) command(item.program, item.args, { env: { ...process.env, NODE_ENV: item.args.at(-1) === 'build' ? 'production' : 'test', FIREBASE_PROJECT_ID: 'demo-fika-os', FIKA_CPU_PLAN_STORE: 'memory' }, stdio: ['ignore', 'inherit', 'inherit'] });
       return { scope, executed: true, commands: commands.length,
         ...(candidates.length ? { generated: recordGenerated(workspace, candidates) } : {}) };
@@ -128,11 +128,7 @@ async function main() {
   } else if (verb === 'dev') {
     if (!Object.hasOwn(APPS, arg)) throw Error('Select a supported app');
     if (!options.workspace) throw Error('Dev requires --workspace');
-    result = runSourceOperation('dev', workspace => {
-      const candidates = newValidationOutputs(workspace, [APPS[arg]]);
-      const outcome = devSourceWorkspace(options.workspace, APPS[arg], options.port);
-      return { ...outcome, generated: recordGenerated(workspace, candidates) };
-    }, options.workspace);
+    result = runSourceOperation('dev', () => devSourceWorkspace(options.workspace, APPS[arg], options.port), options.workspace);
   } else if (verb === 'studio-preflight') {
     if (arg !== undefined || !options.staging || Object.keys(options).length !== 1) throw Error('Use only fika studio-preflight --staging');
     result = await studioStagingPreflight();

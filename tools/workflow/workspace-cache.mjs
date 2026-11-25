@@ -11,7 +11,7 @@ const isInside = (directory, file) => {
   return relative && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
 };
 
-function fingerprint(directory, relative) {
+function fingerprint(directory, relative, { observedEntries, allowedEntries } = {}) {
   const target = path.resolve(directory, relative);
   if (!isInside(directory, target) || !samePath(realpathSync(target), target)) throw Error('Generated root resolves through a link');
   const hash = createHash('sha256');
@@ -19,13 +19,17 @@ function fingerprint(directory, relative) {
   function visit(file) {
     const info = lstatSync(file);
     const name = path.relative(target, file);
-    if (info.isSymbolicLink()) {
+    const type = info.isSymbolicLink() ? 'link' : info.isDirectory() ? 'directory' : info.isFile() ? 'file' : null;
+    if (!type) throw Error('Unexpected file type in generated output');
+    if (allowedEntries && allowedEntries.get(name) !== type) throw Error('Generated output contains a new or changed entry');
+    observedEntries?.set(name, type);
+    if (type === 'link') {
       if (!isInside(directory, realpathSync(file))) throw Error('Generated path links outside the checkout');
       hash.update(JSON.stringify([name, 'link', readlinkSync(file)]));
-    } else if (info.isDirectory()) {
+    } else if (type === 'directory') {
       hash.update(JSON.stringify([name, 'directory']));
       for (const child of readdirSync(file).sort()) visit(path.join(file, child));
-    } else if (info.isFile()) {
+    } else {
       hash.update(JSON.stringify([name, 'file', info.size, info.mode]));
       const fd = openSync(file, 'r');
       try {
@@ -34,7 +38,7 @@ function fingerprint(directory, relative) {
       } finally { closeSync(fd); }
       const current = lstatSync(file);
       if (current.size !== info.size || current.mtimeMs !== info.mtimeMs || current.ino !== info.ino) throw Error('Generated file changed while being recorded');
-    } else throw Error('Unexpected file type in generated output');
+    }
   }
   visit(target);
   return hash.digest('hex');
@@ -45,12 +49,13 @@ export function recordGenerated(workspace, candidates) {
   if (!candidates.length) return { paths, protectedPaths };
   const previous = optionalJson(artifactsFile(workspace.name));
   const entries = { ...previous?.entries };
-  for (const relative of candidates) {
+  for (const candidate of candidates) {
+    const { relative, allowedEntries } = typeof candidate === 'string' ? { relative: candidate } : candidate;
     if (!localEntry(path.join(workspace.directory, relative))) continue;
     try {
       if (workspace.run('ls-files', '--', relative)) throw Error('Generated path contains tracked files');
       workspace.run('check-ignore', '-q', '--', relative);
-      entries[relative] = fingerprint(workspace.directory, relative);
+      entries[relative] = fingerprint(workspace.directory, relative, { allowedEntries });
       paths.push(relative);
     } catch (error) { protectedPaths.push({ path: relative, reason: error.message.split(/\r?\n/)[0] }); }
   }
@@ -58,22 +63,41 @@ export function recordGenerated(workspace, candidates) {
   return { paths, protectedPaths };
 }
 
-export function newValidationOutputs(workspace, apps) {
-  return apps.flatMap(app => [`${app.path}/.next`, `${app.path}/tsconfig.tsbuildinfo`])
-    .filter(relative => !localEntry(path.join(workspace.directory, relative)));
+function generatedEntries(workspace) {
+  const record = optionalJson(artifactsFile(workspace.name));
+  return record?.name === workspace.name && samePath(record.directory, workspace.directory) ? record.entries : undefined;
+}
+
+function matchesGenerated(workspace, relative, entries, observedEntries) {
+  const expected = entries?.[relative];
+  if (!expected) return false;
+  try { return fingerprint(workspace.directory, relative, { observedEntries }) === expected; }
+  catch { return false; }
+}
+
+export function validationOutputCandidates(workspace, apps) {
+  const entries = generatedEntries(workspace);
+  const candidates = [];
+  for (const app of apps) {
+    for (const relative of [`${app.path}/.next`, `${app.path}/tsconfig.tsbuildinfo`]) {
+      if (!localEntry(path.join(workspace.directory, relative))) {
+        candidates.push(relative);
+        continue;
+      }
+      const allowedEntries = new Map();
+      if (matchesGenerated(workspace, relative, entries, allowedEntries)) {
+        // Retain the old fingerprint if a rerun adds paths that had no verified provenance.
+        candidates.push({ relative, allowedEntries });
+      }
+    }
+  }
+  return candidates;
 }
 
 export function verifiedGenerated(workspace, status) {
-  const record = optionalJson(artifactsFile(workspace.name));
-  if (!record || record.name !== workspace.name || !samePath(record.directory, workspace.directory)) return false;
-  return split(status).every(line => {
-    if (!line.startsWith('!! ')) return false;
-    const relative = line.slice(3).replace(/\/$/, '');
-    const expected = record.entries[relative];
-    if (!expected) return false;
-    try { return fingerprint(workspace.directory, relative) === expected; }
-    catch { return false; }
-  });
+  const entries = generatedEntries(workspace);
+  return Boolean(entries) && split(status).every(line =>
+    line.startsWith('!! ') && matchesGenerated(workspace, line.slice(3).replace(/\/$/, ''), entries));
 }
 
 export function sharedNpmCache() {

@@ -8,9 +8,9 @@ import { fileURLToPath } from 'node:url';
 import { fixture } from './lifecycle-fixture.mjs';
 import { createWorkspace, workspaceRecords } from './workspaces.mjs';
 import { integrateSourceWorkspace, createSourceWorkspace, completeSourceWorkspace, recoverSourceReservation, runSourceOperation } from './source-workspaces.mjs';
-import { sourceTaskFile, withCapacityLock, workspaceInventory } from './workspace-capacity.mjs';
+import { sourceTaskFile, workspaceInventory } from './workspace-capacity.mjs';
 import { cleanupSourceWorkspaces, integrationEvidence, pruneStaleSourceRegistrations } from './workspace-retirement.mjs';
-import { installSourceDependencies, recordGenerated } from './workspace-cache.mjs';
+import { installSourceDependencies, recordGenerated, validationOutputCandidates } from './workspace-cache.mjs';
 import { sourceWorkspaceHealth } from './workspace-health.mjs';
 import { migrateSourceHistory } from './source-migration.mjs';
 import { governedReleaseOperation } from './workspace-state.mjs';
@@ -69,33 +69,132 @@ test('completion protects dirty, ignored and unique commits and records pushed e
   }); } finally { f.dispose(); }
 });
 
-test('simultaneous independent processes reserve at most five slots and queue the sixth', async () => {
+test('ten concurrent claims fill the slots and startup retirement promotes the queue in order', async () => {
   const f = fixture();
   try {
-    const run = async name => JSON.parse((await runAsync(process.execPath, [cli, 'workspace', 'create', name, '--owner', name], { cwd: f.repo })).stdout);
-    const claims = await Promise.all(Array.from({ length: 6 }, (_, index) => run(`slot-${index}`)));
-    const queued = claims.find(claim => claim.state === 'queued');
-    assert.equal(claims.filter(claim => claim.state === 'active').length, 5);
+    const runCli = async (...args) => JSON.parse((await runAsync(process.execPath, [cli, 'workspace', ...args], { cwd: f.repo })).stdout);
+    const run = name => runCli('create', name, '--owner', name);
+    async function finishAll(processes) {
+      // Let every child release its Git and SQLite handles before the fixture is removed.
+      const results = await Promise.allSettled(processes);
+      const errors = results.filter(result => result.status === 'rejected').map(result => result.reason);
+      if (errors.length) throw new AggregateError(errors, 'Workspace CLI processes failed');
+      return results.map(result => result.value);
+    }
+    const claims = await finishAll(Array.from({ length: 11 }, (_, index) => run(`slot-${index}`)));
+    const active = claims.filter(claim => claim.state === 'active');
+    const waiting = claims.filter(claim => claim.state === 'queued');
+    assert.equal(active.length, 10);
+    assert.equal(waiting.length, 1);
+    const [queued] = waiting;
+    assert.equal(queued.limit, 10);
     assert.equal(queued.available, 0);
-    assert.equal(f.within(workspaceInventory).occupied, 5);
-    assert.equal(f.within(() => withCapacityLock(() => sourceWorkspaceHealth({ 'inventory-only': true }))).occupied, 5);
-    const released = claims.find(claim => claim.state === 'active');
-    assert.equal(f.within(() => completeSourceWorkspace(released.name, { owner: released.owner })).retirement, 'retired');
-    assert.equal(f.within(workspaceInventory).available, 1);
-    assert.equal((await run('slot-new')).state, 'queued');
+    const deferredPath = path.join(path.dirname(active[0].directory), queued.name);
+    assert.equal(existsSync(deferredPath), false);
+    assert.equal(f.git('branch', '--list', `codex/${queued.name}`), '');
+    const health = f.within(() => sourceWorkspaceHealth({ 'inventory-only': true }));
+    assert.equal(health.limit, 10);
+    assert.equal(health.occupied, 10);
+    assert.equal(health.entries.some(entry => entry.branch === 'main'), false);
+    assert.deepEqual(health.queue.map(entry => entry.name), [queued.name]);
+
+    const [released] = active;
+    f.within(() => runSourceOperation('dev', () => {
+      const completion = completeSourceWorkspace(released.name, { owner: released.owner });
+      assert.match(completion.cleanup.protected[0].reason, /operation/);
+    }, released.name));
+    // Whether the new claim runs before or after startup frees a slot, it waits for the older claim.
+    const [startup, newer] = await finishAll([runCli('startup'), run('slot-new')]);
+    assert.equal(startup.cleanup.retired[0].name, released.name);
+    assert.equal(startup.health.limit, 10);
+    assert.equal(startup.health.available, 1);
+    assert.equal(newer.state, 'queued');
     assert.equal((await run(queued.name)).state, 'active');
     assert.equal(f.within(workspaceInventory).queue[0].name, 'slot-new');
+    assert.equal(f.within(workspaceInventory).occupied, 10);
     const unmanaged = path.join(f.base, 'unmanaged outside managed root');
     f.git('worktree', 'add', '--detach', unmanaged);
     const over = f.within(workspaceInventory);
-    assert.equal(over.occupied, 6);
+    assert.equal(over.occupied, 11);
     assert.equal(over.available, 0);
+    assert.ok(over.violations.includes('11 occupied workspaces exceed the limit of 10'));
     const detached = over.entries.filter(entry => entry.branch === null);
     assert.equal(detached.length, 1, JSON.stringify(over.entries));
     assert.equal(detached[0].state, 'unmanaged');
     assert.equal((await run('slot-new')).state, 'queued');
     assert.equal(existsSync(unmanaged), true);
   } finally { f.dispose(); }
+});
+
+test('governed validation refreshes verified output and dev preserves nested attachments', () => {
+  const f = fixture();
+  try { f.within(() => {
+    writeFileSync(path.join(f.repo, '.gitignore'), '\n.next/\n*.tsbuildinfo\nattachments/\n', { flag: 'a' });
+    const app = { path: 'apps/menu-planning' };
+    const appDir = path.join(f.repo, app.path);
+    mkdirSync(appDir, { recursive: true });
+    writeFileSync(path.join(appDir, 'package.json'), JSON.stringify({ name: 'fixture', scripts: { dev: 'node dev.cjs' } }));
+    writeFileSync(path.join(appDir, 'dev.cjs'), "require('node:fs').writeFileSync('.next/interactive-attachment.txt', 'interactive fixture attachment');");
+    f.git('add', '.');
+    f.git('commit', '-m', 'Add fixture dev script');
+    f.git('push', 'origin', 'main');
+    const task = createSourceWorkspace('source-rebuild', { owner: 'agent-a' });
+    const outputPath = `${app.path}/.next`;
+    const infoPath = `${app.path}/tsconfig.tsbuildinfo`;
+    const output = path.join(task.directory, outputPath);
+    const contents = path.join(output, 'build');
+    const prior = path.join(task.directory, infoPath);
+
+    function build(value, writeExtra = () => {}) {
+      return runSourceOperation('validate', workspace => {
+        const candidates = validationOutputCandidates(workspace, [app]);
+        assert.deepEqual(candidates.map(candidate => candidate.relative ?? candidate), [outputPath]);
+        mkdirSync(output, { recursive: true });
+        writeFileSync(contents, value);
+        writeExtra();
+        return recordGenerated(workspace, candidates);
+      }, task.name);
+    }
+
+    // A prior build file with no governed provenance must stay protected through each rebuild.
+    writeFileSync(prior, 'prior artifact');
+    assert.deepEqual(build('initial output').paths, [outputPath]);
+    assert.deepEqual(build('rebuilt output').paths, [outputPath]);
+
+    writeFileSync(contents, 'operator changes');
+    runSourceOperation('validate', workspace => {
+      assert.deepEqual(validationOutputCandidates(workspace, [app]), []);
+    }, task.name);
+    assert.equal(readFileSync(contents, 'utf8'), 'operator changes');
+    writeFileSync(contents, 'rebuilt output');
+
+    const duringBuild = path.join(output, 'unverified-build-attachment.txt');
+    const protectedBuild = build('rebuilt output', () => writeFileSync(duringBuild, 'extra fixture attachment'));
+    assert.deepEqual(protectedBuild.paths, []);
+    assert.match(protectedBuild.protectedPaths[0].reason, /new or changed entry/);
+    assert.equal(readFileSync(duringBuild, 'utf8'), 'extra fixture attachment');
+    renameSync(duringBuild, path.join(f.base, 'retained-build-attachment'));
+
+    const dev = JSON.parse(command(process.execPath, [cli, 'dev', 'menu', '--workspace', task.name, '--port', '13100'], { cwd: f.repo, env: { ...process.env, NPM_CONFIG_LOGLEVEL: 'silent' } }));
+    assert.equal(dev.stopped, true);
+    const duringDev = path.join(output, 'interactive-attachment.txt');
+    const complete = () => completeSourceWorkspace(task.name, { owner: task.owner });
+    renameSync(prior, path.join(f.base, 'retained-prior-artifact'));
+    // The nested attachment alone must prevent retirement.
+    assert.match(complete().cleanup.protected[0].reason, /ignored/);
+    assert.equal(readFileSync(duringDev, 'utf8'), 'interactive fixture attachment');
+    renameSync(duringDev, path.join(f.base, 'retained-interactive-attachment'));
+
+    const attachments = path.join(task.directory, 'attachments');
+    mkdirSync(attachments);
+    const attachment = path.join(attachments, 'reference.txt');
+    writeFileSync(attachment, 'owner attachment');
+    assert.match(complete().cleanup.protected[0].reason, /ignored/);
+    assert.equal(readFileSync(attachment, 'utf8'), 'owner attachment');
+    renameSync(attachments, path.join(f.base, 'retained-attachments'));
+    assert.equal(complete().retirement, 'retired');
+    assert.equal(existsSync(task.directory), false);
+  }); } finally { f.dispose(); }
 });
 
 test('known generated outputs are retired only while their full content matches', () => {

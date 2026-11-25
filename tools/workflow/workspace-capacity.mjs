@@ -2,7 +2,7 @@ import path from 'node:path';
 import { lstatSync, readdirSync, realpathSync } from 'node:fs';
 import { common, git, jsonFile, root, stateDir } from './runtime.mjs';
 
-export const workspaceLimit = 5;
+export const workspaceLimit = 10;
 export const managedRoot = () => path.resolve(realpathSync(common()), '..', '..', 'agent-workspaces', 'fika-os');
 export const sourceTaskFile = name => path.join(stateDir(), 'source-tasks', `${name}.json`);
 export const completionFile = name => path.join(stateDir(), 'source-completions', `${name}.json`);
