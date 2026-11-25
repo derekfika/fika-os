@@ -84,8 +84,9 @@ export async function prepareStudioBooking(transaction: Transaction, bookingRef:
     const available = new Map(live.dishes.map(item => [item.dish.id, item]));
     if (presentation !== marker.data.studioPresentation ||
         (presentation && !policy.replacesChoiceGroupId) ||
+        // Check structural allocation here; the established per-dish minimum error is raised below.
         !validStudioGroupedAllocation([...available.keys()], presentation, live.productChoices?.groups,
-          policy.minimumQuantity, marker.data.quantities, line.quantity)) {
+          1, marker.data.quantities, line.quantity)) {
       throw stale("Use the current customer selection controls for this product.");
     }
     if (!chosen.length || quantities.some(([id]) => !available.has(id)) ||
