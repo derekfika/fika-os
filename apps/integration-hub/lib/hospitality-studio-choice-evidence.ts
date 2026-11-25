@@ -8,6 +8,7 @@ import type { CanonicalBooking } from "./hospitality-booking-service";
 export const submittedChoice = z.strictObject({
   id: z.literal(studioDishChoiceId), publicationHash: publicationDigest,
   quantities: z.record(idSchema, z.int().nonnegative()),
+  studioPresentation: z.enum(["dropdown", "quantities"]).optional(),
 });
 export const storedChoice = submittedChoice.extend({
   quantityLabels: z.record(idSchema, z.string().min(1).max(200)),

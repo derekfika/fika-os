@@ -4,6 +4,7 @@ import { studioDishReviewSubject } from "../../shared/hospitality-menu-studio-sa
 import { catalogueUnavailable, siteOfferings, studioCatalogueOptions } from "./catalogue";
 import type { Dish, Menu, Review, StudioActor } from "./contract";
 import type { cpuDishReview } from "./cpu-dish-review";
+import { isStudioProductMenuId } from "../../shared/hospitality-menu-studio-product-publication";
 import type { deliverStudioPublication } from "./hub-publication";
 import { StudioProblem } from "./problem";
 import type { PublicationImpactTarget, PublicationRequest } from "./publication";
@@ -60,7 +61,8 @@ export function studioHandlers(
   };
   const stagedInputs = async (actor: StudioActor, command: PublicationRequest, db: StudioStore, createKey: boolean) => {
     const pilot = actor.publicationPilot;
-    if (!pilot?.publish || !stagedDelivery || command.menuId !== pilot.menuId || command.effectiveDate < pilot.firstDate || command.effectiveDate > pilot.lastDate) {
+    if (!pilot?.publish || !stagedDelivery || isStudioProductMenuId(command.menuId) ||
+        command.menuId !== pilot.menuId || command.effectiveDate < pilot.firstDate || command.effectiveDate > pilot.lastDate) {
       throw denied("This menu is outside the approved Studio publication scope.");
     }
     const checker = stagedReview?.();
@@ -179,7 +181,7 @@ export function studioHandlers(
         if (actor.publicationPilot && stagedDelivery) {
           const db = store();
           const pilot = actor.publicationPilot;
-          if (!pilot.publish || command.menuId !== pilot.menuId) throw denied("This menu is outside the approved Studio publication scope.");
+          if (!pilot.publish || isStudioProductMenuId(command.menuId) || command.menuId !== pilot.menuId) throw denied("This menu is outside the approved Studio publication scope.");
           const existing = await db.publishedReceipt(command, actor.id);
           const publication = existing ?? await db.publishReviewed(command, {
             ...await stagedInputs(actor, command, db, false), ...await publicationInputs(request, actor, command, db),

@@ -26,8 +26,10 @@ export async function GET(request: NextRequest) {
         if (!live.managedItems.has(offering.itemId)) return [offering];
         const frozen = live.items.get(offering.itemId);
         if (!frozen || !studioOfferingIsBookable(offering, query.serviceDate)) return [];
+        const policy = studioChoicePolicy(offering.configuration);
+        if (frozen.productChoices && (!policy.replacesChoiceGroupId || frozen.productChoices.presentation === "checkboxes")) return [];
         const studioChoices: StudioPortalChoices = { publicationHash: frozen.publication.contentHash,
-          ...studioChoicePolicy(offering.configuration),
+          ...policy, ...(frozen.productChoices ?? {}),
           dishes: frozen.dishes.map(({ dish }) => ({ id: dish.id, name: dish.name, description: dish.customerDescription })) };
         return [{ ...offering, studioChoices }];
       });

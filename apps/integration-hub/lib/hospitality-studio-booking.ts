@@ -79,6 +79,12 @@ export async function prepareStudioBooking(transaction: Transaction, bookingRef:
     }
     const quantities = Object.entries(marker.data.quantities);
     const chosen = quantities.filter(([, quantity]) => quantity > 0);
+    const presentation = live.productChoices?.presentation;
+    if (presentation === "checkboxes" || presentation !== marker.data.studioPresentation ||
+        (presentation && !policy.replacesChoiceGroupId) ||
+        (presentation === "dropdown" && chosen.length !== 1)) {
+      throw stale("Use the current customer selection controls for this product.");
+    }
     const available = new Map(live.dishes.map(item => [item.dish.id, item]));
     if (!chosen.length || quantities.some(([id]) => !available.has(id)) ||
         chosen.reduce((sum, [, quantity]) => sum + quantity, 0) !== line.quantity) {

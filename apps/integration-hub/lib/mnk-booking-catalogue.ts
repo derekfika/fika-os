@@ -5,13 +5,19 @@ import { hospitalityMenuDate } from "../../shared/hospitality-menu-date";
 import { isStudioDishChoice } from "../../shared/hospitality-menu-studio-selection";
 import { studioChoicePolicy, studioOfferingIsBookable } from "./hospitality-studio-commercial";
 
+type CatalogueRelationRead = (field: string, ids: string[]) => Promise<CanonicalRecord[]>;
+
 /** Read only what the effective-offering resolver needs for the submitted stable Item IDs: their sparse site exceptions, company-default and exception Prices, and the one OPLOC (liveness). */
-async function loadPortalBookingCatalogue(items: CanonicalRecord[], payload: MnkBookingPayload, oplocId: string, provider: string, read: (field: string, ids: string[]) => Promise<CanonicalRecord[]>) {
+async function loadPortalBookingCatalogue(items: CanonicalRecord[], payload: MnkBookingPayload, oplocId: string, provider: string, read: CatalogueRelationRead) {
   const requested = new Set(payload.order.items.map(item => item.itemId));
   const itemIds = items.filter(item => item.entityType === "Hospitality Menu Item" && (requested.has(item.canonicalId) || (Array.isArray(item.record.providerMappings) && item.record.providerMappings.some(raw => {
     const mapping = raw as Record<string, unknown>;
     return mapping.provider === provider && requested.has(String(mapping.sourceItemId));
   })))).map(item => item.canonicalId);
+  return loadCatalogueRelations(items, itemIds, oplocId, read);
+}
+
+async function loadCatalogueRelations(items: CanonicalRecord[], itemIds: string[], oplocId: string, read: CatalogueRelationRead) {
   const boundedRead = async (field: string, ids: string[]) => {
     const distinct = [...new Set(ids)];
     const records: CanonicalRecord[] = [];
@@ -24,6 +30,10 @@ async function loadPortalBookingCatalogue(items: CanonicalRecord[], payload: Mnk
   const prices = [...related.filter(record => record.entityType === "Hospitality Menu Price"), ...await boundedRead("record.hospitalityMenuOfferingId", offerings.map(record => record.canonicalId))].filter(record => record.entityType === "Hospitality Menu Price");
   const oploc = (await read("canonicalId", [oplocId])).filter(record => record.entityType === "OPLOC");
   return [...items, ...offerings, ...prices, ...oploc];
+}
+
+export function loadStudioProductActivationCatalogue(item: CanonicalRecord, oplocId: string, read: CatalogueRelationRead) {
+  return loadCatalogueRelations([item], [item.canonicalId], oplocId, read);
 }
 
 export function loadMnkBookingCatalogue(items: CanonicalRecord[], payload: MnkBookingPayload, oplocId: string, read: (field: string, ids: string[]) => Promise<CanonicalRecord[]>) {

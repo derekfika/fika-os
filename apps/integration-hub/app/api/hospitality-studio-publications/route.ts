@@ -9,9 +9,12 @@ import { FirestoreAuthModRepository } from "@/lib/authmod-core/firestore-reposit
 import { requireBoundFikaSession } from "@/lib/fika-session";
 import { db } from "@/lib/firebase-admin";
 import { isActiveOplocRecord } from "@/lib/hospitality-catalogue-oploc";
+import { hospitalityPortalReadFromRecords } from "@/lib/hospitality-catalogue-service";
+import { studioChoicePolicy, studioOfferingIsBookable } from "@/lib/hospitality-studio-commercial";
 import { HubStudioPublications, studioActivationCommand } from "@/lib/hospitality-studio-publications";
 import { studioPublicationAuthority } from "@/lib/hospitality-studio-publication-authority";
 import { studioPilot } from "@/lib/hospitality-studio-pilot";
+import { loadStudioProductActivationCatalogue } from "@/lib/mnk-booking-catalogue";
 import type { CanonicalRecord } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -64,6 +67,10 @@ export async function POST(request: NextRequest) {
     }
     const command = studioActivationCommand.parse(await readJson(request, 8192));
     if (command.oplocId !== pilot.oplocId) return rejected(403, "STUDIO_ACTIVATION_SITE_DENIED");
+    if (command.action === "activate-product" && (process.env.FIKA_STUDIO_HUB_PILOT_BOOKING_ENABLED !== "true" ||
+        process.env.FIKA_HOSPITALITY_EMAIL_DELIVERY_ENABLED !== "false")) {
+      return rejected(403, "STUDIO_PRODUCT_ACTIVATION_DISABLED");
+    }
     return reply(await store().activate(command, async (transaction, action) => {
       const repository = new FirestoreAuthModRepository("studio-activation", undefined, transaction);
       const session = await requireBoundFikaSession(request, repository);
@@ -84,8 +91,27 @@ export async function POST(request: NextRequest) {
             record.lifecycleStatus !== "published" || record.publicationStatus !== "published" || record.record.lifecycleState !== "active")) {
         throw Object.assign(new Error("Canonical Studio catalogue scope is invalid."), { status: 422, code: "STUDIO_ACTIVATION_CATALOGUE_INVALID" });
       }
-    }));
+      if (command.action === "activate-product") {
+        const item = records[0];
+        if (!item || records.length !== 1) throw invalidProductOffering();
+        const catalogue = await loadStudioProductActivationCatalogue(item, oplocId, async (field, ids) => {
+          const snapshot = await transaction.get(canonical.where(field, "in", ids).limit(501));
+          if (snapshot.size > 500) throw invalidProductOffering();
+          return snapshot.docs.map(document => document.data() as CanonicalRecord);
+        });
+        const { offerings } = hospitalityPortalReadFromRecords(catalogue, { oplocId, serviceDate: menu.startDate });
+        const effective = offerings.find(offering => offering.itemId === item.canonicalId);
+        if (!effective || !studioOfferingIsBookable(effective, menu.startDate) || !studioChoicePolicy(effective.configuration).replacesChoiceGroupId) {
+          throw invalidProductOffering();
+        }
+      }
+    }, command.action === "activate-product" ? pilot : undefined));
   } catch (error) { return respondError(error); }
+}
+
+function invalidProductOffering() {
+  return Object.assign(new Error("The product has no verified Studio-compatible Offering for this site and date."),
+    { status: 422, code: "STUDIO_PRODUCT_OFFERING_UNAVAILABLE" });
 }
 
 async function readJson(request: Request, limit: number): Promise<unknown> {
