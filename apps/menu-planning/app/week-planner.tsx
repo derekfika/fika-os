@@ -10,6 +10,7 @@ import { slotLabel, useRollingData, type Dish } from "./planner-data";
 import { dishReferenceForEntry, groupedSlots, selectableDishIds } from "@/lib/week-planner-layout";
 import { plannerCopyAvailability, memoizePlannerSpeller } from "@/lib/planner-copy-availability";
 import PlanningContextNav from "./planning-context-nav";
+import { DayMenuSelect } from "./day-menu-select";
 import { rankDishPickerItems } from "@/lib/dish-picker";
 import { categoryForSlot } from "@/lib/dish-categories";
 import { assessDishCopyTarget, compatibleDishCopyTargets, copyableDishForSource, dishCopyUnavailableReason } from "@/lib/dish-copy";
@@ -166,7 +167,7 @@ export default function WeekPlanner() {
   const menuSlots = useMemo(() => menuGroups.flatMap(([, slots]) => slots), [menuGroups]);
   const renderIndexes = useMemo(() => snapshot ? plannerCopyAvailability(snapshot, selectableDishes, menuSlots) : undefined, [snapshot, selectableDishes, menuSlots]);
   // Every grid-visible value belongs here. Modal/search/toolbar changes can reuse the grid and its callbacks.
-  const gridRevision = useMemo(() => ({}), [snapshot, dishReferences, command, selectableDishes, menuGroups, renderIndexes, spellFindings, spellItemsById, spell.ignored, spell.added, plannerSpeller, draggedEntryId, copyPending, openDishReferenceId]);
+  const gridRevision = useMemo(() => ({}), [snapshot, weeks, dishReferences, command, selectableDishes, menuGroups, renderIndexes, spellFindings, spellItemsById, spell.ignored, spell.added, plannerSpeller, draggedEntryId, copyPending, openDishReferenceId]);
   const copyPendingRef = useRef(false);
   if (!snapshot) {
     const failure = loadFailure || (error ? { message: error, status: undefined as number | undefined } : undefined);
@@ -288,21 +289,9 @@ export default function WeekPlanner() {
       <WeekMatrixScroller revision={gridRevision}>
         <div className="week-matrix-corner">Menu slot</div>
         {snapshot.days.slice(0, 5).map(day => {
-          const weekday = new Date(`${day.date}T00:00:00Z`).getUTCDay() || 7;
-          const menuWeeks = weeks.filter(item => {
-            const menu = item.supplementaryMenu;
-            if (!menu || item.weekCommencing !== snapshot.week.weekCommencing) return false;
-            if (menu.serviceDate) return menu.serviceDate === day.date;
-            return menu.recurrenceWeekdays?.includes(weekday) === true;
-          });
-          const selectedMenuId = snapshot.week.supplementaryMenu?.id;
-          const currentOption = menuWeeks.find(item => item.supplementaryMenu?.id === selectedMenuId);
           return <div className="week-matrix-day" key={day.id}>
             <span>{day.dayName.slice(0, 3).toUpperCase()}<small>{new Date(`${day.date}T00:00:00Z`).getUTCDate()}</small></span>
-            {menuWeeks.length > 0 && <label className="supplementary-menu-select"><span className="sr-only">Menu for {day.dayName}</span><select aria-label={`Menu for ${day.dayName}`} value={currentOption?.id || snapshot.week.id} onChange={event => selectWeek(event.target.value)}>
-              {!currentOption && <option value={snapshot.week.id}>Main menu</option>}
-              {menuWeeks.map(item => <option key={item.id} value={item.id}>{item.supplementaryMenu!.name} · {item.supplementaryMenu!.serviceType}</option>)}
-            </select></label>}
+            <DayMenuSelect weeks={weeks} current={snapshot.week} day={day} onSelect={selectWeek} />
             {access.canManage && <button type="button" className="add-supplementary-menu" disabled={!canEditDay(day.id) || Boolean(draft.dirty) || Boolean(draft.recovered) || draft.saving} onClick={() => setCreateMenuDay(day)} aria-label={`Add menu for ${day.dayName}`}>+ Add Menu</button>}
           </div>;
         })}

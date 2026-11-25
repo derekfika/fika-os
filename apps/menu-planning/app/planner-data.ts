@@ -106,12 +106,17 @@ export function useRollingData(options: { loadCatalogue?: boolean } = {}) {
   const fetchWeek = useCallback(async (weekId?: string, snapshotOnly = false) => { const query = weekId ? `?weekId=${encodeURIComponent(weekId)}${snapshotOnly ? "&snapshotOnly=true" : ""}` : ""; const started = performance.now(); const result = await withMenuRequestTimeout(async signal => { const response = await fetch(`/api/rolling-menu${query}`, { cache: "no-store", signal }); const body = await readJson(response); return { ...body, identity: response.headers.get("x-fika-menu-cache-scope") || "" }; }); console.info("Menu Planning week cache timing", { source: "server", fullWeekFetchMs: performance.now() - started }); return result; }, []);
   const revalidateWeek = useCallback(async (weekId: string, cached: CachedMenuWeek) => {
     const started = performance.now();
-    const response = await fetch(`/api/rolling-menu?summariesOnly=true&weekId=${encodeURIComponent(weekId)}`, { cache: "no-store" });
+    const response = await fetch(`/api/rolling-menu?summariesOnly=true&weekId=${encodeURIComponent(weekId)}&menuWeekCommencing=${encodeURIComponent(cached.weekCommencing)}`, { cache: "no-store" });
     const summaryBody = await readJson(response);
     const summary = summaryBody.week as { id: string; version: number } | null | undefined;
     const scope = response.headers.get("x-fika-menu-cache-scope");
     console.info("Menu Planning week cache timing", { source: "server", weekHeadVersionCheckMs: performance.now() - started, cacheVersion: cached.version, serverVersion: summary?.version });
-    return Boolean(scope && scope === cached.identity && summary?.id === weekId && Number(summary.version) === cached.version);
+    const menuWeeks: WeekSummary[] | undefined = Array.isArray(summaryBody.menuWeeks) ? summaryBody.menuWeeks : undefined;
+    if (scope && scope === cached.identity && summary?.id === weekId && Number(summary.version) === cached.version && menuWeeks?.some(item => item.id === weekId)) {
+      const navigation = weeksRef.current.length ? weeksRef.current : cached.weeks || [];
+      return { ...cached, weeks: [...navigation.filter(item => item.weekCommencing !== cached.weekCommencing), ...menuWeeks] };
+    }
+    return undefined;
   }, []);
   const load = useCallback(async (weekId?: string) => { const operation = ++operationRef.current; const generation = weekCacheWriter.currentGeneration(); setLoadFailure(undefined); try {
     const availableWeeks = weeksRef.current;
@@ -120,10 +125,11 @@ export function useRollingData(options: { loadCatalogue?: boolean } = {}) {
     let cached = target ? weekCache.get(target) : undefined;
     if (!cached && target && cacheIdentity) cached = await getCachedWeek(target, cacheIdentity);
     if (operation !== operationRef.current) return;
-    if (cached && await revalidateWeek(target!, cached)) {
+    const validated = cached && await revalidateWeek(target!, cached);
+    if (validated) {
       if (operation !== operationRef.current) return;
-      applyCached(cached, weekCache.has(target!) ? "memory" : "indexeddb");
-      if (cacheIdentity) void putCachedWeekSelection({ weekId: cached.weekId, weekCommencing: cached.weekCommencing, identity: cacheIdentity, selectedAt: Date.now() });
+      applyCached(validated, weekCache.has(target!) ? "memory" : "indexeddb");
+      if (cacheIdentity) void putCachedWeekSelection({ weekId: validated.weekId, weekCommencing: validated.weekCommencing, identity: cacheIdentity, selectedAt: Date.now() });
       return;
     }
     if (operation !== operationRef.current) return;
@@ -162,7 +168,20 @@ export function useRollingData(options: { loadCatalogue?: boolean } = {}) {
   useEffect(() => { const onPopState = () => setRequestedWeek(new URLSearchParams(window.location.search).get("week")); window.addEventListener("popstate", onPopState); return () => window.removeEventListener("popstate", onPopState); }, []);
   useEffect(() => { const onLogout = () => { cacheIdentity = ""; catalogueCache = undefined; weekCache.clear(); weekCacheWriter.invalidate(); operationRef.current += 1; window.sessionStorage.removeItem(readScopeStorageKey); window.sessionStorage.removeItem("fika-menu-identity"); void clearMenuPlanningCache(); }; window.addEventListener("fika-logout", onLogout); return () => window.removeEventListener("fika-logout", onLogout); }, []);
   useEffect(() => { if (shouldLoadCatalogue) void loadCatalogue(setDishes).then(setDishes).catch((cause: Error) => setError(cause.message)); }, [shouldLoadCatalogue]);
-  const selectWeek = useCallback((weekId: string) => { const target = weeksRef.current.find(item => item.id === weekId); if (!target) return; operationRef.current += 1; const selection = target.supplementaryMenu ? target.id : target.weekCommencing; const url = new URL(window.location.href); url.searchParams.set("week", selection); url.searchParams.delete("day"); window.history.pushState({}, "", url); setRequestedWeek(selection); if (cacheIdentity) void putCachedWeekSelection({ weekId: target.id, weekCommencing: target.weekCommencing, identity: cacheIdentity, selectedAt: Date.now() }); }, []);
+  const selectWeek = useCallback((weekId: string) => {
+    const target = weeksRef.current.find(item => item.id === weekId);
+    const currentDate = snapshotRef.current?.week.weekCommencing;
+    const selection = target ? (target.supplementaryMenu ? target.id : target.weekCommencing)
+      : weekId === `rolling-week:${currentDate}` ? currentDate : undefined;
+    if (!selection) return;
+    operationRef.current += 1;
+    const url = new URL(window.location.href);
+    url.searchParams.set("week", selection);
+    url.searchParams.delete("day");
+    window.history.pushState({}, "", url);
+    setRequestedWeek(selection);
+    if (cacheIdentity && target) void putCachedWeekSelection({ weekId: target.id, weekCommencing: target.weekCommencing, identity: cacheIdentity, selectedAt: Date.now() });
+  }, []);
   useEffect(() => { const onSelect = (event: Event) => { const weekId = (event as CustomEvent<string>).detail; selectWeek(weekId); }; window.addEventListener("menu-week-select", onSelect); return () => window.removeEventListener("menu-week-select", onSelect); }, [selectWeek]);
   const command = useCallback(async (action: string, extra: Record<string, unknown> = {}) => {
     const operation = ++operationRef.current;
@@ -234,6 +253,9 @@ export function useRollingData(options: { loadCatalogue?: boolean } = {}) {
           setWeeks(nextWeeks);
           weeksRef.current = nextWeeks;
         }
+      } else if (action === "ensure-recurring-menus" && Array.isArray(body.weeks)) {
+        weeksRef.current = body.weeks;
+        setWeeks(body.weeks);
       } else setDishReferences(undefined);
       setMessage(action === "publish" || action === "publish-amendment" ? `Published · downstream handoff ${body.handoff?.status || "pending"}` : action === "batch-update-entries" ? "Changes saved" : "Saved");
       window.setTimeout(() => setMessage(""), 1200);
