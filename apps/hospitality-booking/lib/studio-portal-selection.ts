@@ -1,5 +1,5 @@
 import { studioDishChoiceId, type StudioPortalChoices } from "../../shared/hospitality-menu-studio-selection";
-import { validStudioAllocation } from "../../shared/hospitality-menu-studio-choice-rules";
+import { validStudioGroupedAllocation } from "../../shared/hospitality-menu-studio-choice-rules";
 
 export function supportsStudioPortalChoices(choices: StudioPortalChoices) {
   // Earlier staged packages contain the original flat quantities contract.
@@ -11,16 +11,18 @@ export function supportsStudioPortalChoices(choices: StudioPortalChoices) {
   const choicesById = new Set(choices.dishes.map(dish => dish.id));
   if (choicesById.size !== choices.dishes.length) return false;
   if (choices.groups === undefined || Array.isArray(choices.groups) && !choices.groups.length) return true;
-  if (choices.presentation !== "quantities" || !Array.isArray(choices.groups) ||
+  if (!Array.isArray(choices.groups) ||
       choices.groups.some(group => !group?.id || !group.name || group.presentation !== "quantities" ||
         !Array.isArray(group.dishIds) || !group.dishIds.length)) return false;
+  if (choices.presentation !== "quantities") return false;
   const grouped = choices.groups.flatMap(group => group.dishIds);
   return new Set(choices.groups.map(group => group.id)).size === choices.groups.length &&
     grouped.length === choicesById.size && new Set(grouped).size === grouped.length && grouped.every(id => choicesById.has(id));
 }
 
 export function validStudioPortalAllocation(studio: StudioPortalChoices, choice: unknown, quantity: number): choice is Record<string, number> {
-  return supportsStudioPortalChoices(studio) && validStudioAllocation(studio.dishes.map(dish => dish.id), studio.presentation, studio.minimumQuantity ?? 1, choice, quantity);
+  return supportsStudioPortalChoices(studio) && validStudioGroupedAllocation(studio.dishes.map(dish => dish.id), studio.presentation, studio.groups,
+    studio.minimumQuantity ?? 1, choice, quantity);
 }
 
 export function serializeStudioPortalChoice(studio: StudioPortalChoices, choice: unknown, quantity: number) {

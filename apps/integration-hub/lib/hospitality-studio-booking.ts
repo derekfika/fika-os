@@ -4,6 +4,7 @@ import { isDeepStrictEqual } from "node:util";
 import { dateSchema, idSchema } from "../../shared/hospitality-menu-studio-content";
 import { readStudioKitchenSpec, type StudioKitchenSpec } from "../../shared/hospitality-menu-studio-kitchen";
 import { isStudioDishChoice } from "../../shared/hospitality-menu-studio-selection";
+import { validStudioGroupedAllocation } from "../../shared/hospitality-menu-studio-choice-rules";
 import { studioReviewStaging } from "../../shared/hospitality-menu-studio-staging";
 import { studioChoicePolicy, studioOfferingIsBookable, type StudioCommercialOffering } from "./hospitality-studio-commercial";
 import { HubStudioPublications } from "./hospitality-studio-publications";
@@ -80,12 +81,13 @@ export async function prepareStudioBooking(transaction: Transaction, bookingRef:
     const quantities = Object.entries(marker.data.quantities);
     const chosen = quantities.filter(([, quantity]) => quantity > 0);
     const presentation = live.productChoices?.presentation;
-    if (presentation === "checkboxes" || presentation !== marker.data.studioPresentation ||
+    const available = new Map(live.dishes.map(item => [item.dish.id, item]));
+    if (presentation !== marker.data.studioPresentation ||
         (presentation && !policy.replacesChoiceGroupId) ||
-        (presentation === "dropdown" && chosen.length !== 1)) {
+        !validStudioGroupedAllocation([...available.keys()], presentation, live.productChoices?.groups,
+          policy.minimumQuantity, marker.data.quantities, line.quantity)) {
       throw stale("Use the current customer selection controls for this product.");
     }
-    const available = new Map(live.dishes.map(item => [item.dish.id, item]));
     if (!chosen.length || quantities.some(([id]) => !available.has(id)) ||
         chosen.reduce((sum, [, quantity]) => sum + quantity, 0) !== line.quantity) {
       throw stale("Choose available dishes whose quantities match the booked units.");
