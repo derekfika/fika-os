@@ -206,6 +206,7 @@ export function StudioShell({
   activeProductId,
   onSelectProduct,
   saveState,
+  environmentLabel,
   headerActions,
   contentWidth = "wide",
   children,
@@ -218,6 +219,7 @@ export function StudioShell({
   activeProductId?: string;
   onSelectProduct?: (id: string) => boolean | void;
   saveState?: ReactNode;
+  environmentLabel?: ReactNode;
   headerActions?: ReactNode;
   contentWidth?: "standard" | "wide";
   children: ReactNode;
@@ -248,6 +250,7 @@ export function StudioShell({
         <div className={styles.brand}><Image src="/fika-logo.png" alt="FIKA OS" width={84} height={50} priority /></div>
         <span className={styles.divider} aria-hidden="true" />
         <span className={styles.product}>Menu Studio</span>
+        {environmentLabel && <span className={styles.environment}>{environmentLabel}</span>}
         <div className={styles.headerStatus}>{saveState}</div>
         {headerActions && <div className={styles.headerActions}>{headerActions}</div>}
         <span className={styles.actor}>{actorName}</span>
@@ -262,7 +265,11 @@ export function StudioShell({
           <div className={styles.navigationPrimary}>
             {navigation.map((item) => (
               <a href={navigationHrefs[item.id]} key={item.id} aria-current={active === item.id ? "page" : undefined}
-                onClick={(event) => { if (onNavigate(item.id) === false) event.preventDefault(); else closeNavigation(); }}>
+                onClick={(event) => {
+                  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                  event.preventDefault();
+                  if (onNavigate(item.id) !== false) closeNavigation();
+                }}>
                 <StudioIcon name={item.icon} /><span>{item.label}</span>
               </a>
             ))}
@@ -273,7 +280,11 @@ export function StudioShell({
               <div className={styles.productRailItems}>
               {productLinks.length ? productLinks.map((product) => (
                 <a href={`/?product=${encodeURIComponent(product.id)}`} key={product.id} aria-current={activeProductId === product.id ? "page" : undefined}
-                  onClick={(event) => { if (onSelectProduct?.(product.id) === false) event.preventDefault(); else closeNavigation(); }}>
+                  onClick={(event) => {
+                    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                    event.preventDefault();
+                    if (onSelectProduct?.(product.id) !== false) closeNavigation();
+                  }}>
                   <span className={styles.productLinkName}>{product.name}</span>
                   {product.status && <span className={styles.productLinkStatus}>{product.status}</span>}
                   {product.summary && <span className={styles.productLinkSummary}>{product.summary}</span>}
