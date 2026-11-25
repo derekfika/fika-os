@@ -18,6 +18,7 @@ import { dishSchema, menuSchema } from "./schema";
 import { publicationContent } from "./scoped-publication";
 import { assortmentIsComplete, kitchenQuantities } from "./review";
 import { ProductMenuStore } from "./product-menu-store";
+import { ProductMenuPublicationStore } from "./product-menu-publication-store";
 
 const root = "fikaHospitalityMenuStudioV1";
 const pageSize = 50;
@@ -43,6 +44,11 @@ export class StudioStore {
 
   productMenus() {
     return new ProductMenuStore(this.db.collection(`${root}_productMenus`), this.db.collection(`${root}_dishes`), this.now);
+  }
+
+  productPublications() {
+    return new ProductMenuPublicationStore(this.db.collection(`${root}_productMenus`),
+      this.db.collection(`${root}_dishes`), this.projectId, this.now);
   }
 
   async list<T extends Draft>(kind: DraftCollection, cursor?: string): Promise<Page<T>> {

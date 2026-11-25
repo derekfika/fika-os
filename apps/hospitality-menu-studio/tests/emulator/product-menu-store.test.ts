@@ -71,8 +71,8 @@ test("canonical product drafts coalesce creation, retain exact dish revisions an
     assert.equal(archivedDishes.status, 200);
     assert.equal(archivedDishes.headers.get("cache-control"), "private, no-store");
     assert.deepEqual(await archivedDishes.json(), { items: [
-      { id: dish.id, version: 1, name: "Dish", category: "other" },
-      { id: dish.id, version: 2, name: "New revision", category: "other" },
+      { id: dish.id, version: 1, name: "Dish", category: "other", customerDescription: "Customer copy" },
+      { id: dish.id, version: 2, name: "New revision", category: "other", customerDescription: "Customer copy" },
     ] });
     const retry = await post({ ...change, item: { ...item, configuration: winner.configuration } });
     assert.deepEqual(await retry.json(), { item: winner });

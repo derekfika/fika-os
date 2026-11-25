@@ -6,14 +6,19 @@ import {
   canonicalJson, decodeStudioPublication, studioPublicationDescriptor, type PublicationPackage, type StudioPublicationDescriptor,
 } from "../../shared/hospitality-menu-studio-publication";
 import {
+  decodeStudioProductPublication, isStudioProductMenuId, studioProductChoicesForDate, studioProductPublicationContract,
+  type StudioProductPublication,
+} from "../../shared/hospitality-menu-studio-product-publication";
+import {
   matchesStudioDishRelease, matchesStudioDishSignatureEvent, studioDishReviewKey, studioDishReviewRecords, studioDishReleaseVersion,
   studioDishSafetyFences, validStudioDishSafetyFence, type StudioDishReleaseHeader, type StudioDishSafetyFence,
 } from "../../shared/hospitality-menu-studio-safety";
 import { hospitalityRotationWeek } from "../../shared/hospitality-menu-date";
+import type { StudioChoiceGroup, StudioChoicePresentation } from "../../shared/hospitality-menu-studio-selection";
 
 const visibilitySchema = z.enum(["staff", "customer"]);
 const activationEntry = z.strictObject({
-  publication: studioPublicationDescriptor, kind: z.enum(["seasonal", "collection"]), visibility: visibilitySchema,
+  publication: studioPublicationDescriptor, kind: z.enum(["seasonal", "collection", "product"]), visibility: visibilitySchema,
   startDate: dateSchema, endDate: dateSchema, catalogueItemIds: z.array(idSchema).min(1),
 });
 const maximumScheduleEntries = 128;
@@ -22,7 +27,7 @@ const scheduleSchema = z.strictObject({
 });
 export const studioActivationCommand = z.strictObject({
   publicationId: idSchema, oplocId: idSchema, expectedGeneration: z.int().nonnegative(), commandId: z.uuid(),
-  confirmed: z.literal(true), action: z.enum(["activate-seasonal", "activate-collection"]), visibility: visibilitySchema,
+  confirmed: z.literal(true), action: z.enum(["activate-seasonal", "activate-collection", "activate-product"]), visibility: visibilitySchema,
   reason: z.string().trim().min(3).max(500),
 });
 export type ActivationCommand = z.infer<typeof studioActivationCommand>;
@@ -30,6 +35,16 @@ type ActivationEntry = z.infer<typeof activationEntry>;
 type SiteSchedule = z.infer<typeof scheduleSchema>;
 type FrozenDish = PublicationPackage["dishes"][number];
 type PublicationInput = { manifest: StudioPublicationDescriptor; body: string };
+type PublishedPayload = PublicationPackage | StudioProductPublication;
+type DateScope = { firstDate: string; lastDate: string };
+type ActivationSubject = { id: string; startDate: string; endDate: string };
+export type CurrentStudioMenu = {
+  publication: StudioPublicationDescriptor; dishes: FrozenDish[];
+  productChoices?: {
+    presentation: StudioChoicePresentation;
+    groups: StudioChoiceGroup[];
+  };
+};
 
 const packageCollection = "fikaStudioPublicationPackagesV1";
 const scheduleCollection = "fikaStudioActivationSchedulesV1";
@@ -43,7 +58,9 @@ const unsafe = () => failure(409, "STUDIO_PUBLICATION_SAFETY_CHANGED", "Current 
 function verifiedPayload(stored: unknown, projectId: PublicationPackage["projectId"], id: string) {
   const envelope = stored as Partial<PublicationInput> | undefined;
   if (!envelope?.manifest || envelope.manifest.id !== id || typeof envelope.body !== "string") throw integrity();
-  const payload = decodeStudioPublication(envelope.body, envelope.manifest, projectId);
+  const payload = isStudioProductMenuId(envelope.manifest.menuId)
+    ? decodeStudioProductPublication(envelope.body, envelope.manifest, projectId)
+    : decodeStudioPublication(envelope.body, envelope.manifest, projectId);
   if (!payload) throw integrity();
   return { payload, manifest: envelope.manifest };
 }
@@ -77,7 +94,16 @@ export async function assertCurrentStudioFoodSafety(db: Firestore, transaction: 
   }
 }
 
-function entryFor(publication: StudioPublicationDescriptor, payload: PublicationPackage, visibility: ActivationEntry["visibility"]): ActivationEntry {
+function isProduct(payload: PublishedPayload): payload is StudioProductPublication {
+  return payload.contract === studioProductPublicationContract;
+}
+
+function entryFor(publication: StudioPublicationDescriptor, payload: PublishedPayload, visibility: ActivationEntry["visibility"], lastDate?: string): ActivationEntry {
+  if (isProduct(payload)) {
+    const startDate = payload.effectiveDate;
+    if (!lastDate || lastDate < startDate || visibility !== "customer") throw integrity();
+    return { publication, kind: "product", visibility, startDate, endDate: lastDate, catalogueItemIds: [payload.itemId] };
+  }
   const { kind, startDate, endDate, sections } = payload.menu;
   return { publication, kind, visibility, startDate, endDate, catalogueItemIds: sections.map(section => section.catalogueItemId) };
 }
@@ -95,7 +121,10 @@ export class HubStudioPublications {
         if (canonicalJson(existing.data()?.manifest) !== canonicalJson(manifest) || existing.data()?.body !== input.body) {
           throw failure(409, "STUDIO_PUBLICATION_ID_CONFLICT", "Different evidence already exists for this publication ID.");
         }
-      } else transaction.create(ref, { manifest, body: input.body });
+      } else {
+        if (isProduct(payload)) await assertCurrentStudioFoodSafety(this.db, transaction, payload.dishes);
+        transaction.create(ref, { manifest, body: input.body });
+      }
       return { publicationId: manifest.id, contentHash: manifest.contentHash };
     });
   }
@@ -106,7 +135,8 @@ export class HubStudioPublications {
 
   async activate(command: ActivationCommand,
     authorise: (transaction: Transaction, command: ActivationCommand) => Promise<string>,
-    validateCatalogue: (transaction: Transaction, oplocId: string, itemIds: readonly string[], menu: PublicationPackage["menu"]) => Promise<void>) {
+    validateCatalogue: (transaction: Transaction, oplocId: string, itemIds: readonly string[], menu: ActivationSubject) => Promise<void>,
+    productScope?: DateScope) {
     const ref = this.siteRef(command.oplocId);
     const receiptRef = ref.collection("events").doc(command.commandId);
     return this.db.runTransaction(async transaction => {
@@ -123,15 +153,27 @@ export class HubStudioPublications {
       if (schedule.entries.length >= maximumScheduleEntries) throw failure(409, "STUDIO_ACTIVATION_SCHEDULE_FULL", "The site activation index needs review.");
       if (!packageDoc.exists) throw failure(404, "STUDIO_PUBLICATION_MISSING", "This Studio publication has not been delivered.");
       const { manifest, payload } = verifiedPayload(packageDoc.data(), this.projectId, command.publicationId);
-      const kind = command.action === "activate-seasonal" ? "seasonal" : "collection";
-      if (payload.menu.kind !== kind || (kind === "seasonal" && command.visibility !== "customer")) {
+      const kind = command.action === "activate-product" ? "product" : command.action === "activate-seasonal" ? "seasonal" : "collection";
+      const payloadKind = isProduct(payload) ? "product" : payload.menu.kind;
+      if (payloadKind !== kind || (kind !== "collection" && command.visibility !== "customer")) {
         throw failure(422, "STUDIO_ACTIVATION_KIND", "Use the activation authority for this menu type.");
       }
-      const entry = entryFor(manifest, payload, command.visibility);
+      if (isProduct(payload)) {
+        if (!productScope || payload.effectiveDate < productScope.firstDate || payload.effectiveDate > productScope.lastDate) {
+          throw failure(403, "STUDIO_PUBLICATION_SCOPE_DENIED", "This product is outside the approved staging date window.");
+        }
+        const { configuration } = payload;
+        if (configuration.groups.length
+          ? configuration.groups.some(group => (group.presentation ?? configuration.presentation) !== "quantities")
+          : configuration.presentation === "checkboxes") {
+          throw failure(422, "STUDIO_CHOICE_QUANTITY_POLICY_UNAVAILABLE", "These selection controls need a verified booking quantity rule.");
+        }
+      }
+      const entry = entryFor(manifest, payload, command.visibility, productScope?.lastDate);
       const earlier = schedule.entries.filter(previous => previous.publication.menuId === manifest.menuId).at(-1);
       if (manifest.revision !== (earlier?.publication.revision ?? 0) + 1 ||
           (earlier && (payload.previousPublicationId !== earlier.publication.id || manifest.effectiveDate < earlier.publication.effectiveDate ||
-            entry.startDate !== earlier.startDate || entry.endDate !== earlier.endDate || entry.kind !== earlier.kind))) {
+            (entry.kind !== "product" && entry.startDate !== earlier.startDate) || entry.endDate !== earlier.endDate || entry.kind !== earlier.kind))) {
         throw failure(409, "STUDIO_ACTIVATION_LINEAGE", "The publication does not advance the current menu activation.");
       }
       if (entry.visibility === "customer" && schedule.entries.some(other => other.visibility === "customer" &&
@@ -139,7 +181,9 @@ export class HubStudioPublications {
           (entry.kind === "seasonal" && other.kind === "seasonal" || entry.catalogueItemIds.some(item => other.catalogueItemIds.includes(item))))) {
         throw failure(409, "STUDIO_ACTIVATION_OVERLAP", "An activated menu overlaps the date or catalogue item scope.");
       }
-      await validateCatalogue(transaction, command.oplocId, entry.catalogueItemIds, payload.menu);
+      await validateCatalogue(transaction, command.oplocId, entry.catalogueItemIds, {
+        id: manifest.menuId, startDate: entry.startDate, endDate: entry.endDate,
+      });
       await assertCurrentStudioFoodSafety(this.db, transaction, payload.dishes);
       const generation = schedule.generation + 1;
       transaction.set(ref, { generation, oplocId: command.oplocId, entries: [...schedule.entries, entry] });
@@ -167,10 +211,24 @@ export class HubStudioPublications {
       .filter(id => itemIds.includes(id)));
     const wanted = active.filter(entry => entry.catalogueItemIds.some(id => itemIds.includes(id)));
     const snapshots = wanted.length ? await transaction.getAll(...wanted.map(entry => this.packageRef(entry.publication.id))) : [];
-    const items = new Map<string, { publication: StudioPublicationDescriptor; dishes: FrozenDish[] }>();
+    const items = new Map<string, CurrentStudioMenu>();
     for (const [index, entry] of wanted.entries()) {
       const pkg = verifiedPayload(snapshots[index].data(), this.projectId, entry.publication.id);
-      if (canonicalJson(entry) !== canonicalJson(entryFor(pkg.manifest, pkg.payload, entry.visibility))) throw integrity();
+      if (canonicalJson(entry) !== canonicalJson(entryFor(pkg.manifest, pkg.payload, entry.visibility, entry.endDate))) throw integrity();
+      if (isProduct(pkg.payload)) {
+        const { itemId } = pkg.payload;
+        if (items.has(itemId)) throw integrity();
+        const selected = studioProductChoicesForDate(pkg.payload, eventDate);
+        if (!selected) throw integrity();
+        items.set(itemId, { publication: pkg.manifest, dishes: [...selected.dishes, ...selected.groups.flatMap(group => group.dishes)],
+          productChoices: {
+            presentation: selected.groups.length ? "quantities" : selected.presentation,
+            groups: selected.groups.map(group => ({ id: group.id, name: group.name, presentation: group.presentation,
+              dishIds: group.dishes.map(record => record.dish.id) })),
+          },
+        });
+        continue;
+      }
       const { menu, dishes } = pkg.payload;
       const byId = new Map(dishes.map(item => [item.dish.id, item]));
       for (const section of menu.sections) {

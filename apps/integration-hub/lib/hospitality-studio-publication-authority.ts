@@ -7,6 +7,7 @@ export const studioPublicationResource = "hospitality-menu-studio.publication";
 const activationResources = {
   "activate-seasonal": "hospitality-menu-studio.seasonal-activation",
   "activate-collection": "hospitality-menu-studio.collection-activation",
+  "activate-product": "hospitality-menu-studio.product-activation",
 } as const;
 type ActivationAction = keyof typeof activationResources;
 type Repository = Pick<FirestoreAuthModRepository, "getApplication" | "getAuthorityGrant" | "getRuntimeAccessPackage">;
