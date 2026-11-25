@@ -1,4 +1,4 @@
-import type { CollectionReference, DocumentReference, Transaction } from "firebase-admin/firestore";
+import type { CollectionReference, DocumentData, DocumentReference, Transaction } from "firebase-admin/firestore";
 import { FieldPath } from "firebase-admin/firestore";
 import { isDeepStrictEqual } from "node:util";
 import { dishSchema } from "../../shared/hospitality-menu-studio-content";
@@ -6,6 +6,7 @@ import {
   initialProductMenuConfiguration, productMenuDraft, productMenuSummary,
   type ProductMenuConfiguration, type ProductMenuDraft, type ProductMenuSetup, type ProductMenuSummary,
 } from "../../shared/hospitality-menu-studio-product-content";
+import { productMenuDishKey, type ProductMenuDishReference } from "./product-menu-dishes";
 import { StudioProblem } from "./problem";
 
 const pageSize = 50;
@@ -26,6 +27,17 @@ export class ProductMenuStore {
   async read(itemId: string) {
     const record = await this.drafts.doc(itemId).get();
     return record.exists ? decodeDraft(itemId, record.data()).item : null;
+  }
+
+  async readDishRevisions(references: ProductMenuDishReference[]) {
+    const unique = [...new Map(references.map(reference => [productMenuDishKey(reference), reference])).values()];
+    if (!unique.length) return [];
+    const records = await this.drafts.firestore.getAll(...unique.map(reference => this.dishRevision(reference)));
+    return records.flatMap((record, index) => {
+      if (!record.exists) return [];
+      const { id, version, name, category } = decodeDishRevision(record.data(), unique[index]);
+      return [{ id, version, name, category }];
+    });
   }
 
   async list(currentItemIds: ReadonlySet<string>, cursor?: string) {
@@ -72,20 +84,16 @@ export class ProductMenuStore {
     const additions = [...dishRevisions(next)].filter(([key]) => !previous.has(key)).map(([, reference]) => reference);
     for (let start = 0; start < additions.length; start += 50) {
       const batch = additions.slice(start, start + 50);
-      const revisions = await transaction.getAll(...batch.map(({ dishId, revision }) =>
-        this.dishes.doc(dishId).collection("revisions").doc(String(revision))));
+      const revisions = await transaction.getAll(...batch.map(reference => this.dishRevision(reference)));
       for (const [index, record] of revisions.entries()) {
-        const expected = batch[index];
         if (!record.exists) throw new StudioProblem(422, "PRODUCT_MENU_DISH_REVISION_MISSING", "Choose a saved dish revision before assigning it.");
-        const saved = record.data()!;
-        const dish = dishSchema.safeParse(saved.item);
-        if (!dish.success || dish.data.id !== expected.dishId || dish.data.version !== expected.revision ||
-            saved.source !== "hospitality-menu-studio" || saved.baseVersion !== expected.revision - 1 ||
-            typeof saved.actorId !== "string" || !saved.actorId) {
-          throw new StudioProblem(503, "PRODUCT_MENU_DISH_REVISION_INTEGRITY", "The assigned dish revision could not be verified.");
-        }
+        decodeDishRevision(record.data(), batch[index]);
       }
     }
+  }
+
+  private dishRevision({ dishId, revision }: ProductMenuDishReference) {
+    return this.dishes.doc(dishId).collection("revisions").doc(String(revision));
   }
 
   private writeRevision(transaction: Transaction, head: DocumentReference, actorId: string, baseVersion: number,
@@ -97,6 +105,16 @@ export class ProductMenuStore {
     transaction.create(head.collection("revisions").doc(String(item.version)), evidence);
     return item;
   }
+}
+
+function decodeDishRevision(saved: DocumentData | undefined, expected: ProductMenuDishReference) {
+  const dish = dishSchema.safeParse(saved?.item);
+  if (!dish.success || dish.data.id !== expected.dishId || dish.data.version !== expected.revision ||
+      saved?.source !== "hospitality-menu-studio" || saved.baseVersion !== expected.revision - 1 ||
+      typeof saved.actorId !== "string" || !saved.actorId) {
+    throw new StudioProblem(503, "PRODUCT_MENU_DISH_REVISION_INTEGRITY", "The assigned dish revision could not be verified.");
+  }
+  return dish.data;
 }
 
 function decodeDraft(itemId: string, data: unknown): SavedDraft {

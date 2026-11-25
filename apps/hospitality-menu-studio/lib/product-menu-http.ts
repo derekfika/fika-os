@@ -1,15 +1,21 @@
 import type { CatalogueLoadResult } from "@fika/server-shared/hospitality-catalogue-client";
 import { z } from "zod";
-import { idSchema } from "../../shared/hospitality-menu-studio-content";
+import { idSchema, revisionSchema } from "../../shared/hospitality-menu-studio-content";
 import { productMenuDraft, productMenuSetup } from "../../shared/hospitality-menu-studio-product-content";
 import { catalogueUnavailable } from "./catalogue";
 import type { StudioActor } from "./contract";
 import { StudioProblem } from "./problem";
+import { productMenuDishBatchSize } from "./product-menu-dishes";
 import type { ProductMenuStore } from "./product-menu-store";
 
 const headers = { "Cache-Control": "private, no-store" };
 const maximumBytes = 500_000;
-const readQuery = z.union([z.strictObject({ itemId: idSchema }), z.strictObject({ cursor: idSchema.optional() })]);
+const dishReferences = z.array(z.strictObject({ dishId: idSchema, revision: revisionSchema })).min(1).max(productMenuDishBatchSize);
+const readQuery = z.union([
+  z.strictObject({ itemId: idSchema }),
+  z.strictObject({ cursor: idSchema.optional() }),
+  z.strictObject({ dishRevisions: z.string().min(1).max(5_300) }),
+]);
 const command = z.discriminatedUnion("action", [
   z.strictObject({ action: z.literal("create"), itemId: idSchema, setup: productMenuSetup }),
   z.strictObject({ action: z.literal("save"), item: productMenuDraft }),
@@ -19,7 +25,7 @@ export function productMenuHandlers(dependencies: {
   authorise: (request: Request) => Promise<StudioActor>;
   readCatalogue: (request: Request) => Promise<CatalogueLoadResult>;
   assertOrigin: (request: Request) => void;
-  store: () => Pick<ProductMenuStore, "read" | "list" | "createOrOpen" | "save">;
+  store: () => Pick<ProductMenuStore, "read" | "readDishRevisions" | "list" | "createOrOpen" | "save">;
 }) {
   async function authorisedItems(request: Request) {
     const catalogue = await dependencies.readCatalogue(request);
@@ -44,6 +50,13 @@ export function productMenuHandlers(dependencies: {
       const params = new URL(request.url).searchParams;
       const query = readQuery.parse(Object.fromEntries(params));
       if ([...params].length > 1) throw new StudioProblem(422, "INVALID_REQUEST", "Choose a single product or page.");
+      if ("dishRevisions" in query) {
+        const references = dishReferences.parse(query.dishRevisions.split(",").map(key => {
+          const [dishId, revision, extra] = key.split("@");
+          return { dishId, revision: extra === undefined && /^[1-9][0-9]*$/.test(revision ?? "") ? Number(revision) : NaN };
+        }));
+        return { items: await dependencies.store().readDishRevisions(references) };
+      }
       const items = await authorisedItems(request);
       if ("itemId" in query) {
         requireCurrentItem(items, query.itemId);
