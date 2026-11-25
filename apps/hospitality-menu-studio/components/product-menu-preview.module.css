@@ -1,0 +1,11 @@
+.preview { display: grid; gap: var(--space-3); }
+.preview h3, .preview p { margin: 0; }
+.preview h3 { overflow-wrap: anywhere; }
+.choices { display: grid; gap: var(--space-3); }
+.group { display: grid; min-width: 0; gap: var(--space-2); margin: 0; padding: var(--space-3); border: 1px solid var(--fika-border-default); border-radius: var(--radius-sm); }
+.group legend { padding: 0 var(--space-1); font-weight: 600; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: var(--fika-control-height); }
+.row > span { display: grid; min-width: 0; gap: var(--space-1); overflow-wrap: anywhere; }
+.row > span > span, .note { color: var(--fika-text-secondary); font-size: var(--text-xs); }
+.row input { width: 5rem; min-height: var(--fika-control-height); border: 1px solid var(--fika-border-default); border-radius: var(--radius-sm); padding: var(--space-2); background: var(--fika-surface-card); color: var(--fika-text-primary); font: inherit; }
+.preview :where(button,input,select):focus-visible { outline: 3px solid var(--fika-focus-ring); outline-offset: 2px; }

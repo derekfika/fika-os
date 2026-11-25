@@ -7,6 +7,7 @@ import { productMenuDishKey, type ProductMenuDish, type ProductMenuDishReference
 import type { CataloguePayload, CatalogueRow } from "./catalogue-wire";
 import { MenuBuilderHome, type ProductMenuSetup } from "./menu-builder-home";
 import { menuChoiceReferences, removeProductMenuGroup } from "./product-menu-editor-model";
+import { ProductMenuPreview } from "./product-menu-preview";
 import { StudioButton, StudioEditorLayout, StudioField, StudioIcon, StudioPageHeader, StudioPanel, StudioSegmentedControl, StudioShell, StudioStatus, type StudioDestination } from "./studio-design-system";
 import { request } from "./use-studio-draft";
 import { useProductMenuDishes } from "./use-product-menu-dishes";
@@ -56,24 +57,6 @@ function summarizeDraft(draft: ProductMenuDraft): ProductMenuSummary {
 }
 
 type DishDisplay = (reference: ProductMenuDishReference) => string;
-
-function MenuPreview({ draft, dishName, week, productName }: { draft: ProductMenuDraft; dishName: DishDisplay; week: number; productName: string }) {
-  const choices = choicesAt(draft.configuration, week);
-  const selectedCount = menuChoiceReferences(choices).length;
-  return <StudioPanel title="Customer preview" description="Draft preview. This menu is not available for booking." className={styles.previewPanel}>
-    <div className={styles.previewLabel}><StudioStatus tone="warning">Draft · not bookable</StudioStatus></div>
-    <h3 className={styles.previewProduct}>{productName}</h3>
-    <p className={styles.previewSummary}>{draft.configuration.presentation === "dropdown" ? "Choose one dish" : draft.configuration.presentation === "checkboxes" ? "Choose dishes" : "Set quantities"}</p>
-    {draft.configuration.groups.length ? draft.configuration.groups.map((group) => {
-      const slot = choices.groups.find((item) => item.groupId === group.id);
-      return <section className={styles.previewGroup} key={group.id}><h4>{group.name}</h4>
-        {slot?.dishes.length ? slot.dishes.map((reference) => <p key={reference.dishId}>{dishName(reference)}</p>) : <p className={styles.muted}>No dishes in this group this week.</p>}
-      </section>;
-    }) : choices.dishes.length ? <ul className={styles.previewList}>{choices.dishes.map((reference) => <li key={reference.dishId}>{dishName(reference)}</li>)}</ul>
-      : <p className={styles.muted}>No dishes selected for this {draft.configuration.schedule.kind === "fixed" ? "menu" : "week"}.</p>}
-    <p className={styles.previewFoot}>{selectedCount} {selectedCount === 1 ? "dish" : "dishes"} in this view. Customer availability is determined by verified publication and booking rules.</p>
-  </StudioPanel>;
-}
 
 function ProductMenuReview({ draft, productName, dishes, onBack }: { draft: ProductMenuDraft; productName: string; dishes: Dish[]; onBack: () => void }) {
   const lookup = new Map(dishes.map((dish) => [dish.id, dish]));
@@ -270,7 +253,7 @@ function ProductMenuEditor({ draft, productName, dishes, dishCursor, loadingDish
       </StudioPanel>
       <p className={styles.draftNotice}>Changes are draft content only. Review, publication and customer activation remain governed separately.</p>
       {saveError && <p className={styles.error} role="alert">{saveError}</p>}
-    </>} preview={<MenuPreview draft={{ ...draft, configuration }} dishName={dishName} week={week} productName={productName} />} secondaryLabel="Customer preview" />
+    </>} preview={<ProductMenuPreview itemId={draft.itemId} productName={productName} configuration={configuration} library={dishes} onEditWeek={setWeek} />} secondaryLabel="Customer preview" />
     <dialog className={styles.dishDialog} ref={dialog} aria-labelledby="dish-picker-heading">
       <div className={styles.dialogHeader}><div><h2 id="dish-picker-heading">Add dishes</h2><p>Selected dishes will use their current saved revisions.</p></div><button type="button" aria-label="Close dish picker" onClick={() => dialog.current?.close()}>×</button></div>
       <StudioField label="Search dishes"><input type="search" value={dishQuery} onChange={(event) => setDishQuery(event.target.value)} placeholder="Search name or category" /></StudioField>
