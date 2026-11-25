@@ -2,27 +2,19 @@ import type { DocumentReference, Firestore, Transaction } from "firebase-admin/f
 import { z } from "zod";
 import { isDeepStrictEqual } from "node:util";
 import { dateSchema, idSchema } from "../../shared/hospitality-menu-studio-content";
-import { publicationDigest } from "../../shared/hospitality-menu-studio-publication";
 import { readStudioKitchenSpec, type StudioKitchenSpec } from "../../shared/hospitality-menu-studio-kitchen";
-import { isStudioDishChoice, studioDishChoiceId } from "../../shared/hospitality-menu-studio-selection";
+import { isStudioDishChoice } from "../../shared/hospitality-menu-studio-selection";
 import { studioReviewStaging } from "../../shared/hospitality-menu-studio-staging";
 import { studioChoicePolicy, studioOfferingIsBookable, type StudioCommercialOffering } from "./hospitality-studio-commercial";
 import { HubStudioPublications } from "./hospitality-studio-publications";
 import { studioPilot } from "./hospitality-studio-pilot";
+import { kitchenSpecsMatchBookedChoices, storedChoice, submittedChoice } from "./hospitality-studio-choice-evidence";
 import {
-  ACCEPTED_STUDIO_KITCHEN_CONTRACT, acceptedStudioKitchenEvidenceRef, hospitalityBookingLineId, invalidStudioKitchenEvidence,
+  ACCEPTED_STUDIO_KITCHEN_CONTRACT, acceptedStudioKitchenEvidenceRef, hospitalityBookingLineId, invalidStudioKitchenEvidence, requiresStudioKitchenEvidence,
 } from "./hospitality-studio-kitchen-handoff";
 import type { CanonicalBooking } from "./hospitality-booking-service";
 import type { QuoteRevision } from "./booking-workflow";
 
-const submittedChoice = z.strictObject({
-  id: z.literal(studioDishChoiceId), publicationHash: publicationDigest,
-  quantities: z.record(idSchema, z.int().nonnegative()),
-});
-const storedChoice = submittedChoice.extend({
-  quantityLabels: z.record(idSchema, z.string().min(1).max(200)),
-  customerDescriptions: z.record(idSchema, z.string().max(4000)).optional(),
-});
 const frozenSelection = z.strictObject({
   index: z.int().nonnegative(), itemId: idSchema, menuItemId: idSchema.optional(),
   customerQuantity: z.number().positive(), choice: storedChoice,
@@ -127,18 +119,21 @@ export async function prepareStudioBooking(transaction: Transaction, bookingRef:
 export function studioPublicationsForBooking(db: Firestore) { return new HubStudioPublications(db, studioReviewStaging.projectId); }
 
 export async function bindStudioQuote(transaction: Transaction, bookingRef: DocumentReference, booking: CanonicalBooking, quote: QuoteRevision) {
-  if (booking.studioKitchenEvidenceVersion === undefined) return;
+  if (!requiresStudioKitchenEvidence(booking)) return;
   const frozen = frozenBooking.safeParse((await transaction.get(acceptedRef(bookingRef))).data());
   if (!frozen.success || frozen.data.bookingId !== booking.canonicalId || frozen.data.eventDate !== booking.service.eventDate ||
       frozen.data.destinationOplocId !== booking.service.oplocId) throw invalidStudioKitchenEvidence();
   const { bookingId, eventDate, destinationOplocId, acceptedBy, acceptedAt } = frozen.data;
+  const specs = new Map<number, StudioKitchenSpec>();
   const prepared = frozen.data.lines.map(({ index, choice, ...line }) => {
     const booked = booking.order.items[index];
-    if (!booked || booked.itemId !== line.itemId || booked.menuItemId !== line.menuItemId || booked.quantity !== line.customerQuantity ||
-        !isDeepStrictEqual(booked.choices?.filter(isStudioDishChoice), [choice]) ||
-        !readStudioKitchenSpec(line.spec, bookingId, hospitalityBookingLineId(bookingId, index))) throw invalidStudioKitchenEvidence();
+    const spec = readStudioKitchenSpec(line.spec, bookingId, hospitalityBookingLineId(bookingId, index));
+    if (!spec || specs.has(index) || !booked || booked.itemId !== line.itemId || booked.menuItemId !== line.menuItemId ||
+        booked.quantity !== line.customerQuantity || !isDeepStrictEqual(booked.choices?.filter(isStudioDishChoice), [choice])) throw invalidStudioKitchenEvidence();
+    specs.set(index, spec);
     return line;
   });
+  if (!kitchenSpecsMatchBookedChoices(booking.order.items, index => specs.get(index), specs.size)) throw invalidStudioKitchenEvidence();
   transaction.create(acceptedStudioKitchenEvidenceRef(bookingRef, quote.id), {
     contract: ACCEPTED_STUDIO_KITCHEN_CONTRACT, bookingId, eventDate, destinationOplocId, acceptedBy, acceptedAt,
     quoteRevisionId: quote.id, commercialVersion: quote.commercialVersion, lines: prepared,
