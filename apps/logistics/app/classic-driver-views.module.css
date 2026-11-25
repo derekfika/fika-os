@@ -1,0 +1,18 @@
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+:global(.mock-actions) .links a.link {
+  min-height: var(--fika-control-height);
+  padding: 0 14px;
+  background: var(--fika-surface-card);
+  font: 600 14px/20px var(--fika-font-body), sans-serif;
+}
+
+.links a.link:hover {
+  border-color: var(--fika-action-primary);
+  background: var(--fika-surface-subtle);
+}
