@@ -92,7 +92,11 @@ function canonicalMenuOplocId(actor: MenuActor, id: string) {
 
 export function menuReadScopeKey(actor: MenuActor) {
   const redirects = Object.entries(actor.oplocRedirects || {}).sort(([left], [right]) => left.localeCompare(right));
-  return createHash("sha256").update(JSON.stringify([actor.uid, actor.allOplocs, [...actor.oplocIds].sort(), redirects])).digest("base64url");
+  // Menu details may contain kitchen notes only while the actor manages the entire service.
+  return createHash("sha256").update(JSON.stringify([
+    "menu-read-scope-v2", actor.uid, actor.allOplocs, [...actor.oplocIds].sort(), redirects,
+    actorCanManageOrganisation(actor), [...(actor.permissions?.manageOplocIds || [])].sort(),
+  ])).digest("base64url");
 }
 
 export function assertActorCanAccessOploc(actor: MenuActor, oplocId?: string) {
