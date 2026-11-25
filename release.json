@@ -32,9 +32,10 @@
     "explicitExecute": true,
     "authorisedAt": "2026-11-25T20:36:02.161Z"
   },
-  "kind": "intent",
-  "state": "PENDING",
-  "releaseId": "a2a7fb35-c2fe-46f1-9dd2-6e9ee22e0c22",
+  "rollout": "build-2026-11-25-002",
+  "state": "SUCCEEDED",
+  "percent": 100,
+  "kind": "deploy",
   "previousGood": {
     "sourceSha": "72f62b2c78a99bc70afe5d20096cdc607bd8604d",
     "rollout": "build-2026-11-25-001",
@@ -42,5 +43,14 @@
     "percent": 100
   },
   "previousGoodRecord": "34aa58ad0be73b7f7d314aede267b8a853126346",
-  "createdAt": "2026-11-25T20:36:03.656Z"
+  "releaseId": "a2a7fb35-c2fe-46f1-9dd2-6e9ee22e0c22",
+  "completedAt": "2026-11-25T20:39:07.697Z",
+  "smoke": {
+    "ok": true,
+    "status": 401,
+    "url": "https://menu-studio-staging.fikacatering.com/api/studio?list=menus",
+    "appId": "hospitality-menu-studio",
+    "buildSha": "a3d7173674a818c90a36807ef7344f73999bc673",
+    "authGate": "FIKA_SESSION_MISSING"
+  }
 }
