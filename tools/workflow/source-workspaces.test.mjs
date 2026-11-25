@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { fixture } from './lifecycle-fixture.mjs';
 import { createWorkspace, workspaceRecords } from './workspaces.mjs';
 import { integrateSourceWorkspace, createSourceWorkspace, completeSourceWorkspace, recoverSourceReservation, runSourceOperation } from './source-workspaces.mjs';
-import { completionFile, sourceTaskFile, workspaceInventory } from './workspace-capacity.mjs';
+import { completionFile, managedRoot, sourceTaskFile, workspaceInventory } from './workspace-capacity.mjs';
 import { cleanupSourceWorkspaces, integrationEvidence, pruneStaleSourceRegistrations } from './workspace-retirement.mjs';
 import { installSourceDependencies, recordGenerated, validationOutputCandidates } from './workspace-cache.mjs';
 import { sourceWorkspaceHealth } from './workspace-health.mjs';
@@ -118,7 +118,7 @@ test('ten concurrent claims fill the slots and startup retirement promotes the q
     assert.equal(f.within(workspaceInventory).queue[0].name, 'slot-new');
     assert.equal(f.within(workspaceInventory).occupied, 10);
     const bootstrap = 'workspace-build-artifact-retirement';
-    const bootstrapPath = path.join(f.base, 'agent-workspaces', 'fika-os', bootstrap);
+    const bootstrapPath = f.within(() => path.join(managedRoot(), bootstrap));
     f.git('worktree', 'add', '--quiet', '-b', `codex/${bootstrap}`, bootstrapPath, 'origin/main');
     const bootstrapRecord = { name: bootstrap, owner: `codex-${bootstrap}`, branch: `codex/${bootstrap}`, directory: bootstrapPath,
       baseline: f.git('rev-parse', 'origin/main'), state: 'active', bootstrapException: {
@@ -128,7 +128,7 @@ test('ten concurrent claims fill the slots and startup retirement promotes the q
     f.within(() => save(sourceTaskFile(bootstrap), bootstrapRecord));
     const exceptionInventory = f.within(workspaceInventory);
     assert.equal(exceptionInventory.physicalOccupied, 11);
-    assert.equal(exceptionInventory.governedOccupied, 10);
+    assert.equal(exceptionInventory.governedOccupied, 10, JSON.stringify(exceptionInventory.entries));
     assert.equal(exceptionInventory.bootstrapExceptions, 1);
     assert.equal(exceptionInventory.available, 0);
     assert.deepEqual(exceptionInventory.violations, []);
