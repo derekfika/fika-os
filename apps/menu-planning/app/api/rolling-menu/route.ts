@@ -19,6 +19,7 @@ import {
   normaliseRollingSnapshotDestinations,
   planningWeekCommencing,
   planningWeekFromQuery,
+  requestedMenuWeek,
   removeMenuSlot,
   resetWeek,
   saveSnapshot,
@@ -68,6 +69,7 @@ import {
   getWeekHead,
   getWeekSnapshot,
   listWeekSummaries,
+  listWeekSummariesByCommencing,
 } from "@/lib/operational-store";
 import type { RollingEntry, RollingWeek } from "@/lib/rolling-menu-types";
 import type { MenuItem } from "@/lib/domain";
@@ -89,6 +91,22 @@ function visibleWeekSummary(week: RollingWeek, actor: MenuActor) {
   if (actor.allOplocs) return week;
   const { hospitalityDemandAllocations: _historicalDemand, ...safe } = week as RollingWeek & { hospitalityDemandAllocations?: unknown };
   return { ...safe, sourceFiles: [], audit: [], entryIds: [], occupied: week.entryIds.length > 0 };
+}
+
+function menuNavigationSummaries(weeks: RollingWeek[], actor: MenuActor) {
+  return weeks.flatMap(week => {
+    const menu = week.supplementaryMenu;
+    const siteIds = menu?.siteIds.filter(id => actorCanAccessOploc(actor, id));
+    if (menu && !actor.allOplocs && !siteIds?.length) return [];
+    return [{
+      id: week.id, weekCommencing: week.weekCommencing, version: week.version,
+      entryIds: actor.allOplocs ? week.entryIds : [], occupied: week.entryIds.length > 0,
+      ...(menu ? { supplementaryMenu: {
+        id: menu.id, name: menu.name, serviceType: menu.serviceType,
+        serviceDate: menu.serviceDate, recurrenceWeekdays: menu.recurrenceWeekdays, siteIds,
+      }, menuOccurrenceStatus: week.menuOccurrenceStatus } : {}),
+    }];
+  });
 }
 
 function scopedSnapshot(
@@ -178,7 +196,11 @@ async function handleGet(request: NextRequest) {
     const snapshotOnly =
       request.nextUrl.searchParams.get("snapshotOnly") === "true";
     if (summariesOnly && requestedWeek) {
-      const week = await getWeekHead<RollingWeek>(requestedWeek);
+      const menuDate = request.nextUrl.searchParams.get("menuWeekCommencing");
+      const menuWeeks = menuDate && /^\d{4}-\d{2}-\d{2}$/.test(menuDate)
+        ? await listWeekSummariesByCommencing<RollingWeek>([menuDate])
+        : undefined;
+      const week = menuWeeks ? menuWeeks.find(candidate => candidate.id === requestedWeek) : await getWeekHead<RollingWeek>(requestedWeek);
       console.info("Menu Planning rolling-menu week head timing", {
         rollingStateMs: performance.now() - summaryStarted,
         totalMs: performance.now() - totalStarted,
@@ -186,6 +208,7 @@ async function handleGet(request: NextRequest) {
         found: Boolean(week),
       });
       return NextResponse.json({
+        ...(menuWeeks && week ? { menuWeeks: menuNavigationSummaries(menuWeeks, actor) } : {}),
         week: week
           ? {
               id: week.id,
@@ -195,7 +218,7 @@ async function handleGet(request: NextRequest) {
           : null,
       }, { headers });
     }
-    const weeks =
+    let weeks =
       snapshotOnly && requestedWeek
         ? []
         : (await listWeekSummaries<RollingWeek>())
@@ -210,20 +233,25 @@ async function handleGet(request: NextRequest) {
       return NextResponse.json({ weeks: weeks.map(week => visibleWeekSummary(week, actor)) }, { headers });
     }
     const requestedWeekCommencing = requestedWeek
-      ? planningWeekFromQuery(requestedWeek)
+      ? planningWeekFromQuery(requestedWeek.split(":menu:")[0])
       : undefined;
-    const matchingWeek = requestedWeek
-      ? weeks.find(
-          (week) =>
-            week.id === requestedWeek ||
-            week.weekCommencing === requestedWeek ||
-            week.weekCommencing === requestedWeekCommencing,
-        )
+    // The navigation index is capped; include the requested week's full set of menus at that boundary.
+    if (actor.allOplocs && requestedWeekCommencing && weeks.length >= 100) {
+      const sameWeek = await listWeekSummariesByCommencing<RollingWeek>([requestedWeekCommencing]);
+      weeks = [...weeks.filter(week => week.weekCommencing !== requestedWeekCommencing), ...sameWeek];
+    }
+    const matchingWeek = requestedWeek && requestedWeekCommencing
+      ? requestedMenuWeek(weeks, requestedWeek, requestedWeekCommencing)
       : undefined;
-    const selectedWeek =
-      snapshotOnly && requestedWeek
-        ? await getWeekHead<RollingWeek>(requestedWeek)
-        : matchingWeek || defaultWeekForDate(weeks, requestedWeekCommencing);
+    // A date with only supplementary drafts still has an empty primary menu.
+    const hasMenuOnDate = requestedWeekCommencing && weeks.some(week => week.weekCommencing === requestedWeekCommencing);
+    const allowDefault = !requestedWeek?.includes(":menu:") && !hasMenuOnDate;
+    const selectedWeek = snapshotOnly && requestedWeek
+      ? await getWeekHead<RollingWeek>(requestedWeek)
+      : matchingWeek || (allowDefault ? defaultWeekForDate(weeks, requestedWeekCommencing) : undefined);
+    if (requestedWeek?.includes(":menu:") && !selectedWeek) {
+      throw Object.assign(new Error("This additional menu could not be found. Open the Week Planner to choose another menu."), { status: 404 });
+    }
     const selectedReadStarted = performance.now();
     const storedSnapshot = selectedWeek
       ? await getWeekSnapshot<Awaited<ReturnType<typeof getWeek>>>(

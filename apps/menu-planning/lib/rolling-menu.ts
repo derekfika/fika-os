@@ -313,9 +313,13 @@ export function planningWeekReplacementDetails(snapshot: Pick<RollingSnapshot, "
 /** Legacy aggregate read retained for catalogue reconciliation only; normal UI reads use getWeek/listWeeks. */
 export async function listAllEntries(): Promise<RollingEntry[]> { return structuredClone((await read()).entries); }
 export function defaultWeekForDate(weeks: RollingWeek[], date = operationalDate()) {
-  const ordered = weeks.slice().sort((a, b) => a.weekCommencing.localeCompare(b.weekCommencing));
+  const ordered = weeks.filter(week => !week.supplementaryMenu).sort((a, b) => a.weekCommencing.localeCompare(b.weekCommencing));
   const current = ordered.find(week => week.weekCommencing <= date && week.weekEnding >= date);
   return current || ordered.slice().sort((a, b) => Math.abs(Date.parse(`${a.weekCommencing}T00:00:00Z`) - Date.parse(`${date}T00:00:00Z`)) - Math.abs(Date.parse(`${b.weekCommencing}T00:00:00Z`) - Date.parse(`${date}T00:00:00Z`)) || a.weekCommencing.localeCompare(b.weekCommencing))[0];
+}
+export function requestedMenuWeek(weeks: RollingWeek[], requested: string, weekCommencing: string) {
+  return weeks.find(week => week.id === requested) ||
+    (!requested.includes(":menu:") ? weeks.find(week => !week.supplementaryMenu && week.weekCommencing === weekCommencing) : undefined);
 }
 export function snapshotFromStored(db: Stored, weekId?: string): RollingSnapshot {
   const ordered = db.weeks.slice().sort((a, b) => a.weekCommencing.localeCompare(b.weekCommencing));
