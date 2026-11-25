@@ -10,7 +10,7 @@ import { createWorkspace, workspaceRecords } from './workspaces.mjs';
 import { integrateSourceWorkspace, createSourceWorkspace, completeSourceWorkspace, recoverSourceReservation, runSourceOperation } from './source-workspaces.mjs';
 import { completionFile, managedRoot, sourceTaskFile, workspaceInventory } from './workspace-capacity.mjs';
 import { cleanupSourceWorkspaces, integrationEvidence, pruneStaleSourceRegistrations } from './workspace-retirement.mjs';
-import { installSourceDependencies, recordGenerated, validationOutputCandidates } from './workspace-cache.mjs';
+import { installSourceDependencies, recordGenerated, validationOutputCandidates, verifiedTypeScriptBuildInfo } from './workspace-cache.mjs';
 import { sourceWorkspaceHealth } from './workspace-health.mjs';
 import { migrateSourceHistory } from './source-migration.mjs';
 import { governedReleaseOperation } from './workspace-state.mjs';
@@ -487,7 +487,8 @@ test('retirement removes a structurally valid compiler cache matching the tracke
     assert.equal(protectedCache.retirement, 'retained');
     assert.match(protectedCache.cleanup.protected[0].reason, /Unverified ignored output/);
     assert.equal(existsSync(cache), true);
-    writeFileSync(cache, JSON.stringify({ fileNames: ['a.ts'], fileInfos: [{ version: 'hash' }], root: [0], options: {}, version: '5.9.3' }));
+    writeFileSync(cache, JSON.stringify({ fileNames: ['a.ts', 'b.ts'], fileInfos: [{ version: 'hash' }, { version: 'hash' }], root: [[0, 1]], options: {}, version: '5.9.3' }));
+    assert.equal(verifiedTypeScriptBuildInfo(task, `${app}/tsconfig.tsbuildinfo`, task.baseline), true);
     const completed = complete();
     assert.equal(completed.retirement, 'retired', JSON.stringify(completed));
     assert.equal(existsSync(task.directory), false);

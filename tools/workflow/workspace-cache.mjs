@@ -95,11 +95,14 @@ export function verifiedTypeScriptBuildInfo(workspace, relative, head) {
   if (!entry?.isFile() || entry.size > 20 * 1024 * 1024 || !samePath(realpathSync(file), file)) return false;
   try {
     const data = JSON.parse(readFileSync(file, 'utf8'));
+    const validRoot = (entry, depth = 0) => Number.isSafeInteger(entry) && entry >= 0 && entry < data.fileNames.length ||
+      (depth < 4 && Array.isArray(entry) && entry.length > 0 && entry.length <= data.fileNames.length &&
+        entry.every(child => validRoot(child, depth + 1)));
     return data.version === compiler.version && Array.isArray(data.fileNames) && data.fileNames.length > 0 &&
       data.fileNames.length <= 200_000 && data.fileNames.every(name => typeof name === 'string' && name.length < 4096) &&
       Array.isArray(data.fileInfos) && data.fileInfos.length === data.fileNames.length &&
       Array.isArray(data.root) && data.root.length > 0 && data.root.length <= data.fileNames.length &&
-      data.root.every(index => Number.isSafeInteger(index) && index >= 0 && index < data.fileNames.length) &&
+      data.root.every(entry => validRoot(entry)) &&
       data.options && typeof data.options === 'object' && !Array.isArray(data.options);
   } catch { return false; }
 }
