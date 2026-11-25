@@ -17,6 +17,7 @@ import { studioRuntime } from "./runtime";
 import { dishSchema, menuSchema } from "./schema";
 import { publicationContent } from "./scoped-publication";
 import { assortmentIsComplete, kitchenQuantities } from "./review";
+import { ProductMenuStore } from "./product-menu-store";
 
 const root = "fikaHospitalityMenuStudioV1";
 const pageSize = 50;
@@ -39,6 +40,10 @@ type PublishCommand = PublicationRequest & { reviewToken: string; confirmed: tru
 
 export class StudioStore {
   constructor(private db: Firestore, private now = () => new Date(), private projectId: PublicationPackage["projectId"] = "demo-fika-os") {}
+
+  productMenus() {
+    return new ProductMenuStore(this.db.collection(`${root}_productMenus`), this.db.collection(`${root}_dishes`), this.now);
+  }
 
   async list<T extends Draft>(kind: DraftCollection, cursor?: string): Promise<Page<T>> {
     const snapshot = await this.page(this.db.collection(`${root}_${kind}`), cursor);

@@ -1,0 +1,6 @@
+# 2026-11-25 — Rebuild Menu Studio around product menus
+
+Wire the shared FIKA shell and semantic controls into a catalogue-first Menu Builder. Add fixed and 1–52-week product draft creation and editing, exact saved dish revisions, ordered choices and groups, draft review with readiness checks, contextual navigation and save/leave guards. Existing Dish Library and governed Catalogue remain reachable through the three specified destinations. Customer preview is labelled as a non-bookable draft. Publish stays disabled because product drafts do not yet connect CPU food-safety review with Hub publication and activation; the current verified menu and existing bookings remain unchanged.
+
+Validation: 93 Studio unit tests, TypeScript typecheck, production build and `git diff --check` passed. Headless Chromium with intercepted fixture APIs verified fixed/rotation navigation, week/group authoring, versioned save, review blockers, guarded navigation and mobile Library/Catalogue flows; no browser console errors or horizontal overflow at 390px. Visual screenshots were compared with the supplied mockups. Authenticated staging UI acceptance is blocked because no authenticated staging browser session is available. The app's normal `npm test` command does not run the emulator suite; no emulator or real customer data was used.
+Deployment: none.

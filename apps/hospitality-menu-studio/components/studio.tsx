@@ -13,8 +13,11 @@ import {
 } from "../lib/contract";
 import { kitchenQuantities } from "../lib/review";
 import { CatalogueView } from "./studio-catalogue";
+import type { CatalogueRow } from "./catalogue-wire";
 import { linkedStudioSections } from "./catalogue-governance-model";
-import { MenuDashboard } from "./studio-dashboard";
+import ProductMenuBuilder from "./product-menu-builder";
+import type { ProductMenuSummary } from "./menu-builder-home";
+import { StudioShell as FikaStudioShell, StudioStatus, type StudioDestination } from "./studio-design-system";
 import { useAssignedDishes } from "./use-assigned-dishes";
 import { MenuSetup, type NewMenuDetails } from "./menu-setup";
 import type { CatalogueChoices, NewSectionDetails } from "./menu-setup-model";
@@ -35,7 +38,6 @@ import {
   Icon,
   PageHeading,
   Pill,
-  StudioShell,
   title,
   type Page,
 } from "./studio-ui";
@@ -75,6 +77,12 @@ export default function Studio({
   const [catalogueReturn, setCatalogueReturn] = useState(false);
   const [catalogueArea, setCatalogueArea] = useState<"products" | "sites" | null>(null);
   const [page, setPage] = useState<Page>("home");
+  const [builderProducts, setBuilderProducts] = useState<CatalogueRow[]>([]);
+  const [builderSummaries, setBuilderSummaries] = useState<ProductMenuSummary[]>([]);
+  const [builderActiveProductId, setBuilderActiveProductId] = useState<string | null>(null);
+  const [builderDirty, setBuilderDirty] = useState(false);
+  const [requestedBuilderProductId, setRequestedBuilderProductId] = useState<string | null>(null);
+  const [requestedBuilderDestination, setRequestedBuilderDestination] = useState<StudioDestination | null>(null);
   const [menus, setMenus] = useState<Menu[]>([]);
   const [dishes, setDishes] = useState<Dish[]>([]);
   const [menuCursor, setMenuCursor] = useState<string | null>(null);
@@ -131,6 +139,34 @@ export default function Studio({
       ...list.filter((item) => item.id !== saved.id),
     ]),
   );
+  const handleBuilderProductsLoaded = useCallback((products: CatalogueRow[], summaries: ProductMenuSummary[]) => {
+    setBuilderProducts(products);
+    setBuilderSummaries(summaries);
+  }, []);
+  const handleBuilderActiveProduct = useCallback((itemId: string | null) => setBuilderActiveProductId(itemId), []);
+  const handleBuilderDirtyChange = useCallback((dirty: boolean) => setBuilderDirty(dirty), []);
+  const handleBuilderProductRequest = useCallback(() => setRequestedBuilderProductId(null), []);
+  const handleBuilderNavigation = useCallback(() => setRequestedBuilderDestination(null), []);
+  const builderLinks = builderSummaries.flatMap((summary) => {
+    const product = builderProducts.find((item) => item.itemId === summary.itemId);
+    return product ? [{ id: summary.itemId, name: product.name, status: "Draft", summary: summary.kind === "fixed" ? `Fixed · ${summary.dishCount ?? 0} dishes` : `${summary.cycleWeeks}-week rotation` }] : [];
+  });
+  const activeDestination: StudioDestination = page === "dishes" || page === "kitchen" ? "library" : page === "products" || page === "sites" ? "catalogue" : "builder";
+  const navigateDestination = useCallback((destination: StudioDestination) => {
+    if (page === "home") {
+      setRequestedBuilderDestination(destination);
+      return true;
+    }
+    if (destination === "builder") navigate("home");
+    else if (destination === "library") navigate("dishes");
+    else { setCatalogueArea("products"); navigate("products"); }
+    return true;
+  }, [page]);
+  const selectBuilderProduct = useCallback((itemId: string) => {
+    if (page !== "home") setPage("home");
+    setRequestedBuilderProductId(itemId);
+    return true;
+  }, [page]);
   const menu = menuDraft.item;
   const dish = dishDraft.item;
   const activeMenuId = useRef(menu?.id);
@@ -213,6 +249,12 @@ export default function Studio({
   }, [load]);
 
   useEffect(() => {
+    const destination = new URLSearchParams(window.location.search).get("page");
+    if (destination === "library") setPage("dishes");
+    if (destination === "catalogue") { setCatalogueArea("products"); setPage("products"); }
+  }, []);
+
+  useEffect(() => {
     window.scrollTo(0, 0);
   }, [page, sectionId, createKind, menu?.id, dish?.id]);
 
@@ -275,6 +317,10 @@ export default function Studio({
   }, [menu?.id]);
 
   function navigate(next: Page) {
+    if (typeof window !== "undefined") {
+      const destination = next === "dishes" ? "/?page=library" : next === "products" || next === "sites" ? "/?page=catalogue" : "/";
+      window.history.replaceState(null, "", destination);
+    }
     if (next === "products" || next === "sites") {
       setCatalogueArea(next);
       if (page === "products" || page === "sites") {
@@ -694,12 +740,17 @@ export default function Studio({
       : undefined;
 
   return (
-    <StudioShell
+    <FikaStudioShell
       actorName={actor.name}
-      page={kitchenCollection ? "activation" : page}
-      menuKind={menu?.kind}
-      demo={demo}
-      navigate={navigate}
+      active={activeDestination}
+      onNavigate={navigateDestination}
+      navigationHrefs={{ builder: "/", library: "/?page=library", catalogue: "/?page=catalogue" }}
+      productLinks={builderLinks}
+      activeProductId={builderActiveProductId || undefined}
+      onSelectProduct={selectBuilderProduct}
+      environmentLabel={demo ? <StudioStatus tone="info">Local preview</StudioStatus> : undefined}
+      saveState={builderActiveProductId ? <StudioStatus tone={builderDirty ? "warning" : "success"}>{builderDirty ? "Unsaved changes" : "Draft saved"}</StudioStatus> : menu ? <StudioStatus tone={menuDraft.state === "saved" ? "success" : menuDraft.state === "error" ? "danger" : "warning"}>{menuDraft.state === "saved" ? "Draft saved" : menuDraft.state === "saving" ? "Saving…" : menuDraft.state === "conflict" ? "Version conflict" : "Unsaved changes"}</StudioStatus> : undefined}
+      contentWidth={page === "home" ? (builderActiveProductId ? "wide" : "standard") : "wide"}
     >
       {page !== "home" &&
         page !== "dishes" &&
@@ -722,8 +773,35 @@ export default function Studio({
             dishes={dishes}
           />
         )}
-      {loading && <p role="status">Loading menus and dishes…</p>}
-      {error && (
+      {page === "home" && <ProductMenuBuilder
+        actorName={actor.name}
+        canManage={actor.canManage}
+        embedded
+        requestedProductId={requestedBuilderProductId}
+        requestedDestination={requestedBuilderDestination}
+        onProductRequestHandled={handleBuilderProductRequest}
+        onNavigationHandled={handleBuilderNavigation}
+        onDirtyStateChange={handleBuilderDirtyChange}
+        onProductsLoaded={handleBuilderProductsLoaded}
+        onActiveProductChange={handleBuilderActiveProduct}
+        onNavigate={(destination) => {
+          if (destination === "library") navigate("dishes");
+          else if (destination === "catalogue") { setCatalogueArea("products"); navigate("products"); }
+          else navigate("home");
+        }}
+      />}
+      {page === "home" && recoverable.length > 0 && (
+        <section className={styles.panelBody}>
+          <h2>Unsaved drafts on this device</h2>
+          <p>Choose a retained copy to review. A newer saved draft stays separate from this copy.</p>
+          {recoverable.map((copy) => <button type="button" className={styles.listButton} key={copy.key} onClick={() => void recoverDraft(copy)}>
+            <strong>{copy.item.name || "Untitled draft"}</strong>
+            <span>{title(copy.kind)} · Started from version {copy.item.version} · {copy.retainedAt ? `Retained ${formatRetainedTime(copy.retainedAt)} ·` : "Time unavailable ·"} Copy {copy.key.slice(-8)} <Icon name="forward" /></span>
+          </button>)}
+        </section>
+      )}
+      {loading && page !== "home" && <p role="status">Loading menus and dishes…</p>}
+      {error && page !== "home" && (
         <div className="fika-notice fika-notice--danger" role="alert">
           {error} <Button onClick={() => void load()}>Try again</Button>
         </div>
@@ -739,7 +817,7 @@ export default function Studio({
           />
         </div>
       )}
-      {!loading &&
+      {!loading && page !== "home" &&
         (createKind ? (
           <MenuSetup
             initialKind={createKind}
@@ -749,48 +827,6 @@ export default function Studio({
           />
         ) : (
           <>
-            {page === "home" && (
-              <>
-                <MenuDashboard
-                  actorName={actor.name}
-                  menus={menus}
-                  dishes={dishes}
-                  canManage={actor.canManage}
-                  create={() => setCreateKind("seasonal")}
-                  openMenu={openMenu}
-                  openList={() => navigate("menus")}
-                  openDishes={() => navigate("dishes")}
-                  openCollections={() => navigate("collections")}
-                />
-                {recoverable.length > 0 && (
-                  <section className={styles.panelBody}>
-                    <h2>Unsaved drafts on this device</h2>
-                    <p>
-                      Choose a copy to review. If a newer draft was saved
-                      elsewhere, you can open it without losing this copy.
-                    </p>
-                    {recoverable.map((copy) => (
-                      <button
-                        type="button"
-                        className={styles.listButton}
-                        key={copy.key}
-                        onClick={() => void recoverDraft(copy)}
-                      >
-                        <strong>{copy.item.name || "Untitled draft"}</strong>
-                        <span>
-                          {title(copy.kind)} · Started from version{" "}
-                          {copy.item.version} ·
-                          {copy.retainedAt
-                            ? ` Retained ${formatRetainedTime(copy.retainedAt)} ·`
-                            : " Time unavailable ·"}
-                          Copy {copy.key.slice(-8)} <Icon name="forward" />
-                        </span>
-                      </button>
-                    ))}
-                  </section>
-                )}
-              </>
-            )}
             {(page === "menus" || page === "collections") && !menu && (
               <>
                 <PageHeading
@@ -1159,6 +1195,6 @@ export default function Studio({
             )}
           </>
         ))}
-    </StudioShell>
+    </FikaStudioShell>
   );
 }

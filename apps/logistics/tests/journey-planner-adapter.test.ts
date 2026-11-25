@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { plannerDayToViewModel } from "../app/journey-planner/adapter";
+import { driverRunLink } from "../lib/driver-run-link";
 import { buildPlannerDay } from "../lib/planner-read-model";
 import type { DeliveryRun, DeliveryStop } from "../lib/types";
 import type { FulfilmentRequirement } from "../../shared/fulfilment-requirement";
@@ -40,6 +41,19 @@ test("driver workflow links use the canonical van PIN route and retain run ident
   const missingVehicle = day();
   missingVehicle.runs[0].vehicleId = undefined;
   assert.equal(plannerDayToViewModel(missingVehicle, context).runs[0].driverHref, undefined);
+});
+
+test("run links omit incomplete identity and preserve special characters inside the run query value", () => {
+  const runId = "run:one&two/#three";
+  const serviceDate = "2026-10-28";
+  const href = driverRunLink({ vehicleId: "van2", runId, serviceDate })?.href;
+  assert.ok(href);
+  const url = new URL(href, "https://logistics.example.invalid");
+  assert.equal(url.pathname, "/mobile/van2");
+  assert.deepEqual(Object.fromEntries(url.searchParams), { run: runId, serviceDate });
+  assert.equal(driverRunLink({ runId, serviceDate }), undefined);
+  assert.equal(driverRunLink({ vehicleId: "van1", runId, serviceDate: "2026-02-30" }), undefined);
+  assert.equal(driverRunLink({ vehicleId: "van1", runId: "", serviceDate }), undefined);
 });
 
 test("chips are CPU, then visits in stored order, then CPU; CPU is never a customer stop", () => {

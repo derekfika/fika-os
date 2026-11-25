@@ -18,7 +18,12 @@ import HospitalityBuffetOrders from "./hospitality-buffet-orders";
 import "./hospitality-buffet-orders.css";
 import { cpuReviewStatusLabel } from "./lib/cpu-review-status";
 import { currentAllergenDocument } from "../lib/allergen-documentation";
-import { publicHubBase } from "../lib/upstream-config";
+import {
+  readGrabAndGoAccess,
+  redirectForSessionFailure,
+  selectGrabAndGoSite,
+  type GrabAndGoAccess,
+} from "./lib/grab-and-go-access";
 import {
   DELIVERED_IN_DASHBOARD_LOAD_TIMEOUT_MS,
   withDeliveredInLoadTimeout,
@@ -38,9 +43,7 @@ type ProjectionHeadEntry = {
 type Dashboard = {
   withdrawnServiceDates?: string[];
   access: { email: string; oplocIds: string[]; permissions: string[] };
-  sites: Array<
-    Site & { services?: { deliveredIn: boolean; grabAndGo: boolean } }
-  >;
+  sites: Site[];
   selectedOplocId?: string;
   weeks: ProjectedWeek[];
   projectionState?: "current" | "stale" | "partial" | "unavailable";
@@ -89,17 +92,6 @@ const operationalWeek = () => ({
   weekEnding: addDays(weekFor(todayKey()), 6),
   days: [] as ProjectedDay[],
 });
-async function redirectForSessionFailure(response: Response, current: () => boolean) {
-  if (response.status !== 401) return false;
-  const body = (await response.clone().json().catch(() => undefined)) as { error?: { code?: string } } | undefined;
-  const code = body?.error?.code;
-  if (!current()) return true;
-  if (code !== "FIKA_SESSION_MISSING" && code !== "FIKA_SESSION_INVALID") return false;
-  const hub = publicHubBase(process.env.NEXT_PUBLIC_INTEGRATION_HUB_BASE_URL);
-  const returnTo = typeof window === "undefined" ? "/" : window.location.href;
-  window.location.assign(`${hub}/?returnTo=${encodeURIComponent(returnTo)}&appId=delivered-in&launchError=${encodeURIComponent(code)}`);
-  return true;
-}
 function weeksFromCachedDays(days: ProjectedDay[]) {
   const groups = new Map<string, ProjectedDay[]>();
   for (const day of days) {
@@ -564,6 +556,9 @@ export default function Page() {
   const [selectedDayDate, setSelectedDayDate] = useState("");
   const [view, setView] = useState<View>("today");
   const [error, setError] = useState("");
+  const [deliveredInAccess, setDeliveredInAccess] = useState<"no-sites" | "site-denied">();
+  const [grabAndGoAccess, setGrabAndGoAccess] = useState<GrabAndGoAccess>();
+  const [requestedSiteId, setRequestedSiteId] = useState<string>();
   const loadGeneration = useRef(0);
   const load = async (oplocId?: string, requestedWeek?: string) => {
     const generation = ++loadGeneration.current;
@@ -572,6 +567,8 @@ export default function Page() {
     // dashboard until this navigation has resolved, including denial paths.
     setDashboard(undefined);
     setError("");
+    setDeliveredInAccess(undefined);
+    setRequestedSiteId(oplocId);
     try {
       const headParams = new URLSearchParams("head=1");
       if (oplocId) headParams.set("oplocId", oplocId);
@@ -585,12 +582,20 @@ export default function Page() {
         });
       if (!current()) return;
       if (!headResponse.ok) {
-        if (await redirectForSessionFailure(headResponse, current)) return;
+        if (await redirectForSessionFailure(headResponse, current) || !current()) return;
+        if (headResponse.status === 403 && oplocId) {
+          setSelectedSiteId("");
+          setDeliveredInAccess("site-denied");
+          return;
+        }
         throw new Error("Unavailable");
       }
-      const nextSite = head.sites.length
-        ? head.selectedOplocId || head.sites[0]?.oplocId || ""
-        : "";
+      if (!head.sites.length) {
+        setSelectedSiteId("");
+        setDeliveredInAccess("no-sites");
+        return;
+      }
+      const nextSite = head.selectedOplocId || head.sites[0].oplocId;
       setSelectedSiteId(nextSite);
       const accountScope = head.access.email.toLowerCase();
       // The cache is an optional optimisation. Wait briefly for it, then fall
@@ -659,6 +664,10 @@ export default function Page() {
     }
   };
   useEffect(() => {
+    const accessRequest = new AbortController();
+    void readGrabAndGoAccess(accessRequest.signal).then(access => {
+      if (!accessRequest.signal.aborted) setGrabAndGoAccess(access);
+    });
     const applyLocation = () => {
       const location = readDeliveredInLocation(window.location.search);
       setView(location.view);
@@ -673,6 +682,7 @@ export default function Page() {
     applyLocation();
     window.addEventListener("popstate", applyLocation);
     return () => {
+      accessRequest.abort();
       ++loadGeneration.current;
       window.removeEventListener("popstate", applyLocation);
     };
@@ -691,6 +701,20 @@ export default function Page() {
   const selectedSite = dashboard?.sites.find(
     (site) => site.oplocId === selectedSiteId,
   );
+  const hasDeliveredInSites = Boolean(dashboard?.sites.length);
+  const grabAndGoSites = grabAndGoAccess?.status === "ready" ? grabAndGoAccess.sites : [];
+  const currentGrabAndGoSiteId = selectedSite?.oplocId || requestedSiteId;
+  const grabAndGoSite = currentGrabAndGoSiteId
+    ? selectGrabAndGoSite(grabAndGoSites, currentGrabAndGoSiteId)
+    : undefined;
+  const grabAndGoHref = grabAndGoSites.length
+    ? deliveredInHref({
+        view: "today",
+        oplocId: grabAndGoSite?.oplocId,
+        week: selectedWeekCommencing,
+        day: selectedDayDate || undefined,
+      }, "/grab-and-go")
+    : undefined;
   const week =
     dashboard?.weeks.find(
       (candidate) => candidate.weekCommencing === selectedWeekCommencing,
@@ -792,38 +816,31 @@ export default function Page() {
           <span className="avatar">OS</span>
         </div>
       </header>
-      {dashboard && dashboard.sites.length > 0 && (
+      {(hasDeliveredInSites || (error && grabAndGoHref)) && (
         <nav className="top-nav" aria-label="Delivered-In navigation">
-          <button
-            type="button"
-            className={view === "today" ? "active" : ""}
-            onClick={() => navigate("today")}
-            aria-current={view === "today" ? "page" : undefined}
-          >
-            ▣ <span>Today</span>
-          </button>
-          <button
-            type="button"
-            className={view === "week" ? "active" : ""}
-            onClick={() => navigate("week")}
-            aria-current={view === "week" ? "page" : undefined}
-          >
-            ▦ <span>This week</span>
-          </button>
-          {selectedSite?.services?.grabAndGo && (
-            <a
-              className="nav-link"
-              href={deliveredInHref(
-                {
-                  view: "today",
-                  oplocId: selectedSiteId || undefined,
-                  week: week?.weekCommencing || selectedWeekCommencing,
-                  day: selectedDay?.date,
-                },
-                "/grab-and-go",
-              )}
-            >
-              ▤ <span>Grab &amp; Go</span>
+          {hasDeliveredInSites && (
+            <>
+              <button
+                type="button"
+                className={view === "today" ? "active" : ""}
+                onClick={() => navigate("today")}
+                aria-current={view === "today" ? "page" : undefined}
+              >
+                ▣ <span>Today</span>
+              </button>
+              <button
+                type="button"
+                className={view === "week" ? "active" : ""}
+                onClick={() => navigate("week")}
+                aria-current={view === "week" ? "page" : undefined}
+              >
+                ▦ <span>This week</span>
+              </button>
+            </>
+          )}
+          {grabAndGoHref && (
+            <a className="nav-link service-nav-link" href={grabAndGoHref}>
+              <span aria-hidden="true">▤</span> <span>Grab &amp; Go</span>
             </a>
           )}
         </nav>
@@ -835,13 +852,33 @@ export default function Page() {
         </section>
       )}
       {dashboard && <ProjectionWarnings dashboard={dashboard} />}
-      {dashboard?.sites.length === 0 && (
-        <section className="ops-empty">
-          <p className="ops-eyebrow">Access required</p>
-          <h2>No Delivered-In site access</h2>
-          <p>
-            Your authenticated identity is not assigned to an authorised OPLOC.
-          </p>
+      {deliveredInAccess && (
+        <section className="service-access-panel" aria-labelledby="service-access-title">
+          <h1 id="service-access-title">
+            {deliveredInAccess === "site-denied"
+              ? "Delivered-In is unavailable for this site"
+              : grabAndGoHref ? "Grab & Go ordering" : "No Delivered-In site access"}
+          </h1>
+          {!grabAndGoAccess && <p role="status">Checking Grab &amp; Go access…</p>}
+          {grabAndGoAccess?.status === "unavailable" && (
+            <p role="alert">Grab &amp; Go access could not be checked. Refresh the page to try again.</p>
+          )}
+          {grabAndGoAccess?.status === "sign-in" && (
+            <p role="alert">Sign in again to check your Grab &amp; Go site access.</p>
+          )}
+          {grabAndGoHref ? (
+            <>
+              <p>{grabAndGoSite || !requestedSiteId
+                ? "You can place Grab & Go orders."
+                : "You can place Grab & Go orders for another authorised site."}</p>
+              <a className="service-access-action" href={grabAndGoHref}>Open Grab &amp; Go</a>
+            </>
+          ) : (grabAndGoAccess?.status === "ready" || grabAndGoAccess?.status === "denied") && (
+            <p>Your account has no sites authorised for Grab &amp; Go ordering.</p>
+          )}
+          {deliveredInAccess === "site-denied" && (
+            <p><a href={deliveredInHref({ view, week: selectedWeekCommencing })}>Return to the Delivered-In dashboard</a></p>
+          )}
         </section>
       )}
       {dashboard && dashboard.sites.length > 0 && (
@@ -880,18 +917,10 @@ export default function Page() {
                 {dashboard?.withdrawnServiceDates?.some(date => date >= selectedWeekCommencing && date < addDays(selectedWeekCommencing, 7)) ? "Menu withdrawn for the selected operational week." : "No published menu for the selected operational week."}
               </span>
             )}
-            {selectedSite?.services?.grabAndGo && (
+            {grabAndGoSite && grabAndGoHref && (
               <a
                 className="ops-button grab-and-go-link"
-                href={deliveredInHref(
-                  {
-                    view: "today",
-                    oplocId: selectedSiteId || undefined,
-                    week: week?.weekCommencing || selectedWeekCommencing,
-                    day: selectedDay?.date,
-                  },
-                  "/grab-and-go",
-                )}
+                href={grabAndGoHref}
               >
                 Grab &amp; Go ordering
               </a>
