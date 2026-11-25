@@ -3,6 +3,9 @@ import { lstatSync, readdirSync, realpathSync } from 'node:fs';
 import { common, git, jsonFile, root, stateDir } from './runtime.mjs';
 
 export const workspaceLimit = 10;
+const bootstrapIssue = 687;
+const bootstrapName = 'workspace-build-artifact-retirement';
+const bootstrapOwner = 'codex-workspace-build-artifact-retirement';
 export const managedRoot = () => path.resolve(realpathSync(common()), '..', '..', 'agent-workspaces', 'fika-os');
 export const sourceTaskFile = name => path.join(stateDir(), 'source-tasks', `${name}.json`);
 export const completionFile = name => path.join(stateDir(), 'source-completions', `${name}.json`);
@@ -17,6 +20,14 @@ export const pathKey = value => {
 };
 export const samePath = (a, b) => pathKey(a) === pathKey(b);
 export const canonical = () => path.resolve(common(), '..');
+function authorizedBootstrap(task, management) {
+  const exception = task?.bootstrapException;
+  return task?.name === bootstrapName && task?.owner === bootstrapOwner && task?.branch === `codex/${bootstrapName}` &&
+    task?.state === 'active' && samePath(task.directory, path.join(management, bootstrapName)) &&
+    exception?.authorization === 'explicit-owner-directive' && exception.issue === bootstrapIssue &&
+    exception.scope === 'workspace-retirement-repair' && exception.capacityExempt === true &&
+    exception.authorizedAt === '2026-11-25';
+}
 export function requireCanonical() {
   if (!samePath(root(), canonical())) throw Error('Run this workspace command from the canonical checkout');
 }
@@ -46,9 +57,24 @@ export function withCapacityLock(action) {
   if (!DatabaseSync) throw Error('Workspace lifecycle requires Node 22.13 or later');
   const db = new DatabaseSync(path.join(stateDir(), 'source-capacity.sqlite'));
   try {
-    // Use the OS-owned SQLite file lock as a mutex. Lifecycle intents are durable JSON so
-    // the next holder can reconcile external Git operations after an interrupted process.
-    db.exec('PRAGMA busy_timeout = 30000; BEGIN IMMEDIATE');
+    // Use the OS-owned SQLite file lock as a mutex. SQLite busy_timeout does not
+    // retry SQLITE_LOCKED on every Windows/VFS path, so retry only lock acquisition
+    // with a bounded deadline. Lifecycle intents remain durable across interruption.
+    db.exec('PRAGMA busy_timeout = 250');
+    const deadline = Date.now() + 30000;
+    const waitCell = new Int32Array(new SharedArrayBuffer(4));
+    while (true) {
+      try { db.exec('BEGIN IMMEDIATE'); break; }
+      catch (error) {
+        const locked = /database is (?:locked|busy)/i.test(error.message) ||
+          error.code === 'ERR_SQLITE_BUSY' || error.code === 'ERR_SQLITE_LOCKED';
+        if (!locked || Date.now() >= deadline) {
+          if (locked) throw Error('Workspace capacity reservation stayed locked for 30 seconds; retry after the active lifecycle operation finishes', { cause: error });
+          throw error;
+        }
+        Atomics.wait(waitCell, 0, 0, Math.min(50, deadline - Date.now()));
+      }
+    }
     try { return action(); } finally { db.exec('ROLLBACK'); }
   } finally { db.close(); }
 }
@@ -109,11 +135,21 @@ export function workspaceInventory() {
     if (!occupied.has(key)) occupied.set(key, { name: task.name, owner: task.owner, directory: task.directory, state: 'interrupted-reservation' });
   }
   const entries = [...occupied.values()];
+  const bootstrap = entries.filter(entry => {
+    const task = known.find(candidate => candidate.name === entry.name);
+    return task && authorizedBootstrap(task, management) && samePath(entry.directory, task.directory);
+  });
+  const ordinaryOccupied = entries.length - bootstrap.length;
   const queue = stateRecords('source-queue').filter(entry => !known.some(task => task.name === entry.name && task.owner === entry.owner &&
     task.queuedAt === entry.queuedAt && ['creating', 'active'].includes(task.state))).sort((a, b) => a.position - b.position);
-  return { limit: workspaceLimit, occupied: entries.length, available: Math.max(0, workspaceLimit - entries.length),
+  return { limit: workspaceLimit, occupied: entries.length, physicalOccupied: entries.length,
+    governedOccupied: ordinaryOccupied, bootstrapExceptions: bootstrap.length,
+    available: Math.max(0, workspaceLimit - ordinaryOccupied),
     entries, staleRegistrations, queue, violations: [
-      ...(entries.length > workspaceLimit ? [`${entries.length} occupied workspaces exceed the limit of ${workspaceLimit}`] : []),
+      ...(ordinaryOccupied > workspaceLimit ? [`${ordinaryOccupied} governed task workspaces exceed the limit of ${workspaceLimit}`] : []),
+      ...(bootstrap.length > 1 ? [`${bootstrap.length} owner bootstrap exceptions exceed the one-time limit`] : []),
+      ...entries.filter(entry => entry.bootstrapException && !bootstrap.some(item => samePath(item.directory, entry.directory)))
+        .map(entry => `unauthorized bootstrap exception: ${entry.directory}`),
       ...entries.filter(entry => ['unmanaged', 'unregistered-directory', 'retirement-residue', 'interrupted-reservation'].includes(entry.state))
         .map(entry => `${entry.state}: ${entry.directory}`),
     ] };

@@ -1,11 +1,20 @@
 # Task worktrees and lifecycle
 
 Use the current CLI from the canonical checkout for machine-wide workspace commands.
-Each write task claims one of ten slots, a unique branch from fetched `origin/main`,
-and an independent checkout with one writer. The primary checkout is excluded.
+Each write task claims one of ten governed slots, a unique branch from fetched
+`origin/main`, and an independent checkout with one writer. The primary checkout is
+excluded. Inventory reports physical checkout count separately from governed slot
+occupancy; an owner-authorised bootstrap exception is recorded explicitly and never
+creates another ordinary claim slot.
 Existing linked worktrees and unregistered directories in the managed workspace root
 count against the limit. A tree outside governance can consume a slot and will appear
 as unmanaged. Keep it in place until identity and ownership are known.
+
+The one-time #687 owner bootstrap was a narrowly recorded exception to the ten-slot
+admission limit for the retirement repair itself. It is visible in physical inventory,
+does not reduce or expand ordinary capacity, cannot be requested by task workers, and
+must be retired or formally adopted after the repair is integrated. Do not reuse this
+exception for future capacity pressure.
 
 ```powershell
 npm run fika -- workspace startup
@@ -16,8 +25,10 @@ npm run fika -- integrate --workspace <task> --pr <number>
 npm run fika -- workspace complete <task> --owner <agent-task>
 ```
 
-Windows and other supported hosts use the shared Git directory for registration and an
-OS-released SQLite lock for slot changes. Node 22.13 or later is required. A claim
+Windows and other supported hosts use the shared Git directory for registration and a
+SQLite `BEGIN IMMEDIATE` lock for slot changes. Lock acquisition retries SQLite busy or
+locked responses for up to 30 seconds, then returns an actionable hold without making
+a claim. Node 22.13 or later is required. A claim
 reserves its slot before Git creates the checkout. With ten occupied slots, the next
 claim queues with its task name, owner and advisory scope. Startup, executed cleanup
 and verified completion promote queued claims in FIFO order as physical slots open.
@@ -90,8 +101,15 @@ output for removal. Retirement checks each ignored output against its recorded
 fingerprint. Validation includes Next's `next-env.d.ts`. For an existing unrecorded
 declaration, retirement can independently verify the complete generated Next 16
 template against the completed app's tracked lockfile and TypeScript configuration.
-Other unrecorded or changed content, links outside the checkout, browser evidence,
-user attachments, env files and unknown scratch files remain protected.
+Retirement also recognizes the exact ignored `apps/<app>/tsconfig.tsbuildinfo` path
+only when its bounded TypeScript build-info structure, compiler version in that app's
+tracked lockfile, and incremental tracked TypeScript configuration agree. This cache
+contains compiler-derived state and can be rebuilt from tracked sources. A malformed,
+oversized, mismatched or edited cache remains protected. Other unrecorded or changed
+content, links outside the checkout, browser evidence, user attachments, env files and
+unknown scratch files remain protected. In particular, an unrecorded `.next` tree is
+not assumed disposable: successful governed validation fingerprints its full content,
+and any changed or added path blocks retirement.
 Keep emulator databases, runtime state and build output checkout-local. Check
 available CPU, memory, disk and isolated ports before starting intensive work.
 Stagger builds and emulator runs when resources are constrained. Use the standard per-user Firebase

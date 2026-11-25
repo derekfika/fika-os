@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { fixture } from './lifecycle-fixture.mjs';
 import { createWorkspace, workspaceRecords } from './workspaces.mjs';
 import { integrateSourceWorkspace, createSourceWorkspace, completeSourceWorkspace, recoverSourceReservation, runSourceOperation } from './source-workspaces.mjs';
-import { completionFile, sourceTaskFile, workspaceInventory } from './workspace-capacity.mjs';
+import { completionFile, managedRoot, sourceTaskFile, workspaceInventory } from './workspace-capacity.mjs';
 import { cleanupSourceWorkspaces, integrationEvidence, pruneStaleSourceRegistrations } from './workspace-retirement.mjs';
 import { installSourceDependencies, recordGenerated, validationOutputCandidates } from './workspace-cache.mjs';
 import { sourceWorkspaceHealth } from './workspace-health.mjs';
@@ -117,12 +117,35 @@ test('ten concurrent claims fill the slots and startup retirement promotes the q
     await assert.rejects(runCli('create', queued.name, '--owner', 'different-owner'), /already exists/);
     assert.equal(f.within(workspaceInventory).queue[0].name, 'slot-new');
     assert.equal(f.within(workspaceInventory).occupied, 10);
+    const bootstrap = 'workspace-build-artifact-retirement';
+    const bootstrapPath = f.within(() => path.join(managedRoot(), bootstrap));
+    f.git('worktree', 'add', '--quiet', '-b', `codex/${bootstrap}`, bootstrapPath, 'origin/main');
+    const bootstrapRecord = { name: bootstrap, owner: `codex-${bootstrap}`, branch: `codex/${bootstrap}`, directory: bootstrapPath,
+      baseline: f.git('rev-parse', 'origin/main'), state: 'active', bootstrapException: {
+        authorization: 'explicit-owner-directive', issue: 687, scope: 'workspace-retirement-repair',
+        capacityExempt: true, authorizedAt: '2026-11-25',
+      } };
+    f.within(() => save(sourceTaskFile(bootstrap), bootstrapRecord));
+    const exceptionInventory = f.within(workspaceInventory);
+    assert.equal(exceptionInventory.physicalOccupied, 11);
+    assert.equal(exceptionInventory.governedOccupied, 10, JSON.stringify(exceptionInventory.entries));
+    assert.equal(exceptionInventory.bootstrapExceptions, 1);
+    assert.equal(exceptionInventory.available, 0);
+    assert.deepEqual(exceptionInventory.violations, []);
+    const badException = { ...bootstrapRecord, bootstrapException: { ...bootstrapRecord.bootstrapException, capacityExempt: false } };
+    f.within(() => save(sourceTaskFile(bootstrap), badException));
+    const denied = f.within(workspaceInventory);
+    assert.equal(denied.governedOccupied, 11);
+    assert.ok(denied.violations.some(reason => reason.includes('unauthorized bootstrap exception')));
+    f.within(() => save(sourceTaskFile(bootstrap), bootstrapRecord));
+    f.git('worktree', 'remove', bootstrapPath);
+    f.within(() => unlinkSync(sourceTaskFile(bootstrap)));
     const unmanaged = path.join(f.base, 'unmanaged outside managed root');
     f.git('worktree', 'add', '--detach', unmanaged);
     const over = f.within(workspaceInventory);
     assert.equal(over.occupied, 11);
     assert.equal(over.available, 0);
-    assert.ok(over.violations.includes('11 occupied workspaces exceed the limit of 10'));
+    assert.ok(over.violations.includes('11 governed task workspaces exceed the limit of 10'));
     const detached = over.entries.filter(entry => entry.branch === null);
     assert.equal(detached.length, 1, JSON.stringify(over.entries));
     assert.equal(detached[0].state, 'unmanaged');
@@ -378,9 +401,10 @@ function lockedNpmWorktree(f, name = 'retirement-dependency') {
     packages: {
       'node_modules/@fika/server-shared': { link: true, resolved: '../../packages/server-shared' },
       'node_modules/next': { version: '16.2.12' },
+      'node_modules/typescript': { version: '5.9.3' },
     },
   }));
-  writeFileSync(path.join(appDir, '.gitignore'), 'next-env.d.ts\n.next/\n');
+  writeFileSync(path.join(appDir, '.gitignore'), 'next-env.d.ts\n.next/\ntsconfig.tsbuildinfo\n');
   f.git('add', '.');
   f.git('commit', '-m', 'Track Next app and npm local package link');
   f.git('push', 'origin', 'main');
@@ -438,6 +462,35 @@ test('Next declarations are recorded by validation and independently verified at
     assert.equal(readFileSync(builtFile, 'utf8'), 'unique evidence');
     writeFileSync(builtFile, 'verified output');
     assert.equal(complete().retirement, 'retired');
+  }); } finally { f.dispose(); }
+});
+
+test('retirement removes a structurally valid compiler cache matching the tracked compiler and config', () => {
+  const f = fixture();
+  try { f.within(() => {
+    const app = 'apps/hospitality-menu-studio';
+    const appDir = path.join(f.repo, app);
+    mkdirSync(appDir, { recursive: true });
+    writeFileSync(path.join(appDir, 'tsconfig.json'), JSON.stringify({ compilerOptions: { incremental: true } }));
+    writeFileSync(path.join(appDir, 'package-lock.json'), JSON.stringify({ lockfileVersion: 3, packages: {
+      'node_modules/next': { version: '16.2.12' }, 'node_modules/typescript': { version: '5.9.3' },
+    } }));
+    writeFileSync(path.join(appDir, '.gitignore'), 'tsconfig.tsbuildinfo\n');
+    f.git('add', '.');
+    f.git('commit', '-m', 'Track incremental TypeScript fixture');
+    f.git('push', 'origin', 'main');
+    const task = createSourceWorkspace('retirement-tsbuildinfo', { owner: 'retirement-tsbuildinfo' });
+    const cache = path.join(task.directory, app, 'tsconfig.tsbuildinfo');
+    const complete = () => completeSourceWorkspace(task.name, { owner: task.owner });
+    writeFileSync(cache, JSON.stringify({ fileNames: ['a.ts'], fileInfos: [], root: [0], options: {}, version: '5.9.3' }));
+    const protectedCache = complete();
+    assert.equal(protectedCache.retirement, 'retained');
+    assert.match(protectedCache.cleanup.protected[0].reason, /Unverified ignored output/);
+    assert.equal(existsSync(cache), true);
+    writeFileSync(cache, JSON.stringify({ fileNames: ['a.ts'], fileInfos: [{ version: 'hash' }], root: [0], options: {}, version: '5.9.3' }));
+    const completed = complete();
+    assert.equal(completed.retirement, 'retired', JSON.stringify(completed));
+    assert.equal(existsSync(task.directory), false);
   }); } finally { f.dispose(); }
 });
 
