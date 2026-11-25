@@ -3,7 +3,7 @@ import test from "node:test";
 import type { ProductionOrder } from "../lib/production-types";
 import { allergenMatrixContentHash, buildCpuAllergenRelease, revokeCpuAllergenRelease } from "../lib/cpu-allergen-release";
 import { matrixSignatureScope, type PlannedMenuItem, type ProductionPlan } from "../app/lib/production-plan";
-import { signedAllergenDocumentForOrder } from "../app/lib/signed-allergen-document";
+import { assertSameSignedOrderDocument, signedAllergenDocumentForOrder } from "../app/lib/signed-allergen-document";
 
 const items: PlannedMenuItem[] = [{ id: "item:1", name: "Soup", note: "", subItems: [{ id: "sub:1", name: "Soup", quantity: 1, allergens: { milk: "clear" }, note: "", evidenceStatus: "completed" }] }];
 const order = (overrides: Partial<ProductionOrder> = {}) => ({ canonicalId: "order:1", origin: "menu_planning", sourceBookingId: "booking:1", sourceQuoteRevisionId: "quote:1", currentRevision: 3, serviceDate: "2026-11-13", requiredBy: "2026-11-13T11:00:00Z", sourceEntityId: "day:1", sourcePublicationId: "publication:1", sourcePublicationDayId: "publication-day:1", sourceVersion: 3, sourceContentHash: "c".repeat(64), destinationOplocId: "oploc:one", status: "planned", ...overrides } as unknown as ProductionOrder);
@@ -79,4 +79,20 @@ test("missing or invalid existing artifacts never create a replacement PDF", () 
   invalid.plan.matrixArtifact = { ...invalid.siteArtifact, driveFileId: "bad/file" };
   invalid.plan.currentAllergenRelease!.derivedArtifacts = [{ ...invalid.siteArtifact, driveFileId: "bad/file" }];
   assert.equal(signedAllergenDocumentForOrder(invalid.plan, sourceOrder).state, "unavailable");
+});
+
+test("a download requires the same signed release and exact artifact after retrieving its bytes", () => {
+  const sourceOrder = order();
+  const { plan, release, siteArtifact } = planFor(sourceOrder);
+  const opened = signedAllergenDocumentForOrder(plan, sourceOrder);
+  assert.equal(opened.state, "ready");
+  const check = () => assertSameSignedOrderDocument(opened, signedAllergenDocumentForOrder(plan, sourceOrder));
+  assert.doesNotThrow(check);
+  plan.currentAllergenRelease = revokeCpuAllergenRelease(release, { at: "2026-11-13T10:00:00Z", by: "chef", reason: "Amended" });
+  assert.throws(check, { status: 409 });
+  plan.currentAllergenRelease = { ...release, releaseId: "replacement", version: release.version + 1 };
+  assert.throws(check, { status: 409 });
+  plan.currentAllergenRelease = { ...release, derivedArtifacts: [{ ...siteArtifact, driveFileId: "replacement_file" }] };
+  plan.matrixArtifact = plan.currentAllergenRelease.derivedArtifacts[0];
+  assert.throws(check, { status: 409 });
 });
