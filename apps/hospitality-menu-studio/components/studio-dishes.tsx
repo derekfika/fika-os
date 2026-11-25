@@ -79,7 +79,7 @@ export function DishCollection({
   return (
     <>
       <PageHeading
-        title="Dish collection"
+        title="Dish Library"
         eyebrow={
           back && (
             <Breadcrumb>
@@ -87,7 +87,7 @@ export function DishCollection({
                 {backLabel}
               </button>
               <span>/</span>
-              <span>Dish collection</span>
+              <span>Dish Library</span>
             </Breadcrumb>
           )
         }
@@ -204,7 +204,7 @@ export function DishCollection({
                     {title(dish.category)} <Temperature value={dish.temperature} />
                   </span>
                   <span className={dishStyles.usage} id={`${itemId}-usage`}>
-                    Version {dish.version} · {count} loaded {count === 1 ? "menu" : "menus"}
+                    {count === 1 ? "Used in 1 menu" : `Used in ${count} menus`}
                   </span>
                   <Icon name="forward" />
                 </button>
@@ -277,7 +277,6 @@ export function DishEditor({
             </Breadcrumb>
           )
         }
-        context={dish.version > 0 && <span>Draft version {dish.version}</span>}
       >
         <SaveNotice {...save} />
         <Button onClick={back}>Back to {backLabel.toLowerCase()}</Button>

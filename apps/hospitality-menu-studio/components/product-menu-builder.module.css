@@ -4,7 +4,7 @@
 .weekStrip button[aria-pressed="true"] { border-color: var(--fika-action-primary); background: var(--fika-action-primary); color: var(--fika-surface-card); }
 .groups { display: grid; gap: var(--space-4); }
 .group { display: grid; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--fika-border-default); border-radius: var(--radius-sm); background: var(--fika-surface-subtle); }
-.groupHeading { display: grid; grid-template-columns: minmax(0,1fr) minmax(180px,.55fr) auto; align-items: end; gap: var(--space-3); }
+.groupHeading { display: grid; grid-template-columns: minmax(0,1fr) minmax(180px,.55fr) repeat(3, auto); align-items: end; gap: var(--space-2); }
 .groupHeading input,.groupHeading select { width: 100%; min-height: var(--fika-control-height); padding: var(--space-2) var(--space-3); border: 1px solid var(--fika-border-default); border-radius: var(--radius-sm); background: var(--fika-surface-card); color: var(--fika-text-primary); font: inherit; }
 .dishList { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
 .dishList li { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: 64px; padding: var(--space-2) var(--space-3); border: 1px solid var(--fika-border-default); border-radius: var(--radius-sm); background: var(--fika-surface-card); }
@@ -52,6 +52,11 @@
 .dialogHeader p,.discardDialog > p { margin: var(--space-2) 0 0; color: var(--fika-text-secondary); }
 .dialogHeader > button { width: var(--fika-control-height); height: var(--fika-control-height); border: 1px solid var(--fika-border-default); border-radius: var(--radius-sm); background: var(--fika-surface-card); color: var(--fika-text-primary); font: inherit; font-size: var(--text-lg); cursor: pointer; }
 .pickerList { display: grid; gap: var(--space-2); max-height: min(48vh, 420px); overflow: auto; margin-top: var(--space-3); }
+.pickerTools { display: flex; align-items: end; flex-wrap: wrap; gap: var(--space-3); }
+.pickerTools > :first-child { flex: 1 1 18rem; }
+.categoryFilters { display: flex; gap: var(--space-2); overflow-x: auto; padding-block: var(--space-2); }
+.newDishForm { display: grid; gap: var(--space-3); }
+.newDishForm textarea { min-height: 5rem; resize: vertical; }
 .pickerRow { display: flex; align-items: start; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--fika-border-default); border-radius: var(--radius-sm); cursor: pointer; }
 .pickerRow input { width: 1.1rem; height: 1.1rem; margin-top: .2rem; accent-color: var(--fika-action-primary); }
 .pickerRow span { display: grid; gap: var(--space-1); min-width: 0; }

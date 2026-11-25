@@ -6,7 +6,7 @@ import { studioProductMenuId } from "../../../../../shared/hospitality-menu-stud
 import { assertStudioRequestHost, authoriseStudio, requireSameOrigin, studioSessionCookie } from "../../../../lib/auth";
 import { readStudioCatalogue } from "../../../../lib/catalogue";
 import { cpuDishReview } from "../../../../lib/cpu-dish-review";
-import { deliverStudioPublication } from "../../../../lib/hub-publication";
+import { activateStudioProduct, deliverStudioPublication } from "../../../../lib/hub-publication";
 import { StudioProblem } from "../../../../lib/problem";
 import { studioRuntime } from "../../../../lib/runtime";
 import { studioStore } from "../../../../lib/store";
@@ -18,6 +18,8 @@ const requestFields = { itemId: idSchema, version: revisionSchema, effectiveDate
 const publicationCommand = z.discriminatedUnion("action", [
   z.strictObject({ action: z.literal("review"), ...requestFields }),
   z.strictObject({ action: z.literal("publish"), ...requestFields, reviewToken: publicationDigest, confirmed: z.literal(true) }),
+  z.strictObject({ action: z.literal("activate"), itemId: idSchema, publicationId: idSchema,
+    commandId: z.uuid(), expectedGeneration: z.number().int().nonnegative(), reason: z.string().trim().min(3).max(500) }),
 ]);
 const headers = { "Cache-Control": "private, no-store" };
 const maximumBytes = 4_096;
@@ -32,6 +34,13 @@ export async function POST(request: NextRequest) {
     if (config.mode !== "staging" || !config.publicationPilot || !cookie || !actor.canPublish) throw denied();
     const command = publicationCommand.parse(await readJson(request));
     const pilot = actor.publicationPilot;
+    if (command.action === "activate") {
+      if (!actor.canManage || !pilot?.activateProduct || pilot.menuId !== studioProductMenuId(command.itemId)) throw denied();
+      return Response.json(await activateStudioProduct({
+        cookie: studioSessionCookie(config, cookie), pilot, publicationId: command.publicationId,
+        commandId: command.commandId, expectedGeneration: command.expectedGeneration, reason: command.reason,
+      }), { headers });
+    }
     if (pilot?.menuId !== studioProductMenuId(command.itemId) ||
         command.effectiveDate < pilot.firstDate || command.effectiveDate > pilot.lastDate) throw denied();
 

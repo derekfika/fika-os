@@ -24,7 +24,7 @@ test("Studio product publication requires exact CPU evidence and preserves the s
   const productMenus = studio.productMenus();
   const publications = studio.productPublications();
   const actor: StudioActor = { id: "test-editor", name: "Test editor", canManage: true, canPublish: true,
-    publicationPilot: { publish: true, activateSeasonal: false, activateCollection: false, oplocId: "fixture-site", menuId: studioProductMenuId(itemId),
+    publicationPilot: { publish: true, activateSeasonal: false, activateCollection: false, activateProduct: false, oplocId: "fixture-site", menuId: studioProductMenuId(itemId),
       firstDate: "2026-11-25", lastDate: "2026-12-31", generation: 0 } };
   const catalogue: CatalogueLoadResult = {
     source: "network", contentHash: "a".repeat(64), downloaded: true, notes: [], generatedAt: now().toISOString(),
@@ -82,7 +82,24 @@ test("Studio product publication requires exact CPU evidence and preserves the s
       assert.equal(manifest.contentHash, deliveredHash);
     });
     assert.deepEqual(await publications.publish(command, evidence, async () => assert.fail("already delivered")), publication);
-    assert.deepEqual(await productMenus.read(itemId), saved);
+    let listing = await productMenus.list(new Set([itemId]));
+    assert.equal(listing.items[0]?.publicationStatus, "published");
+    assert.equal(listing.items[0]?.hasPublishedRevision, true);
+    const edited = await productMenus.save(actor.id, { ...saved, configuration: { ...saved.configuration, presentation: "dropdown" } });
+    listing = await productMenus.list(new Set([itemId]));
+    assert.equal(listing.items[0]?.version, edited.version);
+    assert.equal(listing.items[0]?.publicationStatus, "draft");
+    assert.equal(listing.items[0]?.hasPublishedRevision, true);
+    const head = db.collection("fikaHospitalityMenuStudioV1_productMenus").doc(itemId);
+    const summary = (await head.get()).get("summary");
+    await head.update({ summary: { ...summary, version: 1 } });
+    listing = await productMenus.list(new Set([itemId]));
+    assert.equal(listing.items[0]?.publicationStatus, "unavailable", "a publication newer than the listed draft has invalid lineage");
+    await head.update({ summary });
+    await head.collection("productPublicationPackages").doc(publication.id).update({ body: "{}" });
+    listing = await productMenus.list(new Set([itemId]));
+    assert.equal(listing.items[0]?.publicationStatus, "unavailable");
+    assert.deepEqual(await productMenus.read(itemId), edited);
     const published = await db.collection("fikaHospitalityMenuStudioV1_productMenus").doc(itemId).collection("productPublicationPackages").get();
     assert.equal(published.size, 1);
   } finally { await deleteApp(app); }

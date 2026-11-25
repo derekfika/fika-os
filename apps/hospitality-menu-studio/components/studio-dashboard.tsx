@@ -79,7 +79,7 @@ export function MenuDashboard({
         <button type="button" onClick={openDishes}>
           <Icon name="dishes" />
           <span>
-            <strong>Dish collection</strong>
+            <strong>Dish Library</strong>
             <small>{dishes.length} loaded</small>
           </span>
         </button>

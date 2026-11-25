@@ -37,8 +37,11 @@ export async function GET(request: NextRequest) {
         studioPublicationAuthority(repository, session, "publish"),
         studioPublicationAuthority(repository, session, "activate-seasonal"),
         studioPublicationAuthority(repository, session, "activate-collection"),
+        studioPublicationAuthority(repository, session, "activate-product"),
       ]);
-      return { publish: authorities[0], activateSeasonal: authorities[1], activateCollection: authorities[2] };
+      return { publish: authorities[0], activateSeasonal: authorities[1], activateCollection: authorities[2],
+        activateProduct: authorities[3] && process.env.FIKA_STUDIO_HUB_PILOT_BOOKING_ENABLED === "true" &&
+          process.env.FIKA_HOSPITALITY_EMAIL_DELIVERY_ENABLED === "false" };
     }, { readOnly: true });
     if (!Object.values(authorised).some(Boolean)) return rejected(403, "STUDIO_PUBLICATION_ACCESS_DENIED");
     return reply({ ...authorised, ...pilot, generation: await store().generation(pilot.oplocId) });

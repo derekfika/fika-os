@@ -74,6 +74,10 @@ export const productMenuSetup = z.discriminatedUnion("kind", [
 
 export type ProductMenuDraft = z.infer<typeof productMenuDraft>;
 export type ProductMenuSummary = z.infer<typeof productMenuSummary>;
+export type ProductMenuListing = ProductMenuSummary & {
+  publicationStatus: "draft" | "published" | "unavailable";
+  hasPublishedRevision?: boolean;
+};
 export type ProductMenuConfiguration = z.infer<typeof productMenuConfiguration>;
 export type ProductMenuChoices = z.infer<typeof choices>;
 export type ProductMenuSetup = z.infer<typeof productMenuSetup>;

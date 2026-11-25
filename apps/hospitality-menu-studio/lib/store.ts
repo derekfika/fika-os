@@ -43,7 +43,7 @@ export class StudioStore {
   constructor(private db: Firestore, private now = () => new Date(), private projectId: PublicationPackage["projectId"] = "demo-fika-os") {}
 
   productMenus() {
-    return new ProductMenuStore(this.db.collection(`${root}_productMenus`), this.db.collection(`${root}_dishes`), this.now);
+    return new ProductMenuStore(this.db.collection(`${root}_productMenus`), this.db.collection(`${root}_dishes`), this.now, this.projectId);
   }
 
   productPublications() {
