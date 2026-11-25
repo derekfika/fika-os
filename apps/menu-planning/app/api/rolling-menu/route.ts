@@ -19,6 +19,7 @@ import {
   normaliseRollingSnapshotDestinations,
   planningWeekCommencing,
   planningWeekFromQuery,
+  requestedMenuWeek,
   removeMenuSlot,
   resetWeek,
   saveSnapshot,
@@ -68,6 +69,7 @@ import {
   getWeekHead,
   getWeekSnapshot,
   listWeekSummaries,
+  listWeekSummariesByCommencing,
 } from "@/lib/operational-store";
 import type { RollingEntry, RollingWeek } from "@/lib/rolling-menu-types";
 import type { MenuItem } from "@/lib/domain";
@@ -85,28 +87,56 @@ import type { GovernedOploc } from "@/lib/oploc-authority";
 
 const oplocAliases = (sites: readonly GovernedOploc[]) => new Map(sites.flatMap(site => (site.legacyIds || []).map(id => [id, site.canonicalId] as const)));
 
+function canReadWeek(week: RollingWeek, actor: MenuActor) {
+  return !week.supplementaryMenu || actor.allOplocs || week.supplementaryMenu.siteIds.some(id => actorCanAccessOploc(actor, id));
+}
+
 function visibleWeekSummary(week: RollingWeek, actor: MenuActor) {
-  if (actor.allOplocs) return week;
-  const { hospitalityDemandAllocations: _historicalDemand, ...safe } = week as RollingWeek & { hospitalityDemandAllocations?: unknown };
-  return { ...safe, sourceFiles: [], audit: [], entryIds: [], occupied: week.entryIds.length > 0 };
+  if (!canReadWeek(week, actor)) throw Object.assign(new Error("This menu could not be found."), { status: 404 });
+  const { supplementaryMenu: menu, hospitalityDemandAllocations: _historicalDemand, ...base } = week as RollingWeek & { hospitalityDemandAllocations?: unknown };
+  const siteIds = menu?.siteIds.filter(id => actorCanAccessOploc(actor, id)) || [];
+  const supplementaryMenu = menu && {
+    id: menu.id, name: menu.name, serviceType: menu.serviceType, serviceTime: menu.serviceTime,
+    serviceDate: menu.serviceDate, recurrenceWeekdays: menu.recurrenceWeekdays, recurrenceTemplateId: menu.recurrenceTemplateId,
+    siteIds, siteLabels: Object.fromEntries(siteIds.flatMap(id => menu.siteLabels?.[id] ? [[id, menu.siteLabels[id]]] : [])),
+  };
+  return {
+    ...base, ...(supplementaryMenu ? { supplementaryMenu } : {}), occupied: week.entryIds.length > 0,
+    ...(!actor.allOplocs ? { sourceFiles: [], audit: [], entryIds: [] } : {}),
+  };
+}
+
+function visibleWeekSummaries(weeks: RollingWeek[], actor: MenuActor) {
+  return weeks.filter(week => canReadWeek(week, actor)).map(week => visibleWeekSummary(week, actor));
+}
+
+function visibleWeekDetail(source: RollingWeek, actor: MenuActor): RollingWeek {
+  const week = visibleWeekSummary(source, actor);
+  const menu = source.supplementaryMenu;
+  // Full menu editors need the saved notes in the explicit detail view. Summaries never carry notes.
+  const canEditMenu = menu && menu.siteIds.length > 0 && menu.siteIds.every(id => actorCanWriteOploc(actor, id, "manage"));
+  const supplementaryMenu = menu?.kitchenNotes && canEditMenu && week.supplementaryMenu
+    ? { ...week.supplementaryMenu, kitchenNotes: menu.kitchenNotes } : week.supplementaryMenu;
+  return { ...(actor.allOplocs ? source : week), supplementaryMenu };
 }
 
 function scopedSnapshot(
   snapshot: Awaited<ReturnType<typeof getWeek>>,
   actor?: MenuActor,
 ) {
-  if (!actor || actor.allOplocs) return snapshot;
+  if (!actor) return snapshot;
+  const detail = visibleWeekDetail(snapshot.week, actor);
+  if (actor.allOplocs) return { ...snapshot, week: detail };
   const entries = snapshot.entries.flatMap(entry => {
     const allocations = entry.allocations.filter(allocation => actorCanReadAllocation(actor, allocation));
     if (!allocations.length && (entry.allocations.length || !actor.oplocIds.length)) return [];
     return [{ ...entry, source: undefined, allocations, portions: allocations.reduce((total, allocation) => total + allocation.quantity, 0) }];
   });
   const ids = new Set(entries.map(entry => entry.id));
-  const week = { ...visibleWeekSummary(snapshot.week, actor), entryIds: snapshot.week.entryIds.filter(id => ids.has(id)) };
   const days = snapshot.days.map(day => ({
     ...day, oneOffDestinations: undefined, entryIds: day.entryIds.filter(id => ids.has(id)), destinationPax: scopeMenuSitePax(day.destinationPax, actor),
   }));
-  return { ...snapshot, week, entries, days };
+  return { ...snapshot, week: { ...detail, entryIds: snapshot.week.entryIds.filter(id => ids.has(id)) }, entries, days };
 }
 
 async function resolvedSnapshot(
@@ -178,7 +208,16 @@ async function handleGet(request: NextRequest) {
     const snapshotOnly =
       request.nextUrl.searchParams.get("snapshotOnly") === "true";
     if (summariesOnly && requestedWeek) {
-      const week = await getWeekHead<RollingWeek>(requestedWeek);
+      const menuDate = request.nextUrl.searchParams.get("menuWeekCommencing");
+      const menuWeeks = menuDate && /^\d{4}-\d{2}-\d{2}$/.test(menuDate)
+        ? await listWeekSummariesByCommencing<RollingWeek>([menuDate])
+        : undefined;
+      const head = menuWeeks ? menuWeeks.find(candidate => candidate.id === requestedWeek) : await getWeekHead<RollingWeek>(requestedWeek);
+      const week = head && canReadWeek(head, actor) ? head : undefined;
+      const navigation = menuWeeks && week ? visibleWeekSummaries(menuWeeks, actor).map(item => ({
+        id: item.id, weekCommencing: item.weekCommencing, version: item.version, entryIds: item.entryIds,
+        occupied: item.occupied, supplementaryMenu: item.supplementaryMenu, menuOccurrenceStatus: item.menuOccurrenceStatus,
+      })) : undefined;
       console.info("Menu Planning rolling-menu week head timing", {
         rollingStateMs: performance.now() - summaryStarted,
         totalMs: performance.now() - totalStarted,
@@ -186,6 +225,7 @@ async function handleGet(request: NextRequest) {
         found: Boolean(week),
       });
       return NextResponse.json({
+        ...(navigation ? { menuWeeks: navigation } : {}),
         week: week
           ? {
               id: week.id,
@@ -195,7 +235,7 @@ async function handleGet(request: NextRequest) {
           : null,
       }, { headers });
     }
-    const weeks =
+    let weeks =
       snapshotOnly && requestedWeek
         ? []
         : (await listWeekSummaries<RollingWeek>())
@@ -207,23 +247,28 @@ async function handleGet(request: NextRequest) {
         rollingStateMs,
         totalMs: performance.now() - totalStarted,
       });
-      return NextResponse.json({ weeks: weeks.map(week => visibleWeekSummary(week, actor)) }, { headers });
+      return NextResponse.json({ weeks: visibleWeekSummaries(weeks, actor) }, { headers });
     }
     const requestedWeekCommencing = requestedWeek
-      ? planningWeekFromQuery(requestedWeek)
+      ? planningWeekFromQuery(requestedWeek.split(":menu:")[0])
       : undefined;
-    const matchingWeek = requestedWeek
-      ? weeks.find(
-          (week) =>
-            week.id === requestedWeek ||
-            week.weekCommencing === requestedWeek ||
-            week.weekCommencing === requestedWeekCommencing,
-        )
+    // The navigation index is capped; include the requested week's full set of menus at that boundary.
+    if (requestedWeekCommencing && weeks.length >= 100) {
+      const sameWeek = await listWeekSummariesByCommencing<RollingWeek>([requestedWeekCommencing]);
+      weeks = [...weeks.filter(week => week.weekCommencing !== requestedWeekCommencing), ...sameWeek];
+    }
+    const matchingWeek = requestedWeek && requestedWeekCommencing
+      ? requestedMenuWeek(weeks, requestedWeek, requestedWeekCommencing)
       : undefined;
-    const selectedWeek =
-      snapshotOnly && requestedWeek
-        ? await getWeekHead<RollingWeek>(requestedWeek)
-        : matchingWeek || defaultWeekForDate(weeks, requestedWeekCommencing);
+    // A date with only supplementary drafts still has an empty primary menu.
+    const hasMenuOnDate = requestedWeekCommencing && weeks.some(week => week.weekCommencing === requestedWeekCommencing);
+    const allowDefault = !requestedWeek?.includes(":menu:") && !hasMenuOnDate;
+    const selectedWeek = snapshotOnly && requestedWeek
+      ? await getWeekHead<RollingWeek>(requestedWeek)
+      : matchingWeek || (allowDefault ? defaultWeekForDate(weeks, requestedWeekCommencing) : undefined);
+    if ((selectedWeek && !canReadWeek(selectedWeek, actor)) || (requestedWeek?.includes(":menu:") && !selectedWeek)) {
+      throw Object.assign(new Error("This additional menu could not be found. Open the Week Planner to choose another menu."), { status: 404 });
+    }
     const selectedReadStarted = performance.now();
     const storedSnapshot = selectedWeek
       ? await getWeekSnapshot<Awaited<ReturnType<typeof getWeek>>>(
@@ -278,7 +323,7 @@ async function handleGet(request: NextRequest) {
     return NextResponse.json({
       snapshot: resolved,
       dishReferences: referenceResult.dishReferences,
-      weeks: weeks.map(week => visibleWeekSummary(week, actor)),
+      weeks: visibleWeekSummaries(weeks, actor),
       blockers: validateWeek(snapshot, { requireCanonicalDishId: true, activeCanonicalDishIds }),
       publicationState: currentPublicationState,
       ...(publicationPreviewRequested
@@ -334,7 +379,7 @@ async function handlePost(request: NextRequest) {
       if (!entry.allocations.length) requireOrganisationMutationActor(actor);
       assertMenuAllocationsScope(actor, "manage", entry.allocations, aliases);
     };
-    const readWeeks = async () => (await listWeeks()).map(week => visibleWeekSummary(week, actor));
+    const readWeeks = async () => visibleWeekSummaries(await listWeeks(), actor);
     if (action === "publish-amendment") {
       const weekId = String(body.weekId || "");
       const oplocs = liveOplocs.filter(oploc => actorCanWriteOploc(actor, oploc.canonicalId, "publish"));
@@ -422,12 +467,14 @@ async function handlePost(request: NextRequest) {
         ? (await listWeeks()).filter(value => value.supplementaryMenu?.id === menu.id && value.weekCommencing < parent.week.weekCommencing).sort((left, right) => right.weekCommencing.localeCompare(left.weekCommencing))[0]
         : undefined;
       const snapshot = await createSupplementaryMenuWeek(parent.week.weekCommencing, menu, actor.uid, previous?.id);
-      return respond({ snapshot, weeks: await readWeeks(), publicationState: await readPublicationState(snapshot) });
+      return respond({ snapshot: scopedSnapshot(snapshot, actor), weeks: await readWeeks(), publicationState: await readPublicationState(snapshot) });
     }
     if (action === "ensure-recurring-menus") {
       const weekCommencing = planningWeekCommencing(String(body.weekCommencing || ""));
       const weekIds = await ensureSupplementaryMenuWeeks(weekCommencing, actor.uid);
-      return respond({ weekIds, weeks: await readWeeks() });
+      const weeks = await readWeeks();
+      const visibleIds = new Set(weeks.map(week => week.id));
+      return respond({ weekIds: weekIds.filter(id => visibleIds.has(id)), weeks });
     }
     if (action === "skip-supplementary-menu") {
       const weekId = String(body.weekId || "");
@@ -436,7 +483,7 @@ async function handlePost(request: NextRequest) {
       assertMenuSnapshotMutationScope(target, actor, "manage", aliases);
       if (target.week.supplementaryMenu.siteIds.some(id => !actorCanWriteOploc(actor, id, "manage"))) throw Object.assign(new Error("This menu includes a site outside your management scope."), { status: 403 });
       const snapshot = await setSupplementaryMenuOccurrenceSkipped(weekId, Number(body.expectedWeekVersion), body.skipped !== false, actor.uid);
-      return respond({ snapshot, weeks: await readWeeks() });
+      return respond({ snapshot: scopedSnapshot(snapshot, actor), weeks: await readWeeks() });
     }
     if (action === "update-supplementary-menu") {
       const weekId = String(body.weekId || "");
@@ -448,7 +495,7 @@ async function handlePost(request: NextRequest) {
       if (!["Breakfast", "Lunch", "Dinner", "Other"].includes(serviceType)) throw Object.assign(new Error("Choose Breakfast, Lunch, Dinner or Other."), { status: 422 });
       const recurrenceWeekdays = Array.isArray(body.recurrenceWeekdays) ? [...new Set(body.recurrenceWeekdays.map(Number))] : undefined;
       const snapshot = await updateSupplementaryMenuOccurrence(weekId, Number(body.expectedWeekVersion), { name: String(body.name || ""), serviceType: serviceType as "Breakfast" | "Lunch" | "Dinner" | "Other", serviceTime: body.serviceTime === undefined ? undefined : String(body.serviceTime), kitchenNotes: body.kitchenNotes === undefined ? target.week.supplementaryMenu.kitchenNotes : String(body.kitchenNotes), applyToFuture: body.applyToFuture === true, recurrenceWeekdays }, actor.uid);
-      return respond({ snapshot, weeks: await readWeeks(), publicationState: await readPublicationState(snapshot) });
+      return respond({ snapshot: scopedSnapshot(snapshot, actor), weeks: await readWeeks(), publicationState: await readPublicationState(snapshot) });
     }
     if (action === "discontinue-supplementary-menu") {
       const menuId = String(body.menuId || "");
@@ -525,7 +572,7 @@ async function handlePost(request: NextRequest) {
         body.dayId ? String(body.dayId) : undefined,
         entryScope,
       );
-      return respond({ mutation: { ...mutation, week: visibleWeekSummary(mutation.week, actor) } });
+      return respond({ mutation: { ...mutation, week: visibleWeekDetail(mutation.week, actor) } });
     }
     if (action === "batch-update-entries") {
       const updates = Array.isArray(body.updates)
@@ -550,7 +597,7 @@ async function handlePost(request: NextRequest) {
         saved.entries.map((entry) => entry.itemId || ""),
       );
       return respond({
-        mutation: { ...mutation, week: visibleWeekSummary(mutation.week, actor) },
+        mutation: { ...mutation, week: visibleWeekDetail(mutation.week, actor) },
         publicationState: await readPublicationState(
           saved,
           catalogue
