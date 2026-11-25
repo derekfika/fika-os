@@ -83,6 +83,30 @@ function verifiedNextDeclaration(workspace, relative, head) {
     Boolean(trackedJson(head, `${app.path}/tsconfig.json`));
 }
 
+export function verifiedTypeScriptBuildInfo(workspace, relative, head) {
+  const app = Object.values(APPS).find(candidate => relative === `${candidate.path}/tsconfig.tsbuildinfo`);
+  if (!app) return false;
+  const config = trackedJson(head, `${app.path}/tsconfig.json`);
+  const lock = trackedJson(head, `${app.path}/package-lock.json`);
+  const compiler = lock?.packages?.['node_modules/typescript'];
+  if (config?.compilerOptions?.incremental !== true || !/^\d+\.\d+\.\d+$/.test(compiler?.version ?? '')) return false;
+  const file = path.join(workspace.directory, relative);
+  const entry = localEntry(file);
+  if (!entry?.isFile() || entry.size > 20 * 1024 * 1024 || !samePath(realpathSync(file), file)) return false;
+  try {
+    const data = JSON.parse(readFileSync(file, 'utf8'));
+    const validRoot = (entry, depth = 0) => Number.isSafeInteger(entry) && entry >= 0 && entry < data.fileNames.length ||
+      (depth < 4 && Array.isArray(entry) && entry.length > 0 && entry.length <= data.fileNames.length &&
+        entry.every(child => validRoot(child, depth + 1)));
+    return data.version === compiler.version && Array.isArray(data.fileNames) && data.fileNames.length > 0 &&
+      data.fileNames.length <= 200_000 && data.fileNames.every(name => typeof name === 'string' && name.length < 4096) &&
+      Array.isArray(data.fileInfos) && data.fileInfos.length === data.fileNames.length &&
+      Array.isArray(data.root) && data.root.length > 0 && data.root.length <= data.fileNames.length &&
+      data.root.every(entry => validRoot(entry)) &&
+      data.options && typeof data.options === 'object' && !Array.isArray(data.options);
+  } catch { return false; }
+}
+
 export function recordGenerated(workspace, candidates) {
   const paths = [], protectedPaths = [];
   if (!candidates.length) return { paths, protectedPaths };
@@ -138,14 +162,19 @@ export function generatedRetirementPlan(workspace, status, head) {
   const entries = generatedEntries(workspace);
   const knownLinks = dependencyLinkPlan(workspace, head, entries);
   const links = new Map();
+  const verifiedGenerated = [];
   for (const line of split(status)) {
     if (!line.startsWith('!! ')) throw Error('Tracked or untracked work remains');
     const relative = line.slice(3).replace(/\/$/, '');
-    if (!matchesGenerated(workspace, relative, entries, { knownLinks, observedLinks: links }) &&
-        !verifiedNextDeclaration(workspace, relative, head)) {
+    const fingerprinted = matchesGenerated(workspace, relative, entries, { knownLinks, observedLinks: links });
+    const nextDeclaration = verifiedNextDeclaration(workspace, relative, head);
+    const buildInfo = verifiedTypeScriptBuildInfo(workspace, relative, head);
+    if (!fingerprinted && !nextDeclaration && !buildInfo) {
       throw Error(`Unverified ignored output: ${relative}`);
     }
+    if (buildInfo) verifiedGenerated.push(relative);
   }
+  links.verifiedGenerated = verifiedGenerated;
   return links;
 }
 

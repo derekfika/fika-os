@@ -60,9 +60,11 @@ function reserveSourceTask(task, queued) {
 }
 
 function materializeSourceTask(claim) {
-  // The reservation occupies a slot before Git creates the registration.
-  git('worktree', 'add', '--quiet', '-b', claim.branch, claim.directory, claim.baseline);
+  // Keep the lock order consistent: governed Git worktree mutations happen only
+  // after taking the capacity lock. Otherwise a claimant can hold Git's worktree
+  // lock while waiting for SQLite as another claimant holds SQLite during inventory.
   return withCapacityLock(() => {
+    git('worktree', 'add', '--quiet', '-b', claim.branch, claim.directory, claim.baseline);
     const active = { ...claim, state: 'active' };
     save(sourceTaskFile(claim.name), active);
     return active;

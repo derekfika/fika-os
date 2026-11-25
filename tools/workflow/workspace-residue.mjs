@@ -74,11 +74,11 @@ export function readArchivedRetirement(directory, task, head, ref) {
 
 /** Inspect the entire residue before removing any leaf. Unknown files and even
  * unknown empty directories leave the checkout intact. */
-export function retirementResidue(directory, links) {
+export function retirementResidue(directory, links, generatedPaths = []) {
   if (!localEntry(directory)) return { directories: [], links: [] };
   if (!localEntry(directory).isDirectory() || !samePath(realpathSync(directory), directory)) throw Error('Retirement residue resolves through a link');
   const knownDirectories = new Set();
-  for (const relative of links.keys()) {
+  for (const relative of [...links.keys(), ...generatedPaths]) {
     for (let parent = path.posix.dirname(relative); parent !== '.'; parent = path.posix.dirname(parent)) knownDirectories.add(parent);
   }
   const plan = { directories: [], links: [] };
@@ -97,8 +97,8 @@ export function retirementResidue(directory, links) {
   return plan;
 }
 
-export function removeRetirementResidue(directory, links) {
-  const plan = retirementResidue(directory, links);
+export function removeRetirementResidue(directory, links, generatedPaths = []) {
+  const plan = retirementResidue(directory, links, generatedPaths);
   for (const relative of plan.links) {
     if (!matchesDependencyLink(directory, relative, links.get(relative), { danglingOnly: true })) throw Error(`Retirement residue changed: ${relative}`);
     unlinkSync(path.join(directory, relative));
