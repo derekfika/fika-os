@@ -1,12 +1,13 @@
 "use client";
 
 import { createElement, useEffect, useState } from "react";
+import { catalogueMinimums } from "@fika/server-shared/hospitality-effective-offering";
 import type { ProductMenuConfiguration } from "../../shared/hospitality-menu-studio-product-content";
 import type { StudioChoicePresentation, StudioPreviewOffering } from "../../shared/hospitality-menu-studio-selection";
 import { renderStudioDishChoiceControls } from "../../shared/hospitality-menu-studio-choice-controls";
 import { productMenuDishKey, type ProductMenuDish, type ProductMenuDishReference } from "../lib/product-menu-dishes";
 import { menuChoiceReferences } from "./product-menu-editor-model";
-import { previewChoices, previewScopeMatches } from "./product-menu-preview-model";
+import { evaluatePreviewSelection, previewChoices, previewDateForWeek, previewScopeMatches } from "./product-menu-preview-model";
 import { StudioField, StudioPanel, StudioStatus } from "./studio-design-system";
 import { useProductMenuDishes } from "./use-product-menu-dishes";
 import styles from "./product-menu-preview.module.css";
@@ -14,8 +15,8 @@ import styles from "./product-menu-preview.module.css";
 type Site = { id: string; name: string };
 type Load<T> = { status: "loading" } | { status: "error" } | { status: "ready"; value: T };
 
-export function ProductMenuPreview({ itemId, productName, configuration, library, onEditWeek }: {
-  itemId: string; productName: string; configuration: ProductMenuConfiguration; library: ProductMenuDish[]; onEditWeek: (week: number) => void;
+export function ProductMenuPreview({ itemId, productName, configuration, library, editorWeek, onEditWeek }: {
+  itemId: string; productName: string; configuration: ProductMenuConfiguration; library: ProductMenuDish[]; editorWeek: number; onEditWeek: (week: number) => void;
 }) {
   const [sites, setSites] = useState<Load<Site[]>>({ status: "loading" });
   const [siteId, setSiteId] = useState("");
@@ -72,7 +73,7 @@ export function ProductMenuPreview({ itemId, productName, configuration, library
     {sites.status === "error" && <p role="alert">Sites could not be verified. <button type="button" onClick={() => { setSites({ status: "loading" }); setSiteAttempt(value => value + 1); }}>Try again</button></p>}
     {sites.status === "ready" && <StudioField label="Preview site"><select value={siteId} onChange={event => { setOffering(null); setSiteId(event.target.value); }}><option value="">Choose a site</option>{sites.value.map(site => <option key={site.id} value={site.id}>{site.name}</option>)}</select></StudioField>}
     <StudioField label="Preview date"><input type="date" value={eventDate} onChange={event => { setOffering(null); setEventDate(event.target.value); }} /></StudioField>
-    {dateWeek !== undefined && <p>Previewing week {dateWeek} for this date. <button type="button" onClick={() => onEditWeek(dateWeek - 1)}>Edit this week</button></p>}
+    {dateWeek !== undefined && <p>Previewing week {dateWeek} for this date; editor shows week {editorWeek + 1}. {dateWeek !== editorWeek + 1 && <><button type="button" onClick={() => onEditWeek(dateWeek - 1)}>Edit this week</button>{" "}<button type="button" onClick={() => { const next = previewDateForWeek(configuration, eventDate, editorWeek); if (next) { setOffering(null); setEventDate(next); } }}>Preview editor week</button></>}</p>}
     {siteId && eventDate && !dateChoices && <p role="alert">Choose a valid date.</p>}
     {siteId && dateChoices && (!offering || offering.status === "loading" || (offering.status === "ready" && !current)) && <p role="status">Checking site and date…</p>}
     {siteId && dateChoices && offering?.status === "error" && <p role="alert">Site and date rules could not be verified. <button type="button" onClick={() => { setOffering({ status: "loading" }); setOfferingAttempt(value => value + 1); }}>Try again</button></p>}
@@ -92,9 +93,14 @@ function ChoiceSimulation({ configuration, choices, dishes, offering }: {
 }) {
   const [selected, setSelected] = useState<Record<string, string>>({});
   const [quantities, setQuantities] = useState<Record<string, number>>({});
+  const [guests, setGuests] = useState("");
   const groups = configuration.groups.length ? configuration.groups.map(group => ({ id: group.id, name: group.name, presentation: group.presentation || configuration.presentation, dishes: choices.groups.find(slot => slot.groupId === group.id)?.dishes || [] })) : [{ id: "menu", name: "Dishes", presentation: configuration.presentation, dishes: choices.dishes }];
   const supported = (mode: StudioChoicePresentation) => offering.supportedPresentations.includes(mode) && (!configuration.groups.length || mode === "quantities");
   function display(reference: ProductMenuDishReference) { return dishes.get(productMenuDishKey(reference))!; }
+  const refs = groups.flatMap(group => group.dishes);
+  const minimums = catalogueMinimums({ id: offering.itemId, name: offering.name, minimumQuantity: offering.minimumQuantity, minimumGuests: offering.minimumGuests }, { gallagher: false });
+  const allSupported = groups.every(group => supported(group.presentation));
+  const evaluation = evaluatePreviewSelection({ dishIds: refs.map(reference => reference.dishId), presentation: configuration.groups.length ? "quantities" : configuration.presentation, quantities, minimumDish: offering.minimumDishQuantity ?? 1, minimumTotal: minimums.quantity, minimumGuests: minimums.guests, guests, unitPrice: offering.price.amount, supported: allSupported });
   return <div className={styles.choices}>{groups.map(group => {
     if (!group.dishes.length || !supported(group.presentation)) return <fieldset key={group.id} className={styles.group}><legend>{group.name}</legend><p>{!group.dishes.length ? "No dishes for this date." : "These selection rules are not available to preview for this site."}</p></fieldset>;
     const customerDishes = group.dishes.map(reference => { const dish = display(reference); return { id: dish.id, name: dish.name, description: dish.customerDescription }; });
@@ -104,5 +110,8 @@ function ChoiceSimulation({ configuration, choices, dishes, offering }: {
       onDropdownChange: (id, dishId) => { setSelected(previous => ({ ...previous, [id]: dishId })); setQuantities({}); },
       onQuantityChange: (dishId, quantity) => setQuantities(previous => ({ ...previous, [dishId]: quantity })),
       fieldClassName: styles.group, rowClassName: styles.row });
-  })}<p className={styles.note}>Preview selections are temporary and do not create a booking or change availability.</p></div>;
+  })}<StudioField label="Guests"><input type="number" min="1" step="1" value={guests} onChange={event => setGuests(event.target.value)} /></StudioField>
+    <p aria-live="polite">{!allSupported ? "Selection rules are unavailable for this menu." : !evaluation.validSelection ? `Choose dishes with at least ${offering.minimumDishQuantity ?? 1} units per selection.` : evaluation.totalQuantity < minimums.quantity ? `Order at least ${minimums.quantity} units.` : !evaluation.validGuests ? `Enter at least ${minimums.guests} guests.` : "Selection meets the preview minimums."}</p>
+    {evaluation.netTotal !== undefined && <p>Estimated menu total: {new Intl.NumberFormat("en-GB", { style: "currency", currency: offering.price.currency }).format(evaluation.netTotal)} before VAT.</p>}
+    <p className={styles.note}>This standard scenario does not verify customer-specific rules, service time, other booking choices or publication. Preview selections do not create a booking or change availability.</p></div>;
 }

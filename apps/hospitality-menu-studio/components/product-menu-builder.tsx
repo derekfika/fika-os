@@ -253,7 +253,7 @@ function ProductMenuEditor({ draft, productName, dishes, dishCursor, loadingDish
       </StudioPanel>
       <p className={styles.draftNotice}>Changes are draft content only. Review, publication and customer activation remain governed separately.</p>
       {saveError && <p className={styles.error} role="alert">{saveError}</p>}
-    </>} preview={<ProductMenuPreview itemId={draft.itemId} productName={productName} configuration={configuration} library={dishes} onEditWeek={setWeek} />} secondaryLabel="Customer preview" />
+    </>} preview={<ProductMenuPreview itemId={draft.itemId} productName={productName} configuration={configuration} library={dishes} editorWeek={week} onEditWeek={setWeek} />} secondaryLabel="Customer preview" />
     <dialog className={styles.dishDialog} ref={dialog} aria-labelledby="dish-picker-heading">
       <div className={styles.dialogHeader}><div><h2 id="dish-picker-heading">Add dishes</h2><p>Selected dishes will use their current saved revisions.</p></div><button type="button" aria-label="Close dish picker" onClick={() => dialog.current?.close()}>×</button></div>
       <StudioField label="Search dishes"><input type="search" value={dishQuery} onChange={(event) => setDishQuery(event.target.value)} placeholder="Search name or category" /></StudioField>

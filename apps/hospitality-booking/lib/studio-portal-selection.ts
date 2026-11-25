@@ -1,4 +1,5 @@
 import { studioDishChoiceId, type StudioPortalChoices } from "../../shared/hospitality-menu-studio-selection";
+import { validStudioAllocation } from "../../shared/hospitality-menu-studio-choice-rules";
 
 export function supportsStudioPortalChoices(choices: StudioPortalChoices) {
   // Earlier staged packages contain the original flat quantities contract.
@@ -19,17 +20,7 @@ export function supportsStudioPortalChoices(choices: StudioPortalChoices) {
 }
 
 export function validStudioPortalAllocation(studio: StudioPortalChoices, choice: unknown, quantity: number): choice is Record<string, number> {
-  if (!choice || typeof choice !== "object" || Array.isArray(choice) || !supportsStudioPortalChoices(studio)) return false;
-  const available = new Set(studio.dishes.map(dish => dish.id));
-  let total = 0;
-  let selected = 0;
-  for (const [id, count] of Object.entries(choice)) {
-    if (!available.has(id) || typeof count !== "number" || !Number.isSafeInteger(count) || count < 0 ||
-        count > 0 && count < (studio.minimumQuantity ?? 1)) return false;
-    total += count;
-    if (count > 0) selected++;
-  }
-  return selected > 0 && total === quantity && (studio.presentation !== "dropdown" || selected === 1);
+  return supportsStudioPortalChoices(studio) && validStudioAllocation(studio.dishes.map(dish => dish.id), studio.presentation, studio.minimumQuantity ?? 1, choice, quantity);
 }
 
 export function serializeStudioPortalChoice(studio: StudioPortalChoices, choice: unknown, quantity: number) {
