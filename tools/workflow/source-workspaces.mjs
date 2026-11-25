@@ -264,7 +264,7 @@ export function completeSourceWorkspace(name, options, dependencies) {
   requireCanonical();
   validateName(name);
   const completion = withCapacityLock(() => completeUnderLock(name, options, dependencies));
-  return completion.retirement === 'retired' && !localEntry(completion.directory)
+  return !options.preserve && completion.retirement === 'retired' && !localEntry(completion.directory)
     ? { ...completion, promotion: promoteSourceQueue() } : completion;
 }
 
@@ -272,6 +272,7 @@ function completeUnderLock(name, options, { readPrs = pullInventory } = {}) {
   const previous = optionalJson(completionFile(name));
   if (previous?.retirement === 'retired' && previous.owner === options.owner && !localEntry(previous.directory)) return previous;
   if (['removing', 'removed', 'retired'].includes(previous?.retirement) && previous.owner === options.owner) {
+    if (options.preserve) throw Error('Retirement already started. Inspect the preserved evidence with workspace cleanup without --execute');
     const cleanup = cleanupSourceWorkspaces({ execute: true, name, locked: true, readPulls: () => readPrs(previous.branch) });
     return { ...optionalJson(completionFile(name)), cleanup };
   }

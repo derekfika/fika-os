@@ -470,6 +470,10 @@ test('retirement resumes after native Git leaves a dangling own-target dependenc
     assert.equal(f.git('rev-parse', task.branch), task.baseline);
 
     renameSync(extra, path.join(f.base, 'preserved-user-evidence'));
+    assert.throws(() => completeSourceWorkspace(task.name, {
+      owner: task.owner, preserve: true, reason: 'Inspect residue before choosing recovery',
+    }), /Retirement already started/);
+    assert.equal(workspaceInventory().occupied, 1);
     assert.deepEqual(cleanupSourceWorkspaces().ready.map(entry => entry.action), ['finish-retirement']);
     assert.equal(complete().retirement, 'retired');
     assert.equal(existsSync(task.directory), false);
