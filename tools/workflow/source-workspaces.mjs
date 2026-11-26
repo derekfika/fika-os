@@ -335,7 +335,7 @@ function completeUnderLock(name, options, { readPrs = pullInventory } = {}) {
   if (['removing', 'removed', 'retired'].includes(previous?.retirement) && previous.owner === options.owner) {
     if (options.preserve) throw Error('Retirement already started. Inspect the preserved evidence with workspace cleanup without --execute');
     const cleanup = cleanupSourceWorkspaces({ execute: true, name, readPulls: () => readPrs(previous.branch) });
-    return { ...optionalJson(completionFile(name)), cleanup };
+    return { ...(optionalJson(completionFile(name)) || optionalJson(path.join(stateDir(), 'source-archive', `${name}.json`))), cleanup };
   }
   const { branch, directory, head, task, run } = sourceWorkspace(name);
   if (!task || !options.owner || task.owner !== options.owner || task.state === 'creating') throw Error('Use the registered task owner for the completion record');
@@ -365,7 +365,7 @@ function completeUnderLock(name, options, { readPrs = pullInventory } = {}) {
   save(completionFile(name), result);
   if (options.preserve || !merged) return result;
   const cleanup = cleanupSourceWorkspaces({ execute: true, name, readPulls: () => pulls });
-  return { ...optionalJson(completionFile(name)), cleanup };
+  return { ...(optionalJson(completionFile(name)) || optionalJson(path.join(stateDir(), 'source-archive', `${name}.json`))), cleanup };
 }
 
 export function integrateSourceWorkspace(name, prNumber, { readPr = number => ghApi(`repos/${REPO}/pulls/${number}`), validate = successfulValidation,

@@ -211,13 +211,20 @@ export function cleanupSourceWorkspaces({ execute = false, name, inspect = false
   const tasks = recordsByName('source-tasks'), historical = recordsByName('workspaces');
   const recorded = recordsByName('source-completions');
   const archived = archivedCompletions();
+  const trees = registrations();
   for (const [legacyName, record] of historical) {
     if (archived.has(legacyName) || record.state !== 'finished' || !record.finalSha || tasks.has(legacyName) || !workspaceName(legacyName)) continue;
     tasks.set(legacyName, record);
     if (!recorded.has(legacyName)) recorded.set(legacyName, { name: legacyName, directory: record.directory, owner: record.owner,
       branch: record.branch, finalSha: record.finalSha, outcome: 'completed', retirement: 'retained' });
   }
-  const trees = registrations();
+  // Archived tasks normally stay out of startup processing. Reopen only a completed
+  // retirement whose supposedly removed checkout or registration physically reappears.
+  for (const task of stateRecords('source-archive')) {
+    if (!localEntry(task.directory) && !trees.some(tree => samePath(tree.worktree, task.directory))) continue;
+    tasks.set(task.name, task);
+    if (!recorded.has(task.name)) recorded.set(task.name, task);
+  }
   const completions = [...recorded.values()].filter(record => {
     if (record.outcome !== 'completed' || (name && name !== record.name)) return false;
     const task = tasks.get(record.name);
@@ -257,7 +264,7 @@ export function cleanupSourceWorkspaces({ execute = false, name, inspect = false
         if (latest.retirement === 'retired' && !localEntry(task.directory)) return;
         if (latest.outcome !== 'completed' || latest.finalSha !== completion.finalSha) throw Error('Owner completion changed during cleanup');
         const history = optionalJson(path.join(stateDir(), 'workspaces', task.name + '.json'));
-        const currentTask = optionalJson(sourceTaskFile(task.name)) || history;
+        const currentTask = optionalJson(sourceTaskFile(task.name)) || history || optionalJson(path.join(stateDir(), 'source-archive', `${task.name}.json`));
         if (!currentTask) throw Error('Owner record disappeared during cleanup');
         const current = registrations().find(item => samePath(item.worktree, currentTask.directory));
         assertLocalIdentity(currentTask, latest, current, markers(), history, management);

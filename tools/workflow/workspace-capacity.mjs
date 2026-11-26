@@ -95,9 +95,11 @@ export function withCapacityLock(action) {
 export function workspaceInventory({ observedRegistrations } = {}) {
   const management = managedRoot();
   const primary = canonical();
-  const known = stateRecords('source-tasks');
+  const activeTasks = stateRecords('source-tasks');
+  const archivedTasks = stateRecords('source-archive');
+  const known = [...activeTasks, ...archivedTasks.filter(archived => !activeTasks.some(task => task.name === archived.name))];
   const historical = stateRecords('workspaces');
-  const completions = new Map(stateRecords('source-completions').map(record => [record.name, record]));
+  const completions = new Map([...archivedTasks, ...stateRecords('source-completions')].map(record => [record.name, record]));
   const tasks = new Map(known.filter(task => typeof task.directory === 'string').map(task => [pathKey(task.directory), task]));
   const historyByPath = new Map(historical.filter(task => typeof task.directory === 'string').map(task => [pathKey(task.directory), task]));
   const occupied = new Map();
