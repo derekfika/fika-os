@@ -38,13 +38,36 @@ env:
   - variable: FIKA_SNAPSHOT_BUCKET
     value: fika-os-dev-staging-read-packages-europe-west4
     availability: [RUNTIME]
-  # Provision these before enabling generated site menus. The current
-  # file-based OAuth implementation is local-only; hosted generation requires
-  # the established Workspace DWD integration used by the other apps.
-  - variable: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON
-    secret: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON
+  # Drive access is restricted to the established keyless staging identity and
+  # isolated Shared Drive. No Workspace DWD credentials are used in staging.
+  - variable: FIKA_STAGING_DRIVE_ENABLED
+    value: "true"
     availability: [RUNTIME]
-  # Add these non-secret values after manual provisioning:
-  # GOOGLE_DRIVE_OWNER_EMAIL_APP_DELIVERED_IN
-  # GOOGLE_DELIVERED_IN_TEMPLATE_ID
-  # GOOGLE_DELIVERED_IN_OUTPUT_FOLDER_ID
+  - variable: FIKA_STAGING_DRIVE_AUTH_MODE
+    value: shared-drive
+    availability: [RUNTIME]
+  - variable: FIKA_STAGING_DRIVE_SHARED_DRIVE_ID
+    value: 0ALgY_Zkd_k3cUk9PVA
+    availability: [RUNTIME]
+  - variable: FIKA_STAGING_DRIVE_EMAIL
+    value: fika-staging-drive@fika-os-dev.iam.gserviceaccount.com
+    availability: [RUNTIME]
+  - variable: FIKA_STAGING_DRIVE_PERMISSION_ID
+    value: "08677769820296169060"
+    availability: [RUNTIME]
+  - variable: FIKA_STAGING_DRIVE_ROOT_ID
+    value: 1B3oV4dmb3UpwTPRDjJ4B0hES1rRL1M5z
+    availability: [RUNTIME]
+  - variable: FIKA_STAGING_DRIVE_ALLOWED_PERMISSION_IDS
+    value: "13815538875660772973,08677769820296169060"
+    availability: [RUNTIME]
+  - variable: FIKA_STAGING_DRIVE_PRODUCTION_SENTINEL_IDS
+    value: "1uOdUgHQD7O3Op6DzgyslXG3-_aeYRm08,1go9l-3iDEY_g22C_EFsl0GzVIpX9tSyx,1-2Uo7Z3pYNlXvlIBby7qYGGZMtG2ABag,1b1hSZHJMcwCXXwG3wETO9sVcSayCfxVd"
+    availability: [RUNTIME]
+  # Approved isolated staging child folder. Generation remains closed until an
+  # approved, compatible site template is provisioned beneath the staging root.
+  - variable: GOOGLE_DELIVERED_IN_OUTPUT_FOLDER_ID
+    value: 1IZobI11zs1Y_n5ErktjViMZfEq-yXf9X
+    availability: [RUNTIME]
+  # Site template IDs are intentionally not set until reviewed staging copies
+  # are available; production source IDs must not be used directly.

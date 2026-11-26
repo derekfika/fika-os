@@ -1,4 +1,4 @@
-import { MenuArtifactError, allergensFromStates, menuSiteKeyForOploc, type NormalizedMenu } from "@fika/server-shared/menu-artifact";
+import { MenuArtifactError, allergensFromStates, menuSiteKeyForOploc, resolveMenuTemplate, type MenuTemplate, type NormalizedMenu } from "@fika/server-shared/menu-artifact";
 import type { ProjectedDay, Site } from "./projection";
 import { groupSiteMenuEntries, siteMenuFileName } from "./site-menu";
 
@@ -6,6 +6,13 @@ type CpuLineage = { releaseId?: string; releaseVersion?: string; contentHash?: s
 
 /** Site key used to pick a shared menu template, or undefined when the site has none. */
 export function deliveredInMenuSiteKey(site: Site) { return menuSiteKeyForOploc(site.oplocId); }
+
+/** Delivered-In must use an explicitly approved site template, never the shared generic menu fallback. */
+export function resolveDeliveredInMenuTemplate(menu: Pick<NormalizedMenu, "siteKey" | "oplocId">, env: Record<string, string | undefined> = process.env): MenuTemplate {
+  const key = menu.siteKey === "mnk" ? "GOOGLE_MENU_TEMPLATE_ID_MNK" : menu.siteKey === "angel-court" ? "GOOGLE_MENU_TEMPLATE_ID_ANGEL_COURT" : undefined;
+  if (!key || !env[key]?.trim()) throw new MenuArtifactError("MENU_TEMPLATE_NOT_CONFIGURED", `The approved ${menu.siteKey} Delivered-In template is not configured. Set ${key || "the site-specific template setting"}.`, 409);
+  return resolveMenuTemplate({ siteKey: menu.siteKey, oplocId: menu.oplocId, templateIdOverride: env[key] }, env);
+}
 
 /**
  * Delivered-In projected day -> normalized menu.

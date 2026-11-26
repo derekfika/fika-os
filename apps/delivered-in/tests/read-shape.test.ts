@@ -199,7 +199,7 @@ test("hosted migration is dry-run by default and chunks writes", async () => {
   assert.match(migration, /Invalid migration source/);
 });
 
-test("Delivered-In Google generation reuses DWD in hosted mode and local OAuth only locally", async () => {
+test("Delivered-In Google generation resolves the governed Drive owner", async () => {
   const google = await readFile(new URL("../lib/google-site-menu.ts", import.meta.url), "utf8");
   const siteOwner = await readFile(new URL("../lib/site-menu-drive-config.ts", import.meta.url), "utf8");
   const owner = await readFile(new URL("../../../packages/server-shared/src/drive-owner.ts", import.meta.url), "utf8");
@@ -211,6 +211,16 @@ test("Delivered-In Google generation reuses DWD in hosted mode and local OAuth o
   assert.doesNotMatch(google, /process\.env\.GOOGLE_OAUTH_CLIENT_FILE/);
   assert.match(google, /fikaDeliveryId/);
   assert.match(google, /fikaMaterializationStatus/);
+});
+
+test("Delivered-In staging Drive is isolated and does not mount Workspace DWD", async () => {
+  const staging = await readFile(new URL("../apphosting.staging.yaml", import.meta.url), "utf8");
+  assert.match(staging, /FIKA_STAGING_DRIVE_ENABLED[\s\S]*?value: "true"/);
+  assert.match(staging, /FIKA_STAGING_DRIVE_AUTH_MODE[\s\S]*?value: shared-drive/);
+  assert.match(staging, /FIKA_STAGING_DRIVE_ROOT_ID[\s\S]*?1B3oV4dmb3UpwTPRDjJ4B0hES1rRL1M5z/);
+  assert.match(staging, /GOOGLE_DELIVERED_IN_OUTPUT_FOLDER_ID[\s\S]*?1IZobI11zs1Y_n5ErktjViMZfEq-yXf9X/);
+  assert.doesNotMatch(staging, /^\s*- variable: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON\s*$/m);
+  assert.match(staging, /Site template IDs are intentionally not set/);
 });
 
 test("Delivered-In CPU release application has a durable replay receipt and stable delivery identity", async () => {
