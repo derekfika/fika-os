@@ -17,6 +17,7 @@ import {
 import { londonDate, type StudioActor } from "./contract";
 import { sameReviewToken, type DishSafety } from "./publication";
 import { StudioProblem } from "./problem";
+import { readStudioDocument, readStudioDocuments } from "./data-trace";
 
 type ReviewRequest = { itemId: string; version: number; effectiveDate: string };
 type PublishRequest = ReviewRequest & { reviewToken: string; confirmed: true };
@@ -58,9 +59,9 @@ export class ProductMenuPublicationStore {
     const { review, publication, previous, draft } = await this.candidate(request, evidence);
     if (!publication || !sameReviewToken(request.reviewToken, review.reviewToken)) throw changed();
     const record = await this.drafts.firestore.runTransaction(async transaction => {
-      const [receiptSnapshot, draftSnapshot, latestSnapshot] = await transaction.getAll(
+      const [receiptSnapshot, draftSnapshot, latestSnapshot] = await readStudioDocuments("product-publication.publish", transaction.getAll(
         receipt, head, head.collection("productPublicationState").doc("latest"),
-      );
+      ), true);
       if (receiptSnapshot.exists) {
         return this.receiptPackage(transaction, head, receiptSnapshot, request, evidence.actor.id);
       }
@@ -161,9 +162,9 @@ export class ProductMenuPublicationStore {
   private async snapshot(request: ReviewRequest): Promise<Snapshot> {
     const ref = this.drafts.doc(request.itemId);
     return this.drafts.firestore.runTransaction(async transaction => {
-      const [current, archive, latest] = await transaction.getAll(
+      const [current, archive, latest] = await readStudioDocuments("product-publication.review-snapshot", transaction.getAll(
         ref, ref.collection("revisions").doc(String(request.version)), ref.collection("productPublicationState").doc("latest"),
-      );
+      ), true);
       if (!current.exists) throw missing();
       const draft = this.decodeDraft(current.data(), request.itemId);
       if (draft.version !== request.version) throw changed();
@@ -178,8 +179,8 @@ export class ProductMenuPublicationStore {
       const references = studioProductPublicationReferences(draft.configuration);
       for (let offset = 0; offset < references.length; offset += 50) {
         const batch = references.slice(offset, offset + 50);
-        const records = await transaction.getAll(...batch.map(({ dishId, revision }) =>
-          this.dishes.doc(dishId).collection("revisions").doc(String(revision))));
+        const records = await readStudioDocuments("product-publication.dish-revisions", transaction.getAll(...batch.map(({ dishId, revision }) =>
+          this.dishes.doc(dishId).collection("revisions").doc(String(revision)))), true);
         for (const [i, record] of records.entries()) {
           const saved = record.data();
           if (!saved) { dishes.push(null); continue; }
@@ -205,7 +206,7 @@ export class ProductMenuPublicationStore {
 
   private async existingReceipt(head: DocumentReference, receipt: DocumentReference, request: PublishRequest, actorId: string) {
     return this.drafts.firestore.runTransaction(async transaction => {
-      const snapshot = await transaction.get(receipt);
+      const snapshot = await readStudioDocument("product-publication.receipt", transaction.get(receipt), true);
       return snapshot.exists ? this.receiptPackage(transaction, head, snapshot, request, actorId) : null;
     }, { readOnly: true });
   }
@@ -222,7 +223,7 @@ export class ProductMenuPublicationStore {
 
   private async readPackage(transaction: Transaction, head: DocumentReference, id: unknown): Promise<Package> {
     if (typeof id !== "string" || !/^publication-[a-f0-9]{32}-v[1-9][0-9]*$/.test(id)) throw integrity();
-    const record = (await transaction.get(head.collection("productPublicationPackages").doc(id))).data();
+    const record = (await readStudioDocument("product-publication.package", transaction.get(head.collection("productPublicationPackages").doc(id)), true)).data();
     const manifest = studioPublicationDescriptor.safeParse(record?.manifest);
     if (!manifest.success || manifest.data.id !== id || manifest.data.menuId !== studioProductMenuId(head.id) ||
         typeof record?.body !== "string" || !decodeStudioProductPublication(record.body, manifest.data, this.projectId)) throw integrity();
@@ -231,12 +232,12 @@ export class ProductMenuPublicationStore {
 
   private async deliver(head: DocumentReference, record: Package, deliver: (record: Package) => Promise<void>) {
     const outbox = head.collection("productPublicationDelivery").doc(record.manifest.id);
-    const current = (await outbox.get()).data();
+    const current = (await readStudioDocument("product-publication.outbox", outbox.get())).data();
     if (current?.contentHash !== record.manifest.contentHash || (current.status !== "pending" && current.status !== "delivered")) throw integrity();
     if (current.status === "pending") {
       await deliver(record);
       await this.drafts.firestore.runTransaction(async transaction => {
-        const checked = (await transaction.get(outbox)).data();
+        const checked = (await readStudioDocument("product-publication.outbox-confirm", transaction.get(outbox), true)).data();
         if (checked?.contentHash !== record.manifest.contentHash || (checked.status !== "pending" && checked.status !== "delivered")) throw integrity();
         if (checked.status === "pending") transaction.update(outbox, { status: "delivered", deliveredAt: this.now().toISOString() });
       });

@@ -4,9 +4,12 @@ import { errorResponse } from "@/lib/api";
 import { requireActor } from "@/lib/auth";
 import { assertPermission } from "@/lib/authmod";
 import { assertSameOrigin } from "@/lib/csrf";
+import { db } from "@/lib/firebase-admin";
 import { runBulkCatalogueCreate, runBulkCatalogueUpdate, runCatalogueCommand, type BulkCreateSpec, type BulkSpec, type CatalogueCommand } from "@/lib/hospitality-catalogue-admin";
 import { loadCataloguePayload, loadCatalogueRows } from "@/lib/hospitality-catalogue-loader";
 import { republishAfterMutation } from "@/lib/hospitality-catalogue-package";
+import { traceHospitalityCatalogue } from "@/lib/hospitality-catalogue-trace";
+import { readCatalogueAdminVersion } from "@/lib/hospitality-catalogue-version";
 import { SiteConfiguration } from "@/lib/schemas";
 import { ROUTING_CHOICES } from "@/lib/hospitality-catalogue-types";
 import { attachServiceLayout, loadStoredServiceLayoutView } from "@/lib/hospitality-service-layout";
@@ -46,16 +49,32 @@ const BulkCommand = z.object({
 
 const noStore = { headers: { "Cache-Control": "no-store, max-age=0" } };
 
+const path = "/api/hospitality-catalogue";
+
 export async function GET(request: NextRequest) {
-  try {
-    const actor = await requireActor(request);
-    assertPermission(actor, "canonical.view");
-    // Admin read of the stored layout documents (versions + vocabulary). It never publishes or rebuilds the catalogue package.
-    return NextResponse.json(await attachServiceLayout(await loadCataloguePayload(actor)), noStore);
-  } catch (error) { return errorResponse(error); }
+  return traceHospitalityCatalogue(request, "admin.read", path, async () => {
+    try {
+      const actor = await requireActor(request);
+      assertPermission(actor, "canonical.view");
+      // The stored layout includes editor versions and the category vocabulary.
+      const before = request.headers.get("x-fika-catalogue-versioned") === "1"
+        ? await readCatalogueAdminVersion(db) : null;
+      const payload = await attachServiceLayout(await loadCataloguePayload(actor));
+      if (!before) return NextResponse.json(payload, noStore);
+      const after = await readCatalogueAdminVersion(db);
+      if (before.version !== after.version) {
+        return NextResponse.json({ error: { code: "CATALOGUE_SNAPSHOT_CHANGED" } }, { ...noStore, status: 409 });
+      }
+      return NextResponse.json(payload, { headers: { ...noStore.headers, "X-Fika-Catalogue-Version": after.version } });
+    } catch (error) { return errorResponse(error); }
+  });
 }
 
 export async function POST(request: NextRequest) {
+  return traceHospitalityCatalogue(request, "admin.mutate", path, () => mutateCatalogue(request));
+}
+
+async function mutateCatalogue(request: NextRequest) {
   try {
     assertSameOrigin(request);
     const actor = await requireActor(request);

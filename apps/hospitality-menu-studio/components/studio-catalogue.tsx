@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isServiceId } from "@fika/server-shared/hospitality-service-layout";
 import { CatalogueProductEditor } from "./catalogue-product-editor";
 import { CatalogueBulk } from "./catalogue-bulk";
@@ -15,9 +15,7 @@ import { CatalogueServiceEditor } from "./catalogue-service-editor";
 import { confirmsSiteCommand } from "./catalogue-site-operation";
 import { productReceipt, type ProductCommand } from "./catalogue-product-model";
 import {
-  applyCatalogueReceipt,
   CatalogueCommandError,
-  isCataloguePayload,
   requestCatalogueCommand,
 } from "./catalogue-state";
 import type {
@@ -27,6 +25,8 @@ import type {
   CataloguePrice,
 } from "./catalogue-wire";
 import { Button, PageHeading, Pill } from "./studio-ui";
+import { indexAdminCatalogue, normalizeCatalogueSearch } from "./studio-catalogue-index";
+import { useStudioRead, useStudioReads } from "./studio-reads";
 import styles from "./studio.module.css";
 
 const pounds = new Intl.NumberFormat("en-GB", {
@@ -52,20 +52,22 @@ export function CatalogueView({
   area,
   initialItemId,
   back,
+  loadSectionLinks,
   sectionsFor,
   openSection,
 }: {
   area: "products" | "sites";
   initialItemId?: string;
   back?: () => void;
+  loadSectionLinks: () => Promise<void>;
   sectionsFor: (itemId: string) => StudioSectionLink[];
   openSection: (menuId: string, sectionId: string) => void;
 }) {
-  const [data, setData] = useState<CataloguePayload | null>(null);
-  const lastSnapshot = useRef<CataloguePayload | null>(null);
-  if (data) lastSnapshot.current = data;
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
+  const reads = useStudioReads();
+  const admin = useStudioRead(reads.admin);
+  const data = admin.value;
+  const error = admin.error?.message;
+  const loading = admin.status === "idle" || admin.status === "loading";
   const [writing, setWriting] = useState(false);
   const [notice, setNotice] = useState<CatalogueCommandResult | null>(null);
   const [editor, setEditor] = useState<"create" | "edit" | null>(null);
@@ -84,7 +86,6 @@ export function CatalogueView({
   const [verification, setVerification] = useState("");
   const [checking, setChecking] = useState(false);
   const pendingWrite = useRef(false);
-  const pendingRead = useRef<AbortController | null>(null);
   const catalogueRevision = useRef(0);
   const selection = useRef("");
   selection.current = JSON.stringify([itemId, siteId, serviceId, eventDate]);
@@ -95,57 +96,28 @@ export function CatalogueView({
         throw new Error("Wait for the catalogue change to finish.");
       return;
     }
-    pendingRead.current?.abort();
-    const controller = new AbortController();
-    pendingRead.current = controller;
-    setLoading(true);
-    setError("");
-    setData(null);
     setNotice(null);
     setVerification("");
     catalogueRevision.current++;
     try {
-      const response = await fetch("/api/catalogue", {
-        cache: "no-store",
-        signal: controller.signal,
-      });
-      if (!response.ok)
-        throw new Error(
-          "Catalogue access is unavailable. Check your access or try again.",
-        );
-      const value: unknown = await response.json();
-      if (!isCataloguePayload(value))
-        throw new Error("Catalogue information is unavailable. Try again.");
-      if (controller.signal.aborted) {
-        if (requireSuccess)
-          throw new Error("This catalogue refresh was replaced.");
-      } else setData(value);
+      await reads.loadAdmin("full");
+      void reads.loadPublic(true).catch(() => undefined);
     } catch (failure) {
-      if (!controller.signal.aborted) {
-        setError(
-          (failure as Error).message || "Catalogue information is unavailable.",
-        );
-      }
       if (requireSuccess) throw failure;
-    } finally {
-      if (pendingRead.current === controller) {
-        pendingRead.current = null;
-        if (!controller.signal.aborted) setLoading(false);
-      }
     }
-  }, []);
+  }, [reads]);
 
-  useEffect(() => {
-    void reload();
-    return () => pendingRead.current?.abort();
-  }, [reload]);
+  useEffect(() => reads.showAdmin(), [reads]);
 
   useEffect(() => {
     setItemId(initialItemId || "");
   }, [initialItemId]);
   useEffect(() => {
     setVerification("");
-  }, [itemId, siteId, serviceId, eventDate]);
+  }, [itemId, siteId, serviceId, eventDate, admin]);
+  useEffect(() => {
+    if (itemId) void loadSectionLinks();
+  }, [itemId, loadSectionLinks]);
 
   async function send(
     command: CatalogueCommand,
@@ -158,7 +130,7 @@ export function CatalogueView({
         403,
       );
     }
-    if (pendingWrite.current || pendingRead.current) {
+    if (pendingWrite.current || loading) {
       throw new CatalogueCommandError(
         "Wait for the current catalogue request to finish.",
         400,
@@ -168,19 +140,23 @@ export function CatalogueView({
     setWriting(true);
     setNotice(null);
     try {
-      const receipt = await requestCatalogueCommand(command);
+      await reads.loadPublic().catch(() => undefined);
+      const receipt = await requestCatalogueCommand(command, reads.fetch);
       if (confirm && !confirm(receipt)) {
         throw new CatalogueCommandError(
           "Hub did not confirm the requested catalogue change.",
         );
       }
-      setData((previous) =>
-        previous ? applyCatalogueReceipt(previous, receipt) : previous,
-      );
+      reads.catalogueChanged(receipt, admin);
       if (announce) setNotice(receipt);
       setVerification("");
       catalogueRevision.current++;
       return receipt;
+    } catch (error) {
+      if (error instanceof CatalogueCommandError && (!error.status || error.status === 409)) {
+        reads.catalogueChanged();
+      }
+      throw error;
     } finally {
       pendingWrite.current = false;
       setWriting(false);
@@ -207,17 +183,18 @@ export function CatalogueView({
     const revision = catalogueRevision.current;
     const stillCurrent = () =>
       selection.current === requestedSelection &&
-      catalogueRevision.current === revision;
+      catalogueRevision.current === revision && reads.admin.snapshot() === admin;
     setChecking(true);
     setVerification("");
     try {
+      if (notice?.package === "stale") throw new Error("The booking catalogue is awaiting refresh.");
       const query = new URLSearchParams({
         itemId,
         siteId,
         serviceId,
         eventDate,
       });
-      const response = await fetch("/api/catalogue/availability?" + query, {
+      const response = await reads.fetch("/api/catalogue/availability?" + query, {
         cache: "no-store",
       });
       if (!response.ok) throw new Error();
@@ -249,17 +226,23 @@ export function CatalogueView({
     }
   }
 
-  const selected = data?.rows.find((row) => row.itemId === itemId);
-  const sites = data?.oplocs.filter((site) => site.active) ?? [];
+  const index = useMemo(() => indexAdminCatalogue(data), [data]);
+  const selected = index.rowsById.get(itemId);
+  const { sites, categories, siteLabels } = index;
   const companyRules = data?.serviceLayout?.company.services;
-  const query = search.trim().toLocaleLowerCase("en-GB");
-  const categories = [...new Set((data?.rows ?? []).map((row) => row.category).filter(Boolean))].sort((a, b) => a.localeCompare(b, "en-GB"));
-  const matchingRows = [...(data?.rows ?? [])].filter((row) =>
-    (row.name + " " + row.category + " " + words(row.status)).toLocaleLowerCase("en-GB").includes(query) &&
-    (categoryFilter === "all" || row.category === categoryFilter) &&
-    (availabilityFilter === "all" || row.availableAt.includes(availabilityFilter)) &&
-    (statusFilter === "all" || row.status === statusFilter),
-  ).sort((left, right) => {
+  const matchingRows = useMemo(() => {
+    const query = normalizeCatalogueSearch(search);
+    const candidates = [
+      categoryFilter === "all" ? index.rows : index.byCategory.get(categoryFilter) ?? [],
+      availabilityFilter === "all" ? index.rows : index.bySite.get(availabilityFilter) ?? [],
+      statusFilter === "all" ? index.rows : index.byStatus.get(statusFilter) ?? [],
+    ].sort((first, second) => first.length - second.length)[0];
+    return candidates.filter((row) =>
+      index.searchable.get(row.itemId)!.includes(query) &&
+      (categoryFilter === "all" || row.category === categoryFilter) &&
+      (availabilityFilter === "all" || row.availableAt.includes(availabilityFilter)) &&
+      (statusFilter === "all" || row.status === statusFilter),
+    ).sort((left, right) => {
     const leftMetric = sortKey === "price" ? left.defaultPrice?.amount : sortKey === "vat" ? left.defaultPrice?.vatRate : undefined;
     const rightMetric = sortKey === "price" ? right.defaultPrice?.amount : sortKey === "vat" ? right.defaultPrice?.vatRate : undefined;
     if ((sortKey === "price" || sortKey === "vat") && (leftMetric === undefined || rightMetric === undefined) && leftMetric !== rightMetric) return leftMetric === undefined ? 1 : -1;
@@ -270,11 +253,11 @@ export function CatalogueView({
       : sortKey === "sites" ? left.availableAt.length - right.availableAt.length
       : left.status.localeCompare(right.status, "en-GB");
     return (sortDirection === "asc" ? compare : -compare) || left.itemId.localeCompare(right.itemId, "en-GB");
-  });
+    });
+  }, [index, search, categoryFilter, availabilityFilter, statusFilter, sortKey, sortDirection]);
   const pageCount = Math.max(1, Math.ceil(matchingRows.length / pageSize));
   const currentPage = Math.min(pageIndex, pageCount - 1);
   const pageRows = matchingRows.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
-  const siteLabels = new Map(sites.map((site) => [site.oplocId, site.label]));
   const availabilityLabel = (row: CataloguePayload["rows"][number]) => {
     const activeIds = sites.map((site) => site.oplocId);
     if (activeIds.length && activeIds.every((id) => row.availableAt.includes(id))) return `All active sites (${activeIds.length})`;
@@ -435,13 +418,13 @@ export function CatalogueView({
           )}
         </div>
       )}
-      {lastSnapshot.current && (
+      {data && (
         <details
           className={styles.disclosure}
           hidden={area !== "products" || !data}
         >
           <summary>Bulk catalogue operations</summary>
-          <CatalogueBulk payload={data ?? lastSnapshot.current} send={send} />
+          <CatalogueBulk payload={data} send={send} />
         </details>
       )}
       {area === "products" &&

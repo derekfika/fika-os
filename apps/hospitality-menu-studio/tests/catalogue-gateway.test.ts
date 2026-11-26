@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
+import { gzipSync } from "node:zlib";
 import {
   CATALOGUE_PACKAGE_CONTRACT,
   type CataloguePackage,
 } from "@fika/server-shared/hospitality-effective-offering";
 import { effectiveServiceLayout } from "@fika/server-shared/hospitality-service-layout";
-import { catalogueEligibility, catalogueGateway } from "../lib/catalogue-gateway";
+import { catalogueEligibility, catalogueGateway, publicCatalogueResponse } from "../lib/catalogue-gateway";
+import { publicCataloguePath, readStudioCatalogue } from "../lib/catalogue";
+import { studioReadScope } from "../lib/auth";
 import { studioRuntime } from "../lib/runtime";
 
 const runtime = studioRuntime({
@@ -74,6 +78,81 @@ test("reads require a real Studio session and expose only the intersection of av
       assert.equal(init?.cache, "no-store");
     }
   }
+});
+
+test("the public package route preserves exact bytes and fences a session or permission change before fetching Hub data", async () => {
+  const hash = "a".repeat(64);
+  const bytes = Uint8Array.of(31, 139, 8, 0, 93);
+  const actor = { id: "fixture-operator", name: "Studio reviewer", canManage: runtime.writes, canPublish: false };
+  const scope = studioReadScope(actor, cookie, runtime);
+  const calls: string[] = [];
+  const fetchHub: typeof fetch = async (url, init) => {
+    const path = new URL(String(url)).pathname;
+    calls.push(path);
+    assert.equal(new Headers(init?.headers).get("authorization"), null);
+    if (path === "/api/hospitality-studio-access") return Response.json({
+      permissions: { View: true, Manage: true }, principal: { id: actor.id },
+    });
+    assert.equal(path, "/api/hospitality-catalogue/public-package/" + hash);
+    return new Response(bytes, { headers: { "Content-Type": "application/octet-stream" } });
+  };
+  const incoming = request("GET", undefined, { "x-fika-studio-scope": scope });
+  const allowed = await publicCatalogueResponse(incoming, cookie, runtime, hash, fetchHub);
+  assert.equal(allowed.status, 200);
+  assert.deepEqual(new Uint8Array(await allowed.arrayBuffer()), bytes);
+  const switched = await publicCatalogueResponse(incoming, "different session cookie", runtime, hash, fetchHub);
+  assert.equal(switched.status, 403);
+  assert.equal((await switched.json()).error.code, "STUDIO_SCOPE_CHANGED");
+  assert.equal(calls.filter(call => call.endsWith(hash)).length, 1);
+});
+
+test("the admin version proxy validates Hub's head and intersects current capability", async () => {
+  const fetchHub: typeof fetch = async input => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/api/hospitality-studio-access") return Response.json({
+      permissions: { View: true, Manage: false }, principal: { id: "fixture-operator" },
+    });
+    assert.equal(path, "/api/hospitality-catalogue/version");
+    return Response.json({ schemaVersion: 1, version: "head-1", canManage: true });
+  };
+  const response = await catalogueGateway(runtime, fetchHub).version(request(), cookie);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { schemaVersion: 1, version: "head-1", canManage: false });
+});
+
+test("concurrent verified reads and the authenticated browser share the same upstream gzip download", async () => {
+  const text = JSON.stringify(catalogue);
+  const bytes = Uint8Array.from(gzipSync(text));
+  const hash = createHash("sha256").update(bytes).digest("hex");
+  const manifest = {
+    dataset: "hospitality-booking/catalogue", packageVersion: 1, schemaVersion: 2, contractVersion: CATALOGUE_PACKAGE_CONTRACT,
+    contentHash: hash, compressedSize: bytes.length, uncompressedSize: Buffer.byteLength(text),
+    compression: "gzip", objectName: "fixtures/" + hash, recordCount: 2, generatedAt: "2026-11-26T07:00:00Z",
+  };
+  let downloads = 0;
+  let cataloguePermission = true;
+  const upstream: typeof fetch = async input => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/api/hospitality-studio-access") return Response.json({
+      permissions: { View: true, Manage: true }, principal: { id: "fixture-operator" },
+    });
+    if (!cataloguePermission) return new Response(null, { status: 403 });
+    if (path === publicCataloguePath) return Response.json(manifest);
+    assert.equal(path, publicCataloguePath + "/" + hash);
+    downloads++;
+    return new Response(bytes);
+  };
+  await Promise.all([
+    readStudioCatalogue(runtime.hub, session, upstream),
+    readStudioCatalogue(runtime.hub, session, upstream),
+  ]);
+  const allowed = await publicCatalogueResponse(request(), cookie, runtime, hash, upstream);
+  assert.equal(allowed.status, 200);
+  assert.deepEqual(new Uint8Array(await allowed.arrayBuffer()), bytes);
+  cataloguePermission = false;
+  const denied = await publicCatalogueResponse(request(), cookie, runtime, hash, upstream);
+  assert.equal(denied.status, 403);
+  assert.equal(downloads, 1);
 });
 
 test("writes fail closed on browser origin, host, media type, command scope and Studio read-only access", async () => {

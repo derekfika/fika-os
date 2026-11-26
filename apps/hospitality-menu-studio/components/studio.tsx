@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   calendarDay,
   type Dish,
@@ -13,10 +13,8 @@ import {
 } from "../lib/contract";
 import { kitchenQuantities } from "../lib/review";
 import { CatalogueView } from "./studio-catalogue";
-import type { CatalogueRow } from "./catalogue-wire";
 import { linkedStudioSections } from "./catalogue-governance-model";
 import ProductMenuBuilder from "./product-menu-builder";
-import type { ProductMenuSummary } from "./menu-builder-home";
 import { StudioShell as FikaStudioShell, StudioStatus, type StudioDestination } from "./studio-design-system";
 import { useAssignedDishes } from "./use-assigned-dishes";
 import { MenuSetup, type NewMenuDetails } from "./menu-setup";
@@ -41,7 +39,8 @@ import {
   title,
   type Page,
 } from "./studio-ui";
-import { request, useDraft } from "./use-studio-draft";
+import { useDraft, useStudioRequest } from "./use-studio-draft";
+import { useStudioRead, useStudioReads } from "./studio-reads";
 import { StudioRecovery } from "./studio-recovery";
 import { acknowledgedPublication, type PublicationReceipt } from "./studio-review-model";
 import {
@@ -63,31 +62,39 @@ type Recovery = {
 export default function Studio({
   actor,
   demo,
+  initialPage,
   safetyAvailable,
   publishedKitchenAvailable,
   checkerOrigin,
 }: {
   actor: StudioActor;
   demo: boolean;
+  initialPage: Page;
   safetyAvailable: boolean;
   publishedKitchenAvailable: boolean;
   checkerOrigin?: string;
 }) {
+  const reads = useStudioReads();
+  const request = useStudioRequest();
+  const publicCatalogue = useStudioRead(reads.catalogue);
+  const catalogueIdentity = reads.publicIdentity();
+  const builderSummaries = useStudioRead(reads.summaries);
+  const dishLibrary = useStudioRead(reads.dishes);
   const [catalogueItemId, setCatalogueItemId] = useState("");
   const [catalogueReturn, setCatalogueReturn] = useState(false);
-  const [catalogueArea, setCatalogueArea] = useState<"products" | "sites" | null>(null);
-  const [page, setPage] = useState<Page>("home");
-  const [builderProducts, setBuilderProducts] = useState<CatalogueRow[]>([]);
-  const [builderSummaries, setBuilderSummaries] = useState<ProductMenuSummary[]>([]);
+  const [catalogueArea, setCatalogueArea] = useState<"products" | "sites" | null>(initialPage === "products" ? "products" : null);
+  const [page, setPage] = useState<Page>(initialPage);
   const [builderActiveProductId, setBuilderActiveProductId] = useState<string | null>(null);
   const [builderDirty, setBuilderDirty] = useState(false);
   const [requestedBuilderProductId, setRequestedBuilderProductId] = useState<string | null>(null);
   const [requestedBuilderDestination, setRequestedBuilderDestination] = useState<StudioDestination | null>(null);
   const [menus, setMenus] = useState<Menu[]>([]);
-  const [dishes, setDishes] = useState<Dish[]>([]);
+  const dishes = dishLibrary.value?.items ?? [];
   const [menuCursor, setMenuCursor] = useState<string | null>(null);
-  const [dishCursor, setDishCursor] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const dishCursor = dishLibrary.value?.nextCursor ?? null;
+  const [loading, setLoading] = useState(false);
+  const menuRequest = useRef<Promise<void> | null>(null);
+  const menusLoaded = useRef(false);
   const [error, setError] = useState("");
   const [sectionId, setSectionId] = useState("");
   const [newSectionId, setNewSectionId] = useState("");
@@ -112,12 +119,11 @@ export default function Studio({
     week: "",
     dishId: "",
   });
-  const [sites, setSites] = useState<{ id: string; name: string }[]>([]);
   const [siteId, setSiteId] = useState("");
-  const [catalogueChoices, setCatalogueChoices] = useState<CatalogueChoices>({
-    state: "unchecked",
-  });
-  const checkingCatalogue = useRef(false);
+  const sites = publicCatalogue.value?.sites ?? [];
+  const catalogueChoices: CatalogueChoices = publicCatalogue.status === "ready"
+    ? { state: "loaded", items: publicCatalogue.value!.products.map(({ itemId: id, name, category }) => ({ id, name, category })) }
+    : { state: publicCatalogue.status === "error" ? "unavailable" : publicCatalogue.status === "idle" ? "unchecked" : "loading" };
   const [sitePreview, setSitePreview] = useState<SitePreview | null>(null);
   const [previewMessage, setPreviewMessage] = useState("");
   const [mappingSectionId, setMappingSectionId] = useState("");
@@ -133,24 +139,15 @@ export default function Studio({
     });
   }
   const menuDraft = useDraft<Menu>(actor, "menu", null, rememberMenu);
-  const dishDraft = useDraft<Dish>(actor, "dish", null, (saved) =>
-    setDishes((list) => [
-      saved,
-      ...list.filter((item) => item.id !== saved.id),
-    ]),
-  );
-  const handleBuilderProductsLoaded = useCallback((products: CatalogueRow[], summaries: ProductMenuSummary[]) => {
-    setBuilderProducts(products);
-    setBuilderSummaries(summaries);
-  }, []);
+  const dishDraft = useDraft<Dish>(actor, "dish", null, reads.rememberDish);
   const handleBuilderActiveProduct = useCallback((itemId: string | null) => setBuilderActiveProductId(itemId), []);
   const handleBuilderDirtyChange = useCallback((dirty: boolean) => setBuilderDirty(dirty), []);
   const handleBuilderProductRequest = useCallback(() => setRequestedBuilderProductId(null), []);
   const handleBuilderNavigation = useCallback(() => setRequestedBuilderDestination(null), []);
-  const builderLinks = builderSummaries.flatMap((summary) => {
-    const product = builderProducts.find((item) => item.itemId === summary.itemId);
-    return product ? [{ id: summary.itemId, name: product.name, status: "Draft", summary: summary.kind === "fixed" ? `Fixed · ${summary.dishCount ?? 0} dishes` : `${summary.cycleWeeks}-week rotation` }] : [];
-  });
+  const builderLinks = useMemo(() => (builderSummaries.value ?? []).flatMap((summary) => {
+    const product = publicCatalogue.value?.productsById.get(summary.itemId);
+    return product ? [{ id: summary.itemId, name: product.name, status: summary.publicationStatus === "published" ? "Published" : "Draft", summary: summary.kind === "fixed" ? `Fixed · ${summary.dishCount ?? 0} dishes` : `${summary.cycleWeeks}-week rotation` }] : [];
+  }), [builderSummaries.value, publicCatalogue.value]);
   const activeDestination: StudioDestination = page === "dishes" || page === "kitchen" ? "library" : page === "products" || page === "sites" ? "catalogue" : "builder";
   const navigateDestination = useCallback((destination: StudioDestination) => {
     if (page === "home") {
@@ -174,7 +171,7 @@ export default function Studio({
   const publicationAllowed = actor.canPublish &&
     (!actor.publicationPilot || actor.publicationPilot.menuId === menu?.id);
   const section = menu?.sections.find((item) => item.id === sectionId);
-  const assignedDishes = useAssignedDishes(section ? sectionDishIds(section) : [], dishes);
+  const assignedDishes = useAssignedDishes(section && (page === "menus" || page === "preview" || page === "review" || page === "dishes") ? sectionDishIds(section) : [], dishes);
   const sectionDishes = [...dishes, ...assignedDishes.items];
   const unresolvedDishLabel = assignedDishes.loading
     ? "Loading dish name..."
@@ -226,33 +223,30 @@ export default function Studio({
     }
   }
 
-  const load = useCallback(async () => {
+  const loadMenus = useCallback(() => {
+    if (menusLoaded.current) return Promise.resolve();
+    if (menuRequest.current) return menuRequest.current;
     setLoading(true);
     setError("");
-    try {
-      const [menuPage, dishPage] = await Promise.all([
-        request(undefined, "?list=menus"),
-        request(undefined, "?list=dishes"),
-      ]);
-      setMenus(menuPage.items);
-      setDishes(dishPage.items);
+    const pending = request(undefined, "?list=menus").then(menuPage => {
+      setMenus(current => [...new Map([...menuPage.items, ...current].map((item: Menu) => [item.id, item])).values()]);
       setMenuCursor(menuPage.nextCursor);
-      setDishCursor(dishPage.nextCursor);
-    } catch (failure) {
+      menusLoaded.current = true;
+    }).catch(failure => {
       setError((failure as Error).message);
-    } finally {
+    }).finally(() => {
+      menuRequest.current = null;
       setLoading(false);
-    }
-  }, []);
-  useEffect(() => {
-    void load();
-  }, [load]);
+    });
+    menuRequest.current = pending;
+    return pending;
+  }, [request]);
 
   useEffect(() => {
-    const destination = new URLSearchParams(window.location.search).get("page");
-    if (destination === "library") setPage("dishes");
-    if (destination === "catalogue") { setCatalogueArea("products"); setPage("products"); }
-  }, []);
+    if (page === "menus" || page === "collections" || page === "dishes") void loadMenus();
+    if (page === "dishes" || (page === "kitchen" && kitchenReturn === "activation"))
+      void reads.loadDishPage().catch(() => undefined);
+  }, [page, kitchenReturn, loadMenus, reads]);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -308,7 +302,7 @@ export default function Studio({
     previewGeneration.current++;
     setSitePreview(null);
     setPreviewMessage("");
-  }, [menu, eventDate, siteId]);
+  }, [menu, eventDate, siteId, catalogueIdentity]);
   useEffect(() => {
     setHistory([]);
     setHistoryLoaded(false);
@@ -516,26 +510,15 @@ export default function Studio({
     }
   }
   async function loadSites() {
-    if (checkingCatalogue.current) return;
-    checkingCatalogue.current = true;
-    setCatalogueChoices({ state: "loading" });
     setPreviewMessage("");
     try {
-      const result = await request(undefined, "?list=catalogue");
-      if (!Array.isArray(result.sites) || !Array.isArray(result.items))
-        throw new Error("Catalogue is unavailable.");
-      setSites(result.sites);
-      setCatalogueChoices({ state: "loaded", items: result.items });
+      const result = await reads.loadPublic();
       if (!result.sites.length)
         setPreviewMessage("No sites are available from the catalogue.");
     } catch {
-      setSites([]);
-      setCatalogueChoices({ state: "unavailable" });
       setPreviewMessage(
         "The catalogue is unavailable. Site and booking availability are unknown. Saved mappings are retained.",
       );
-    } finally {
-      checkingCatalogue.current = false;
     }
   }
   async function checkSitePreview() {
@@ -571,17 +554,13 @@ export default function Studio({
     setActionBusy(true);
     setActionError("");
     try {
+      if (list === "dishes") { await reads.loadDishPage(cursor); return; }
       const result = await request(
         undefined,
         "?" + new URLSearchParams({ list, cursor }),
       );
-      if (list === "menus") {
-        setMenus((values) => [...values, ...result.items]);
-        setMenuCursor(result.nextCursor);
-      } else {
-        setDishes((values) => [...values, ...result.items]);
-        setDishCursor(result.nextCursor);
-      }
+      setMenus((values) => [...values, ...result.items]);
+      setMenuCursor(result.nextCursor);
     } catch (failure) {
       setActionError((failure as Error).message);
     } finally {
@@ -784,7 +763,6 @@ export default function Studio({
         onProductRequestHandled={handleBuilderProductRequest}
         onNavigationHandled={handleBuilderNavigation}
         onDirtyStateChange={handleBuilderDirtyChange}
-        onProductsLoaded={handleBuilderProductsLoaded}
         onActiveProductChange={handleBuilderActiveProduct}
         onNavigate={(destination) => {
           if (destination === "library") navigate("dishes");
@@ -802,17 +780,23 @@ export default function Studio({
           </button>)}
         </details>
       )}
-      {loading && page !== "home" && <p role="status">Loading menus and dishes…</p>}
+      {(loading || dishLibrary.status === "loading" && page === "dishes") && page !== "home" && <p role="status">Loading {loading ? "menus" : "dishes"}…</p>}
       {error && page !== "home" && (
         <div className="fika-notice fika-notice--danger" role="alert">
-          {error} <Button onClick={() => void load()}>Try again</Button>
+          {error} <Button onClick={() => void loadMenus()}>Try again</Button>
         </div>
       )}
-      {!loading && catalogueArea && (
-        <div hidden={Boolean(createKind) || (page !== "products" && page !== "sites")}>
+      {page === "dishes" && dishLibrary.status === "error" && (
+        <div className="fika-notice fika-notice--danger" role="alert">
+          {dishLibrary.error?.message} <Button onClick={() => { void reads.loadDishPage().catch(() => undefined); }}>Try again</Button>
+        </div>
+      )}
+      {catalogueArea && (page === "products" || page === "sites") && (
+        <div hidden={Boolean(createKind)}>
           <CatalogueView
             area={catalogueArea}
             initialItemId={catalogueItemId}
+            loadSectionLinks={loadMenus}
             back={catalogueReturn ? () => setPage("menus") : undefined}
             sectionsFor={(id) => linkedStudioSections(libraryMenus, (value) => value.catalogueItemId === id)}
             openSection={openLinkedSection}
@@ -1037,7 +1021,7 @@ export default function Studio({
                 setSite={setSiteId}
                 loadSites={() => void loadSites()}
                 checkSite={() => void checkSitePreview()}
-                sitePreview={sitePreview}
+                sitePreview={publicCatalogue.status === "ready" ? sitePreview : null}
                 notice={previewMessage}
                 back={() => setPage("menus")}
                 review={showReview}
