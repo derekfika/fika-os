@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { MenuArtifactError, buildMenuSlidesRequests, menuArtifactKey, resolveMenuTemplate, type SlidesPresentation } from "@fika/server-shared/menu-artifact";
-import { deliveredInMenuFromDay, deliveredInMenuSiteKey } from "../lib/menu-adapter";
+import { deliveredInMenuFromDay, deliveredInMenuSiteKey, resolveDeliveredInMenuTemplate } from "../lib/menu-adapter";
 import { projectPublishedWeeks, type ProjectedDay, type SourceDay, type SourcePublication } from "../lib/projection";
 import { siteMenuState, type SiteMenuArtifact } from "../lib/site-menu";
 
@@ -46,6 +46,15 @@ test("the MNK template is selected by site and the rendered menu carries names a
   const text: string = requests.find(request => request.insertText)!.insertText.text;
   assert.match(text, /^SALADS\n\nMixed Fika Leaf Salad\n\(Mustard\)\n\nHOT MAINS\n\nRoast Chicken Breast\n\(Gluten, Milk\)\n\nSIDES & EXTRAS\n\nRoasted Potatoes$/);
   assert.equal(requests.filter(request => request.createShape).length, 1);
+});
+
+test("Delivered-In shared generation requires a site-specific approved template", () => {
+  const menu = deliveredInMenuFromDay(project([sourceDay()])[0], site);
+  assert.equal(resolveDeliveredInMenuTemplate(menu, mnkEnv).templateId, "tpl-mnk");
+  assert.throws(
+    () => resolveDeliveredInMenuTemplate(menu, { GOOGLE_MENU_TEMPLATE_ID: "generic-template" }),
+    (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_TEMPLATE_NOT_CONFIGURED",
+  );
 });
 
 test("withdrawn and superseded service versions are never projected, so they cannot become the current menu", () => {

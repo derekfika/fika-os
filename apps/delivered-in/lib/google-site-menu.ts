@@ -4,8 +4,8 @@ import { groupSiteMenuEntries, siteMenuFileName, type SiteMenuArtifact } from ".
 import { CANONICAL_ALLERGEN_COLUMNS } from "./allergen-columns";
 import { assertStagingDriveResource, driveAccessToken, resolveDriveOwner } from "@fika/server-shared/drive-owner";
 import { stableDocumentId } from "@fika/server-shared/stable-document-id";
-import { MenuArtifactError, menuAllergenLabel, publishMenuArtifact, resolveMenuTemplate } from "@fika/server-shared/menu-artifact";
-import { deliveredInMenuFromDay, deliveredInMenuSiteKey } from "./menu-adapter";
+import { MenuArtifactError, menuAllergenLabel, publishMenuArtifact } from "@fika/server-shared/menu-artifact";
+import { deliveredInMenuFromDay, deliveredInMenuSiteKey, resolveDeliveredInMenuTemplate } from "./menu-adapter";
 import { siteMenuDriveConfig } from "./site-menu-drive-config";
 
 type OAuthClient = { installed?: { client_id: string; client_secret: string; token_uri?: string } };
@@ -306,7 +306,7 @@ export function buildDeliveredInMenuRequests(day: ProjectedDay, site: Site, pres
  */
 async function createSharedSiteMenu(day: ProjectedDay, site: Site, generatedBy: string, deliveryId?: string): Promise<SiteMenuArtifact> {
   const menu = deliveredInMenuFromDay(day, site);
-  const template = resolveMenuTemplate({ siteKey: menu.siteKey, oplocId: site.oplocId });
+  const template = resolveDeliveredInMenuTemplate(menu);
   const { owner, folderId } = siteMenuDriveConfig(site.oplocId);
   const token = await driveAccessToken(resolveDriveOwner(owner)); const headers = { Authorization: `Bearer ${token}` };
   const outputFolderId = await weekFolderId(folderId, day.weekCommencing || "", { ...headers, "content-type": "application/json" });
