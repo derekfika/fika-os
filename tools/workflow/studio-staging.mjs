@@ -10,7 +10,6 @@ export const studioStaging = Object.freeze({
 
 export function verifyStudioStagingOverlay(source) {
   const pins = {
-    FIKA_DATA_SOURCE_TRACE: '"1"',
     FIKA_RUNTIME_MODE: 'staging',
     FIREBASE_PROJECT_ID: STUDIO_STAGING.project,
     FIKA_HUB_BASE_URL: STUDIO_STAGING.hub,
@@ -18,9 +17,12 @@ export function verifyStudioStagingOverlay(source) {
     FIKA_STUDIO_FIRESTORE_DATABASE: STUDIO_STAGING.database,
     FIKA_SESSION_COOKIE_DOMAIN: '.fikacatering.com',
   };
-  const expected = 'env:\n' + Object.entries(pins).map(([name, value]) =>
+  const bindings = Object.entries(pins).map(([name, value]) =>
     `  - variable: ${name}\n    value: ${value}\n    availability: [RUNTIME]`).join('\n');
-  if (source.replaceAll('\r\n', '\n').trim() !== expected) throw Error('Selected source does not declare the exact Studio staging overlay');
+  const original = 'env:\n' + bindings;
+  const traced = 'env:\n  - variable: FIKA_DATA_SOURCE_TRACE\n    value: "1"\n    availability: [RUNTIME]\n' + bindings;
+  const overlay = source.replaceAll('\r\n', '\n').trim();
+  if (overlay !== original && overlay !== traced) throw Error('Selected source does not declare the exact Studio staging overlay');
 }
 
 const base = backendPath(studioStaging);

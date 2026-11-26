@@ -128,6 +128,8 @@ test('App Hosting defaults to closed with only the pinned Studio staging overlay
   assert.equal(staging, 'env:\n' + Object.entries(bindings).map(([key, value]) =>
     `  - variable: ${key}\n    value: ${value}\n    availability: [RUNTIME]`).join('\n'));
   assert.doesNotThrow(() => verifyStudioStagingOverlay(staging));
+  const priorOverlay = staging.replace('  - variable: FIKA_DATA_SOURCE_TRACE\n    value: "1"\n    availability: [RUNTIME]\n', '');
+  assert.doesNotThrow(() => verifyStudioStagingOverlay(priorOverlay));
   assert.throws(() => verifyStudioStagingOverlay(staging.replace(studioStaging.project, 'another-staging-project')), /exact Studio staging overlay/);
   assert.throws(() => verifyStudioStagingOverlay(staging.replace('value: "1"', 'value: "0"')), /exact Studio staging overlay/);
   const rules = JSON.parse(readFileSync(new URL('firebase.staging.json', folder), 'utf8'));
