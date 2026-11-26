@@ -109,11 +109,14 @@ pressure remains FIFO queued.
 
 For the specifically authorized legacy #687 bootstrap records, `workspace
 reconcile-orphaned` previews archival and `workspace reconcile-orphaned --execute`
-archives only the three allowlisted records whose checkout, process, lease and
-operation references are absent and whose current remote branch head matches the
-exact merged PR head on `origin/main`. This archival preserves the original metadata,
-PR proof and remote branches; it does not invent completion records, remove branches,
-or generalize to other bootstrap exceptions.
+archives only the three allowlisted records whose checkout, branch registration,
+process, lease and operation references are absent; whose current remote branch head
+matches the exact merged PR head on `origin/main`; and whose existing completion
+record proves the same final SHA, merged PR, `outcome=completed` and
+`retirement=retired`. The archive preserves the original task metadata, existing
+completion evidence and PR proof. The completion record and remote branch remain in
+place; reconciliation does not invent completion data, remove branches, or generalize
+to other bootstrap exceptions.
 
 ### Dependencies and generated data
 

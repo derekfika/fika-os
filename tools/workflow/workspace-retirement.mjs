@@ -74,7 +74,7 @@ export function reconcileOrphanedBootstrapRecords({ execute = false, readPulls =
     const directory = path.join(managedRoot(), task.name);
     if (!workspaceName(task.name) || task.branch !== `codex/${task.name}` || !samePath(task.directory, directory) ||
         !task.owner?.trim()) { protect('Task name, owner, branch or managed path does not match'); continue; }
-    if (localEntry(task.directory) || trees.some(tree => samePath(tree.worktree, task.directory))) {
+    if (localEntry(task.directory) || trees.some(tree => samePath(tree.worktree, task.directory) || tree.branch === `refs/heads/${task.branch}`)) {
       protect('Physical checkout or Git worktree registration still exists'); continue;
     }
     if (Number.isSafeInteger(task.pid) && task.pid > 0 && processAlive(task.pid)) { protect('Recorded owner process is still running'); continue; }
@@ -86,9 +86,13 @@ export function reconcileOrphanedBootstrapRecords({ execute = false, readPulls =
         (operation.source?.directory && samePath(operation.source.directory, task.directory)))) {
       protect('An active or interrupted operation still references the task'); continue;
     }
+    const hasExactCompletion = completion && completion.name === task.name && completion.owner === task.owner &&
+      completion.branch === task.branch && completion.directory && samePath(completion.directory, task.directory) &&
+      completion.finalSha === legacy?.head && completion.outcome === 'completed' && completion.retirement === 'retired' &&
+      completion.mergedPr?.number === legacy?.pr;
     const isExactLegacyOrphan = legacy && task.owner === legacy.owner && task.baseline === legacy.baseline &&
       task.branch === `codex/${task.name}` && legacy.authorized(task.bootstrapException) &&
-      containsMain(task.baseline) && !completion;
+      containsMain(task.baseline) && hasExactCompletion;
     if (!isExactLegacyOrphan) { protect('No exact allowlisted legacy bootstrap orphan evidence'); continue; }
     if (archiveNames.has(task.name)) { protect('An archive record already exists; inspect it before reconciliation'); continue; }
     const expectedHead = legacy.head;
@@ -100,11 +104,14 @@ export function reconcileOrphanedBootstrapRecords({ execute = false, readPulls =
     if (!proof || proof.number !== legacy.pr) {
       protect('Exact merged PR head and main merge ancestry could not be recovered'); continue;
     }
+    if (!isDeepStrictEqual(completion.mergedPr, proof)) {
+      protect('Existing completion does not contain the exact merged PR evidence'); continue;
+    }
     const record = { ...task, searchable: true, archiveKind: 'verified-orphaned-bootstrap-task', orphanVerification: {
         physicalCheckoutAbsent: true, gitRegistrationAbsent: true, ownerProcessAbsent: true,
         activeLeaseAbsent: true, operationMarkerAbsent: true, exactMergedPr: proof,
         ...(isExactLegacyOrphan ? { exactRemoteBranchHead: expectedHead, authorizedLegacyBootstrapIssue: 687 } : { finalShaOnOriginMain: true }),
-      } };
+      }, completionEvidence: completion };
     eligible.push(record);
     if (!execute) continue;
     const archivedRecord = { ...record, archivedAt: new Date().toISOString() };
@@ -119,13 +126,12 @@ export function reconcileOrphanedBootstrapRecords({ execute = false, readPulls =
       const gainedOperation = currentOperations.some(operation => operation.name === task.name ||
         (operation.source?.directory && samePath(operation.source.directory, task.directory)));
       if (!currentTask || !isDeepStrictEqual(currentTask, task) || !samePath(currentTask.directory, task.directory) ||
-          currentCompletion || gainedLease || gainedOperation ||
+          !isDeepStrictEqual(currentCompletion, completion) || gainedLease || gainedOperation ||
           existsSync(archivePath) || localEntry(task.directory)) {
         throw Error(`Orphan record ${task.name} changed after GitHub and physical-state verification`);
       }
       save(archivePath, archivedRecord);
       unlinkSync(sourceTaskFile(task.name));
-      if (completion) unlinkSync(completionFile(task.name));
     });
     archived.push(archivedRecord);
   }
