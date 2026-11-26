@@ -15,7 +15,6 @@ import {
   getWeek,
   ensureSupplementaryMenuWeeks,
   listWeeks,
-  listSupplementaryMenuTemplates,
   normaliseRollingSnapshotDestinations,
   planningWeekCommencing,
   planningWeekFromQuery,
@@ -375,6 +374,7 @@ async function handlePost(request: NextRequest) {
     const readPublicationState = (snapshot: Awaited<ReturnType<typeof getWeek>>, catalogue: readonly MenuItem[] = []) =>
       publicationState(scopedSnapshot(snapshot, actor), readableOplocs, catalogue, publication => scopeMenuPublication(publication, actor));
     const mutationScope = (snapshot: Awaited<ReturnType<typeof getWeek>>) => assertMenuSnapshotMutationScope(snapshot, actor, "manage", aliases);
+    const recurrenceAccess = { canManage: (siteId: string) => actorCanWriteOploc(actor, siteId, "manage"), assertSnapshot: mutationScope };
     const entryScope = (entry: RollingEntry) => {
       if (!entry.allocations.length) requireOrganisationMutationActor(actor);
       assertMenuAllocationsScope(actor, "manage", entry.allocations, aliases);
@@ -466,12 +466,12 @@ async function handlePost(request: NextRequest) {
       const previous = body.startWithPrevious === true
         ? (await listWeeks()).filter(value => value.supplementaryMenu?.id === menu.id && value.weekCommencing < parent.week.weekCommencing).sort((left, right) => right.weekCommencing.localeCompare(left.weekCommencing))[0]
         : undefined;
-      const snapshot = await createSupplementaryMenuWeek(parent.week.weekCommencing, menu, actor.uid, previous?.id);
+      const snapshot = await createSupplementaryMenuWeek(parent.week.weekCommencing, menu, actor.uid, recurrenceAccess, previous?.id);
       return respond({ snapshot: scopedSnapshot(snapshot, actor), weeks: await readWeeks(), publicationState: await readPublicationState(snapshot) });
     }
     if (action === "ensure-recurring-menus") {
       const weekCommencing = planningWeekCommencing(String(body.weekCommencing || ""));
-      const weekIds = await ensureSupplementaryMenuWeeks(weekCommencing, actor.uid);
+      const weekIds = await ensureSupplementaryMenuWeeks(weekCommencing, actor.uid, recurrenceAccess);
       const weeks = await readWeeks();
       const visibleIds = new Set(weeks.map(week => week.id));
       return respond({ weekIds: weekIds.filter(id => visibleIds.has(id)), weeks });
@@ -494,15 +494,12 @@ async function handlePost(request: NextRequest) {
       const serviceType = String(body.serviceType || "");
       if (!["Breakfast", "Lunch", "Dinner", "Other"].includes(serviceType)) throw Object.assign(new Error("Choose Breakfast, Lunch, Dinner or Other."), { status: 422 });
       const recurrenceWeekdays = Array.isArray(body.recurrenceWeekdays) ? [...new Set(body.recurrenceWeekdays.map(Number))] : undefined;
-      const snapshot = await updateSupplementaryMenuOccurrence(weekId, Number(body.expectedWeekVersion), { name: String(body.name || ""), serviceType: serviceType as "Breakfast" | "Lunch" | "Dinner" | "Other", serviceTime: body.serviceTime === undefined ? undefined : String(body.serviceTime), kitchenNotes: body.kitchenNotes === undefined ? target.week.supplementaryMenu.kitchenNotes : String(body.kitchenNotes), applyToFuture: body.applyToFuture === true, recurrenceWeekdays }, actor.uid);
+      const snapshot = await updateSupplementaryMenuOccurrence(weekId, Number(body.expectedWeekVersion), { name: String(body.name || ""), serviceType: serviceType as "Breakfast" | "Lunch" | "Dinner" | "Other", serviceTime: body.serviceTime === undefined ? undefined : String(body.serviceTime), kitchenNotes: body.kitchenNotes === undefined ? target.week.supplementaryMenu.kitchenNotes : String(body.kitchenNotes), applyToFuture: body.applyToFuture === true, recurrenceWeekdays }, actor.uid, recurrenceAccess);
       return respond({ snapshot: scopedSnapshot(snapshot, actor), weeks: await readWeeks(), publicationState: await readPublicationState(snapshot) });
     }
     if (action === "discontinue-supplementary-menu") {
       const menuId = String(body.menuId || "");
-      const menu = (await listSupplementaryMenuTemplates()).find(value => value.id === menuId);
-      if (!menu) throw Object.assign(new Error("The recurring menu was not found."), { status: 404 });
-      if (menu.siteIds.some(id => !actorCanWriteOploc(actor, id, "manage"))) throw Object.assign(new Error("This recurring menu includes a site outside your management scope."), { status: 403 });
-      const result = await discontinueSupplementaryMenu(menuId, String(body.discontinuedAfter || ""), actor.uid);
+      const result = await discontinueSupplementaryMenu(menuId, String(body.discontinuedAfter || ""), actor.uid, recurrenceAccess);
       return respond({ recurrence: result, weeks: await readWeeks() });
     }
     if (action === "duplicate-week") {

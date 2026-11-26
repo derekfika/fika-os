@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { Firestore } from "@google-cloud/firestore";
 import { MenuPlanningFirestoreRepository, type HostedTransactionState } from "../lib/firestore-operational-store";
 import { markEventDeadLetter, markEventDelivered, markEventFailed, outboxRecord, resetEventForReplay, type DurableDomainEvent } from "../lib/fika-contracts";
 import type { RollingDay, RollingEntry, RollingWeek } from "../lib/rolling-menu-types";
 import { encodeWeeklyPublicationPacket } from "@fika/server-shared/weekly-publication-packet";
 import { OperationBudget } from "../../../test-support/operation-budget";
+import { getMenuPlanningOperationalStore } from "../lib/operational-store";
+import { createSupplementaryMenuWeek, discontinueSupplementaryMenu, ensureSupplementaryMenuWeeks, supplementaryMenuWeekId, updateSupplementaryMenuOccurrence } from "../lib/rolling-menu";
 
 const week = (id: string): RollingWeek => ({ id, weekCommencing: "2026-08-24", weekEnding: "2026-08-30", status: "draft", version: 1, dayIds: [], entryIds: [], sourceFiles: [], audit: [] });
 const day = (id: string, weekId: string): RollingDay => ({ id, date: "2026-08-24", dayName: "Monday", entryIds: [] });
@@ -59,6 +62,76 @@ test("permanent menu-template additions persist in a bounded Firestore settings 
   assert.ok(value.reads.includes("fikaMenuPlanningSettings/menu-template"));
   assert.deepEqual(value.writes.find(write => write.path === "fikaMenuPlanningSettings/menu-template")?.value, { menuTemplateSlots: ["FISH 1"] });
   assert.deepEqual(await value.repository.getMenuTemplateSlots(), ["FISH 1"]);
+});
+
+test("recurrences roundtrip through scoped transactions independently of legacy template slots", async () => {
+  const { repository, docs, reads, writes } = templateSettingsHarness();
+  const settingsPath = "fikaMenuPlanningSettings/supplementary-recurrence";
+  const slotsPath = "fikaMenuPlanningSettings/menu-template";
+  const scope = { weekId: "fixture-week", sourceWeekId: "__none__", includeEvents: false };
+  const recurrenceScope = { recurrence: "settings-only" as const };
+  const template = {
+    id: "fixture-breakfast", name: "Breakfast", serviceType: "Breakfast" as const, siteIds: ["site:1"], recurrenceWeekdays: [1],
+    startsFrom: "2026-11-23", createdAt: "2026-11-23T08:00:00Z", createdBy: "fixture",
+  };
+  docs.set(slotsPath, { menuTemplateSlots: ["FISH 1"] });
+  assert.deepEqual(await repository.getSupplementaryMenuTemplates(), []);
+  await repository.runTransaction(() => {}, undefined, scope);
+  assert.ok(!reads.includes(settingsPath));
+  await repository.runTransaction(state => {
+    assert.equal(state.rolling.supplementaryMenuTemplates?.length, 0);
+    state.rolling.supplementaryMenuTemplates!.push(template);
+  }, undefined, recurrenceScope);
+  assert.deepEqual(docs.get(slotsPath), { menuTemplateSlots: ["FISH 1"] });
+  const reopened = new MenuPlanningFirestoreRepository(repository.db);
+  assert.deepEqual(await reopened.getSupplementaryMenuTemplates(), [template]);
+  const writeCount = writes.length;
+  await reopened.runTransaction(() => {}, undefined, recurrenceScope);
+  assert.equal(writes.length, writeCount);
+  await reopened.runTransaction(state => { state.rolling.menuTemplateSlots = ["FISH 2"]; }, undefined, { ...scope, includeTemplateSettings: true });
+  assert.deepEqual(await reopened.getSupplementaryMenuTemplates(), [template]);
+  await assert.rejects(reopened.runTransaction(state => {
+    state.rolling.supplementaryMenuTemplates![0].name = "uncommitted";
+    throw Error("fixture abort");
+  }, undefined, recurrenceScope), /fixture abort/);
+  assert.deepEqual(await reopened.getSupplementaryMenuTemplates(), [template]);
+  assert.ok(!reads.includes("fikaMenuPlanningWeeks"));
+  docs.set(settingsPath, { templates: {} });
+  await assert.rejects(reopened.getSupplementaryMenuTemplates(), /Invalid supplementary recurrence settings/);
+});
+
+test("Firestore emulator persists recurring menus through create, amend, ensure and discontinue", {
+  skip: !process.env.FIRESTORE_EMULATOR_HOST,
+}, async t => {
+  assert.match(process.env.FIRESTORE_EMULATOR_HOST!, /^(127\.0\.0\.1|localhost):\d+$/);
+  const db = new Firestore({ projectId: `demo-menu-recur-${process.pid}` });
+  t.after(() => db.terminate());
+  const repository = new MenuPlanningFirestoreRepository(db);
+  const store = getMenuPlanningOperationalStore();
+  for (const method of ["runTransaction", "getSupplementaryMenuTemplates", "getMenuTemplateSlots", "getWeekSnapshot", "listWeekSummariesByCommencing"] as const) {
+    t.mock.method(store, method, repository[method].bind(repository));
+  }
+  const access = { canManage: (siteId: string) => siteId === "oploc:fixture", assertSnapshot() {} };
+  const menu = { id: "fixture-munich", name: "Munich fixture", siteIds: ["oploc:fixture"], serviceType: "Breakfast" as const, recurrenceWeekdays: [1] };
+  const first = await createSupplementaryMenuWeek("2026-11-23", menu, "fixture", access);
+  const secondId = supplementaryMenuWeekId("2026-11-30", menu.id);
+  const patch = { name: "Friday fixture", serviceType: "Breakfast" as const, recurrenceWeekdays: [5], applyToFuture: true };
+  await updateSupplementaryMenuOccurrence(first.week.id, 1, patch, "fixture", access);
+  await assert.rejects(updateSupplementaryMenuOccurrence(first.week.id, 1, { ...patch, name: "Stale" }, "fixture", access), { status: 409 });
+  assert.deepEqual(await ensureSupplementaryMenuWeeks("2026-11-30", "fixture", access), [secondId]);
+  assert.deepEqual(await ensureSupplementaryMenuWeeks("2026-11-30", "fixture", access), [secondId]);
+  const reopened = new MenuPlanningFirestoreRepository(db);
+  const actual = await reopened.getWeekSnapshot(secondId);
+  assert.equal(actual?.week.supplementaryMenu?.name, patch.name);
+  assert.deepEqual(actual?.week.supplementaryMenu?.recurrenceWeekdays, [5]);
+  assert.equal(actual?.days.length, 7);
+  assert.equal(actual?.week.version, 1);
+  await discontinueSupplementaryMenu(menu.id, "2026-11-30", "fixture", access);
+  assert.deepEqual(await ensureSupplementaryMenuWeeks("2026-12-07", "fixture", access), []);
+  const [stored] = await reopened.getSupplementaryMenuTemplates();
+  assert.equal(stored.previousOccurrenceWeekId, secondId);
+  assert.equal(stored.createdBy, "fixture");
+  assert.deepEqual(stored.audit?.map(event => event.action), ["recurrence-amended", "recurrence-discontinued"]);
 });
 
 function commandHarness() {

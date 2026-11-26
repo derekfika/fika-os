@@ -1,5 +1,6 @@
 import { menuDestination } from "@fika/server-shared/menu-destination";
 import { readFileSync } from "node:fs";
+import { isDeepStrictEqual } from "node:util";
 import { join } from "node:path";
 import { appDataPath, resolveGovernedOploc } from "./fika-contracts";
 import * as XLSX from "xlsx";
@@ -109,16 +110,23 @@ export function emptyWeek(weekCommencing: string, actor = "local-menu-planner", 
   return { week, days, entries: [] };
 }
 export function supplementaryMenuWeekId(weekCommencing: string, menuId: string) { return `rolling-week:${weekCommencing}:menu:${menuId}`; }
-export function listSupplementaryMenuTemplates() { return read().then(state => state.supplementaryMenuTemplates || []); }
-export async function createSupplementaryMenuWeek(weekCommencing: string, menu: SupplementaryMenuContext, actor: string, startFromWeekId?: string) {
+export function listSupplementaryMenuTemplates() { return getMenuPlanningOperationalStore().getSupplementaryMenuTemplates(); }
+type RecurrenceAccess = { canManage: (siteId: string) => boolean; assertSnapshot: (snapshot: RollingSnapshot) => void };
+function canManageMenu(access: RecurrenceAccess, menu: SupplementaryMenuContext) {
+  return menu.siteIds.length > 0 && menu.siteIds.every(access.canManage);
+}
+export async function createSupplementaryMenuWeek(weekCommencing: string, menu: SupplementaryMenuContext, actor: string, access: RecurrenceAccess, startFromWeekId?: string, template?: SupplementaryMenuTemplate) {
+  if (!canManageMenu(access, menu)) throw Object.assign(new Error("This menu is outside your management scope."), { status: 403 });
   const id = supplementaryMenuWeekId(weekCommencing, menu.id);
   const templateSlots = newWeekTemplateSlots(await getMenuTemplateSlots());
   const candidate = emptyWeek(weekCommencing, actor, templateSlots, id);
   candidate.week.supplementaryMenu = structuredClone(menu);
-  const existingTemplate = (await listSupplementaryMenuTemplates()).find(value => value.id === menu.id);
-  const previousId = startFromWeekId || existingTemplate?.previousOccurrenceWeekId;
+  const previousId = startFromWeekId || (template?.previousOccurrenceWeekId && template.previousOccurrenceWeekId < id ? template.previousOccurrenceWeekId : undefined);
   const previous = previousId ? await getWeek(previousId) : undefined;
   if (previous) {
+    const sourceMenu = previous.week.supplementaryMenu;
+    if (sourceMenu?.id !== menu.id || !canManageMenu(access, sourceMenu)) throw Object.assign(new Error("The source menu is outside your management scope."), { status: 403 });
+    access.assertSnapshot(previous);
     candidate.entries = previous.entries.map(entry => {
       const dayIndex = previous.days.findIndex(day => day.id === entry.dayId);
       const day = candidate.days[Math.max(0, dayIndex)];
@@ -130,23 +138,36 @@ export async function createSupplementaryMenuWeek(weekCommencing: string, menu: 
   return withMenuPlanningTransaction(state => {
     const stored = state.rolling as unknown as Stored;
     const existing = stored.weeks.find(week => week.id === id);
-    if (existing) return snapshotFromStored(stored, id);
+    if (existing) {
+      if (!existing.supplementaryMenu || !canManageMenu(access, existing.supplementaryMenu)) throw Object.assign(new Error("This menu is outside your management scope."), { status: 403 });
+      return snapshotFromStored(stored, id);
+    }
     const templates = stored.supplementaryMenuTemplates || [];
     const templateIndex = templates.findIndex(value => value.id === menu.id);
+    if (!isDeepStrictEqual(templates[templateIndex], template)) throw Object.assign(new Error("The recurring menu changed or its identity is already in use. Refresh the week."), { status: 409 });
     if (menu.recurrenceWeekdays?.length && templateIndex < 0) stored.supplementaryMenuTemplates = [...templates, { ...structuredClone(menu), startsFrom: weekCommencing, previousOccurrenceWeekId: id, createdAt: now(), createdBy: actor }];
-    else if (menu.recurrenceWeekdays?.length && templateIndex >= 0) stored.supplementaryMenuTemplates![templateIndex] = { ...stored.supplementaryMenuTemplates![templateIndex], previousOccurrenceWeekId: id };
+    else if (template && (!template.previousOccurrenceWeekId || template.previousOccurrenceWeekId < id)) stored.supplementaryMenuTemplates![templateIndex] = { ...template, previousOccurrenceWeekId: id };
     replaceSnapshotInStored(stored, candidate);
     return candidate;
-  }, undefined, { weekId: id, sourceWeekId: "__none__", includeEvents: false });
+  }, undefined, { weekId: id, recurrence: "with-week" });
 }
 /** Explicit idempotent POST command: opening a week never creates recurrence through GET. */
-export async function ensureSupplementaryMenuWeeks(weekCommencing: string, actor: string) {
+export async function ensureSupplementaryMenuWeeks(weekCommencing: string, actor: string, access: RecurrenceAccess) {
   const templates = await listSupplementaryMenuTemplates();
   const created: string[] = [];
-  for (const menu of templates) {
-    if (weekCommencing < menu.startsFrom || (menu.discontinuedAfter && weekCommencing > menu.discontinuedAfter)) continue;
-    if (!menu.recurrenceWeekdays?.length) continue;
-    const snapshot = await createSupplementaryMenuWeek(weekCommencing, menu, actor);
+  const scheduled = templates.filter(template => weekCommencing >= template.startsFrom &&
+    (!template.discontinuedAfter || weekCommencing <= template.discontinuedAfter) && template.recurrenceWeekdays?.length && canManageMenu(access, template));
+  if (!scheduled.length) return created;
+  const weeks = await listWeekSummariesByCommencing<RollingWeek>([weekCommencing]);
+  const existingById = new Map(weeks.map(week => [week.id, week]));
+  for (const template of scheduled) {
+    const existing = existingById.get(supplementaryMenuWeekId(weekCommencing, template.id));
+    if (existing) {
+      if (existing.supplementaryMenu && canManageMenu(access, existing.supplementaryMenu)) created.push(existing.id);
+      continue;
+    }
+    const { startsFrom, discontinuedAfter, previousOccurrenceWeekId, createdAt, createdBy, audit, ...menu } = template;
+    const snapshot = await createSupplementaryMenuWeek(weekCommencing, menu, actor, access, undefined, template);
     created.push(snapshot.week.id);
   }
   return created;
@@ -167,7 +188,7 @@ export async function setSupplementaryMenuOccurrenceSkipped(weekId: string, expe
     return snapshotFromStored(stored, weekId);
   }, { weekId, weekVersion: expectedWeekVersion }, { weekId, sourceWeekId: "__none__", includeEvents: false });
 }
-export async function updateSupplementaryMenuOccurrence(weekId: string, expectedWeekVersion: number, patch: { name: string; serviceType: SupplementaryMenuContext["serviceType"]; serviceTime?: string; kitchenNotes?: string; applyToFuture?: boolean; recurrenceWeekdays?: number[] }, actor: string) {
+export async function updateSupplementaryMenuOccurrence(weekId: string, expectedWeekVersion: number, patch: { name: string; serviceType: SupplementaryMenuContext["serviceType"]; serviceTime?: string; kitchenNotes?: string; applyToFuture?: boolean; recurrenceWeekdays?: number[] }, actor: string, access: RecurrenceAccess) {
   return withMenuPlanningTransaction(state => {
     const stored = state.rolling as unknown as Stored;
     const week = stored.weeks.find(value => value.id === weekId);
@@ -191,23 +212,26 @@ export async function updateSupplementaryMenuOccurrence(weekId: string, expected
       const templates = storedState.supplementaryMenuTemplates || [];
       const index = templates.findIndex(template => template.id === week.supplementaryMenu!.id);
       if (index < 0) throw Object.assign(new Error("The recurring menu template was not found."), { status: 404 });
+      if (!canManageMenu(access, templates[index])) throw Object.assign(new Error("This recurring menu is outside your management scope."), { status: 403 });
       storedState.supplementaryMenuTemplates![index] = { ...templates[index], name: patch.name.trim(), serviceType: patch.serviceType, ...(time ? { serviceTime: time } : {}), ...(notes ? { kitchenNotes: notes } : {}), recurrenceWeekdays: [...(patch.recurrenceWeekdays || [])], audit: [...(templates[index].audit || []), { action: "recurrence-amended", at: now(), by: actor }] };
       if (!time) delete storedState.supplementaryMenuTemplates![index].serviceTime;
       if (!notes) delete storedState.supplementaryMenuTemplates![index].kitchenNotes;
     }
     return snapshotFromStored(stored, weekId);
-  }, { weekId, weekVersion: expectedWeekVersion }, { weekId, sourceWeekId: "__none__", includeEvents: false });
+  }, { weekId, weekVersion: expectedWeekVersion }, { weekId, sourceWeekId: "__none__", includeEvents: false, recurrence: patch.applyToFuture ? "with-week" : undefined });
 }
-export async function discontinueSupplementaryMenu(menuId: string, discontinuedAfter: string, actor: string) {
+export async function discontinueSupplementaryMenu(menuId: string, discontinuedAfter: string, actor: string, access: RecurrenceAccess) {
   return withMenuPlanningTransaction(state => {
     const stored = state.rolling as unknown as Stored;
     const templates = stored.supplementaryMenuTemplates || [];
     const index = templates.findIndex(value => value.id === menuId);
     if (index < 0) throw Object.assign(new Error("The recurring menu was not found."), { status: 404 });
+    if (!canManageMenu(access, templates[index])) throw Object.assign(new Error("This recurring menu is outside your management scope."), { status: 403 });
     if (!/^\d{4}-\d{2}-\d{2}$/.test(discontinuedAfter)) throw Object.assign(new Error("Choose a valid final recurrence week."), { status: 422 });
+    if (templates[index].discontinuedAfter === discontinuedAfter) return templates[index];
     stored.supplementaryMenuTemplates = templates.map((value, i) => i === index ? { ...value, discontinuedAfter, audit: [...(value.audit || []), { action: "recurrence-discontinued", at: now(), by: actor }] } : value);
     return stored.supplementaryMenuTemplates[index];
-  }, undefined, { weekId: "__recurrence_templates__", sourceWeekId: "__none__", includeEvents: false });
+  }, undefined, { recurrence: "settings-only" });
 }
 export const slotsForWeek = (week: RollingWeek) => plannerSlotsForWeek(week);
 export async function createWeekSnapshot(weekCommencing: string, actor = "local-menu-planner") {

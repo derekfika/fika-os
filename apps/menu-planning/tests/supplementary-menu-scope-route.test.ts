@@ -4,9 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { NextRequest } from "next/server";
-import { GET } from "../app/api/rolling-menu/route";
-import { createRollingSnapshot } from "../lib/operational-store";
-import { emptyWeek, supplementaryMenuWeekId } from "../lib/rolling-menu";
+import { GET, POST } from "../app/api/rolling-menu/route";
+import { createRollingSnapshot, getWeekHead } from "../lib/operational-store";
+import { createSupplementaryMenuWeek, emptyWeek, listSupplementaryMenuTemplates, supplementaryMenuWeekId } from "../lib/rolling-menu";
 
 test("rolling-menu API scopes menus and labels, including date navigation, week heads and explicit detail", async t => {
   const dir = mkdtempSync(join(tmpdir(), "menu-summary-scope-"));
@@ -95,4 +95,59 @@ test("rolling-menu API scopes menus and labels, including date navigation, week 
   assert.ok(!JSON.stringify(manager.weeks).includes("Unrelated label"));
   assert.notEqual(managerResponse.headers.get("x-fika-menu-cache-scope"), viewerResponse.headers.get("x-fika-menu-cache-scope"));
   assert.notEqual(managerResponse.headers.get("x-fika-menu-cache-scope"), partialManagerResponse.headers.get("x-fika-menu-cache-scope"));
+});
+
+test("a site manager materialises and amends only authorised recurring menus", async t => {
+  const dir = mkdtempSync(join(tmpdir(), "menu-recurrence-scope-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  for (const [key, value] of Object.entries({ FIKA_RUNTIME_MODE: "local", FIKA_HUB_BASE_URL: "http://hub.test", MENU_PLANNING_DB_PATH: join(dir, "fixture.sqlite"), MENU_PLANNING_TEST_MODE: "1" })) {
+    const previous = process.env[key];
+    t.after(() => { if (previous === undefined) delete process.env[key]; else process.env[key] = previous; });
+    process.env[key] = value;
+  }
+  const allowed = "oploc:allowed", alias = "oploc:old-allowed", other = "oploc:other";
+  t.mock.method(globalThis, "fetch", async (input: RequestInfo | URL) => {
+    switch (new URL(String(input)).pathname) {
+      case "/api/menu-planning/access": return Response.json({
+        principal: { id: "site-manager" }, scope: { all: true, ids: [allowed, other] },
+        permissions: { manageOplocIds: [allowed] }, oplocRedirects: { [alias]: allowed },
+      });
+      case "/api/service-arrangements": return Response.json({ arrangements: [], oplocs: [] });
+      default: throw Error("Unexpected upstream in recurrence fixture");
+    }
+  });
+  const first = "2026-11-23", second = "2026-11-30", third = "2026-12-07";
+  const fixtureAccess = { canManage: () => true, assertSnapshot() {} };
+  for (const [id, sites] of [["allowed-breakfast", [alias]], ["other-breakfast", [other]], ["shared-breakfast", [allowed, other]]] as const) {
+    await createSupplementaryMenuWeek(first, { id, name: id, serviceType: "Breakfast", siteIds: [...sites], recurrenceWeekdays: [1] }, "fixture", fixtureAccess);
+  }
+  const limitedAccess = { canManage: (id: string) => id === allowed || id === alias, assertSnapshot() {} };
+  const sameId = { id: "shared-breakfast", name: "Duplicate", serviceType: "Breakfast" as const, siteIds: [allowed], recurrenceWeekdays: [1] };
+  await assert.rejects(createSupplementaryMenuWeek(first, sameId, "site-manager", limitedAccess), { status: 403 });
+  await assert.rejects(createSupplementaryMenuWeek(second, sameId, "site-manager", limitedAccess), { status: 409 });
+  const execute = (body: Record<string, unknown>) => POST(new NextRequest("http://menu.test/api/rolling-menu", {
+    method: "POST", headers: { cookie: "fika_os_session=fixture", "content-type": "application/json" }, body: JSON.stringify(body),
+  }));
+  const ensure = (weekCommencing: string) => execute({ action: "ensure-recurring-menus", weekCommencing });
+  const allowedId = supplementaryMenuWeekId(second, "allowed-breakfast");
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const response = await ensure(second);
+    assert.equal(response.status, 200);
+    assert.deepEqual((await response.json()).weekIds, [allowedId]);
+  }
+  for (const id of ["other-breakfast", "shared-breakfast"]) assert.equal(await getWeekHead(supplementaryMenuWeekId(second, id)), undefined);
+  const amended = await execute({ action: "update-supplementary-menu", weekId: allowedId, expectedWeekVersion: 1, name: "Revised breakfast", serviceType: "Breakfast", recurrenceWeekdays: [5], applyToFuture: true });
+  assert.equal(amended.status, 200);
+  const template = (await listSupplementaryMenuTemplates()).find(value => value.id === "allowed-breakfast")!;
+  assert.deepEqual(template.recurrenceWeekdays, [5]);
+  assert.equal(template.audit?.at(-1)?.by, "site-manager");
+  const discontinue = (menuId: string) => execute({ action: "discontinue-supplementary-menu", menuId, discontinuedAfter: second });
+  assert.equal((await discontinue("shared-breakfast")).status, 403);
+  assert.equal((await discontinue("allowed-breakfast")).status, 200);
+  assert.equal((await discontinue("allowed-breakfast")).status, 200);
+  assert.equal((await listSupplementaryMenuTemplates()).find(value => value.id === template.id)?.audit?.filter(event => event.action === "recurrence-discontinued").length, 1);
+  const pastCutoff = await ensure(third);
+  assert.equal(pastCutoff.status, 200);
+  assert.deepEqual((await pastCutoff.json()).weekIds, []);
+  assert.equal(await getWeekHead(supplementaryMenuWeekId(third, template.id)), undefined);
 });
