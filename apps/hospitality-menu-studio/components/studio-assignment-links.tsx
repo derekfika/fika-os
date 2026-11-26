@@ -5,12 +5,14 @@ import styles from "./studio.module.css";
 export function StudioAssignmentLinks({
   assignments,
   open,
+  onOpen,
 }: {
   assignments: StudioSectionLink[];
   open: (menuId: string, sectionId: string) => void;
+  onOpen?: () => void;
 }) {
   return (
-    <details className={styles.disclosure}>
+    <details className={styles.disclosure} onToggle={onOpen ? (event) => { if (event.currentTarget.open) onOpen(); } : undefined}>
       <summary>Linked sections in loaded menus ({assignments.length})</summary>
       {assignments.length === 0 ? (
         <p>No linked sections were found in the loaded drafts.</p>
