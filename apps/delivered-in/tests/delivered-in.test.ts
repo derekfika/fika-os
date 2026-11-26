@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { promises as fs } from "node:fs";
 import { test } from "node:test";
 import { resolveDeliveredInAccess } from "@fika/server-shared/delivered-in-access";
 import { assertAuthorisedOploc, assertPublishedAllocationIntegrity, isRelevantPublishedWeek, operationalDateLondon, projectPublishedWeeks, siteDayTotal, type SourcePublication } from "../lib/projection";
@@ -146,6 +147,75 @@ test("lowercase Menu Planning names render as title case with attached governed 
   assert.equal(requests.some(request => "updateShapeProperties" in request && (request.updateShapeProperties as { shapeProperties: { contentAlignment: string } }).shapeProperties.contentAlignment === "MIDDLE"), true);
   assert.equal(requests.some(request => "deleteObject" in request && (request.deleteObject as { objectId: string }).objectId === "empty-sides-slide"), true);
   assert.equal(requests.some(request => "insertText" in request && (request.insertText as { text: string }).text.includes("Mac & cheese")), false);
+});
+
+test("the generic menu requires placeholders for every populated section only", () => {
+  const published = projectAtTestClock([source([day()])], haleon)[0].days[0];
+  const site = { oplocId: haleon, label: "Test site" };
+  const slide = (token: string) => ({ objectId: token, pageElements: [{ objectId: "anchor", shape: { text: { textElements: [{ textRun: { content: token } }] } } }] });
+  for (const [slot, placeholder] of [["SALAD 1", "{{SALADS}}"], ["Hot Meat", "{{HOT_MAINS}}"], ["Soup", "{{SIDES_EXTRAS}}"]]) {
+    const selected = { ...published, entries: [{ ...published.entries[0], slot }] };
+    assert.throws(() => buildDeliveredInMenuRequests(selected, site, { slides: [slide("{{SERVICE_DATE}}")] }), {
+      code: "MENU_TEMPLATE_SECTION_MISSING", status: 409, message: new RegExp(placeholder),
+    });
+    assert.doesNotThrow(() => buildDeliveredInMenuRequests(selected, site, { slides: [slide(placeholder)] }));
+  }
+  const shared = slide("{{SALADS}}");
+  shared.pageElements.push({ ...slide("{{HOT_MAINS}}").pageElements[0], objectId: "empty-hot-anchor" });
+  const updates = buildDeliveredInMenuRequests(published, site, { slides: [shared] });
+  assert.ok(updates.some(update => (update.deleteObject as { objectId?: string })?.objectId === "empty-hot-anchor"));
+  assert.ok(!updates.some(update => (update.deleteObject as { objectId?: string })?.objectId === shared.objectId));
+});
+
+test("generic output preflight and retry verify dishes and declarations without writing an incomplete document", async t => {
+  const settings = {
+    FIKA_RUNTIME_MODE: "local", GOOGLE_OAUTH_CLIENT_FILE: "fixture-client", GOOGLE_OAUTH_TOKEN_FILE: "fixture-token",
+    GOOGLE_DELIVERED_IN_TEMPLATE_ID: "fixture-template", GOOGLE_DELIVERED_IN_OUTPUT_FOLDER_ID: "fixture-root",
+  };
+  for (const [key, value] of Object.entries(settings)) {
+    const previous = process.env[key];
+    process.env[key] = value;
+    t.after(() => { if (previous === undefined) delete process.env[key]; else process.env[key] = previous; });
+  }
+  t.mock.method(fs, "readFile", async (file: string) => {
+    if (file === "fixture-client") return JSON.stringify({ installed: { client_id: "fixture", client_secret: "fixture" } });
+    assert.equal(file, "fixture-token");
+    return JSON.stringify({ access_token: "fixture", refresh_token: "fixture" });
+  });
+  const published = projectAtTestClock([source([day()])], haleon)[0].days[0];
+  const reviewed: ProjectedDay = { ...published, cpuReview: { status: "signed", signatures: [] },
+    sourceLineage: { cpu: { sourceStatus: "current", sourceCompleteness: "complete", releaseId: "release", releaseVersion: "r1", contentHash: "packet", sourceBundleHash: published.contentHash } },
+    entries: [{ ...published.entries[0], allergensVisible: true, allergens: { milk: "may_contain" } }],
+  };
+  let status: "pending" | "ready" = "pending";
+  const shape = (objectId: string, content: string) => ({ objectId, shape: { text: { textElements: [{ textRun: { content } }] } } });
+  const elements = [shape("fika-delivered-in-salads-0-dish-0", "Mixed Baby Leaf\n")];
+  const requests: string[] = [];
+  const reply = (body: unknown) => new Response(JSON.stringify(body));
+  t.mock.method(globalThis, "fetch", async (input: string, init?: RequestInit) => {
+    const url = new URL(input);
+    const request = `${init?.method || "GET"} ${url.pathname}`;
+    requests.push(request);
+    switch (request) {
+      case "GET /v1/presentations/fixture-template": return reply({ slides: [] });
+      case "GET /drive/v3/files": return reply({ files: [{ id: "fixture-copy", appProperties: { fikaMaterializationStatus: status } }] });
+      case "GET /v1/presentations/fixture-copy": return reply({ slides: [{ objectId: "slide", pageElements: elements }] });
+      case "PATCH /drive/v3/files/fixture-copy": return reply({});
+      default: throw Error(`Unexpected Google request: ${request}`);
+    }
+  });
+  const generate = (delivery?: string) => createGoogleSiteMenu(reviewed, { oplocId: haleon, label: "Test site" }, "fixture", undefined, delivery);
+  await assert.rejects(generate(), { code: "MENU_TEMPLATE_SECTION_MISSING" });
+  assert.deepEqual(requests.splice(0), ["GET /v1/presentations/fixture-template"]);
+  await assert.rejects(generate("fixture-delivery"), { code: "MENU_TEMPLATE_SECTION_MISSING" });
+  assert.deepEqual(requests.splice(0), ["GET /drive/v3/files", "GET /v1/presentations/fixture-copy"]);
+  status = "ready";
+  await assert.rejects(generate("fixture-delivery"), { code: "MENU_OUTPUT_INCOMPLETE" });
+  assert.deepEqual(requests.splice(0), ["GET /drive/v3/files", "GET /v1/presentations/fixture-copy"]);
+  status = "pending";
+  elements.push(shape("fika-delivered-in-salads-0-allergens-0", "(May contain: Milk)\n"));
+  assert.equal((await generate("fixture-delivery")).driveFileId, "fixture-copy");
+  assert.deepEqual(requests, ["GET /drive/v3/files", "GET /v1/presentations/fixture-copy", "PATCH /drive/v3/files/fixture-copy"]);
 });
 
 test("both menu template paths reject missing CPU evidence before reaching Google", async () => {

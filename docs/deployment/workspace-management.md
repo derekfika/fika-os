@@ -107,6 +107,14 @@ does not authorize app changes or ordinary task capacity. The task remains subje
 preservation, source validation, protected integration and retirement. Routine capacity
 pressure remains FIFO queued.
 
+For the specifically authorized legacy #687 bootstrap records, `workspace
+reconcile-orphaned` previews archival and `workspace reconcile-orphaned --execute`
+archives only the three allowlisted records whose checkout, process, lease and
+operation references are absent and whose current remote branch head matches the
+exact merged PR head on `origin/main`. This archival preserves the original metadata,
+PR proof and remote branches; it does not invent completion records, remove branches,
+or generalize to other bootstrap exceptions.
+
 ### Dependencies and generated data
 
 `workspace install` runs `npm ci --prefer-offline` with the selected package's tracked
@@ -129,9 +137,13 @@ Retirement also recognizes the exact ignored `apps/<app>/tsconfig.tsbuildinfo` p
 only when its bounded TypeScript build-info structure, compiler version in that app's
 tracked lockfile, and incremental tracked TypeScript configuration agree. This cache
 contains compiler-derived state and can be rebuilt from tracked sources. A malformed,
-oversized, mismatched or edited cache remains protected. Other unrecorded or changed
-content, links outside the checkout, browser evidence, user attachments, env files and
-unknown scratch files remain protected. In particular, an unrecorded `.next` tree is
+oversized, mismatched or edited cache remains protected. The exact pair of timestamp-
+based CPython 3.14 caches under `apps/cpu-production/tools/xchange-print-agent/__pycache__`
+is recognized only when both files exactly match a fresh compile of their tracked
+sources using the source timestamp and pinned task commit; the modules are compiled but
+not executed. Other unrecorded or changed content, links outside the checkout, browser
+evidence, user attachments, env files and unknown scratch files remain protected. In
+particular, an unrecorded `.next` tree is
 not assumed disposable: successful governed validation fingerprints its full content,
 and any changed or added path blocks retirement.
 Keep emulator databases, runtime state and build output checkout-local. Check
