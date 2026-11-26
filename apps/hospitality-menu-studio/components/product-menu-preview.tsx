@@ -21,6 +21,7 @@ export function ProductMenuPreview({ itemId, productName, configuration, library
   const reads = useStudioReads();
   const catalogue = useStudioRead(reads.catalogue);
   const catalogueHash = reads.publicIdentity();
+  const [viewport, setViewport] = useState<"desktop" | "tablet" | "mobile">("desktop");
   const [siteId, setSiteId] = useState("");
   const [eventDate, setEventDate] = useState("");
   const [offeringAttempt, setOfferingAttempt] = useState(0);
@@ -58,11 +59,13 @@ export function ProductMenuPreview({ itemId, productName, configuration, library
 
   return <StudioPanel title="Customer preview" description="Try this draft without creating a booking." className={styles.preview}>
     <StudioStatus tone="warning">Draft · not bookable</StudioStatus>
-    <h3>{productName}</h3>
     {(catalogue.status === "loading" || catalogue.status === "idle") && <p role="status">Loading sites…</p>}
     {catalogue.status === "error" && <p role="alert">Sites could not be verified. <button type="button" onClick={() => { void reads.loadPublic(true).catch(() => undefined); }}>Try again</button></p>}
-    {catalogue.value && <StudioField label="Preview site"><select value={siteId} onChange={event => { setOffering(null); setSiteId(event.target.value); }}><option value="">Choose a site</option>{catalogue.value.sites.map(site => <option key={site.id} value={site.id}>{site.name}</option>)}</select></StudioField>}
-    <StudioField label="Preview date"><input type="date" value={eventDate} onChange={event => { setOffering(null); setEventDate(event.target.value); }} /></StudioField>
+    <div className={styles.context}>
+    {catalogue.value && <StudioField label="Site"><select value={siteId} onChange={event => { setOffering(null); setSiteId(event.target.value); }}><option value="">Choose a site</option>{catalogue.value.sites.map(site => <option key={site.id} value={site.id}>{site.name}</option>)}</select></StudioField>}
+    <StudioField label="Event date"><input type="date" value={eventDate} onChange={event => { setOffering(null); setEventDate(event.target.value); }} /></StudioField>
+    </div>
+    <div className={styles.viewportModes} role="group" aria-label="Preview viewport">{(["desktop", "tablet", "mobile"] as const).map(mode => <button key={mode} type="button" aria-pressed={viewport === mode} onClick={() => setViewport(mode)}>{mode[0]!.toUpperCase() + mode.slice(1)}</button>)}</div>
     {dateWeek !== undefined && <p>Previewing week {dateWeek} for this date; editor shows week {editorWeek + 1}. {dateWeek !== editorWeek + 1 && <><button type="button" onClick={() => onEditWeek(dateWeek - 1)}>Edit this week</button>{" "}<button type="button" onClick={() => { const next = previewDateForWeek(configuration, eventDate, editorWeek); if (next) { setOffering(null); setEventDate(next); } }}>Preview editor week</button></>}</p>}
     {siteId && eventDate && !dateChoices && <p role="alert">Choose a valid date.</p>}
     {catalogueHash && siteId && dateChoices && (!offering || offering.status === "loading" || (offering.status === "ready" && !current)) && <p role="status">Checking site and date…</p>}
@@ -73,7 +76,7 @@ export function ProductMenuPreview({ itemId, productName, configuration, library
     {assigned.loading && <p role="status">Loading saved dish details…</p>}
     {assigned.error && <p role="alert">Saved dish details could not be verified. Retry before previewing the choices. <button type="button" onClick={assigned.retry}>Retry</button></p>}
     {current?.state === "priced" && dateChoices && !assigned.loading && !assigned.error && !ready && <p role="alert">One or more saved dish revisions are unavailable.</p>}
-    {ready && <ChoiceSimulation key={selectionKey} configuration={configuration} choices={dateChoices.choices} dishes={assigned.byRevision} offering={current} />}
+    {ready && <div className={`${styles.viewport} ${styles[viewport]}`}><h3>{productName}</h3><ChoiceSimulation key={selectionKey} configuration={configuration} choices={dateChoices.choices} dishes={assigned.byRevision} offering={current} /></div>}
   </StudioPanel>;
 }
 
