@@ -2,10 +2,14 @@
 
 Use the current CLI from the canonical checkout for machine-wide workspace commands.
 Each write task claims one of ten governed slots, a unique branch from fetched
-`origin/main`, and an independent checkout with one writer. The primary checkout is
-excluded. Inventory reports physical checkout count separately from governed slot
-occupancy; an owner-authorised bootstrap exception is recorded explicitly and never
-creates another ordinary claim slot.
+`origin/main`, and an independent checkout per coherent implementation task or
+independently mergeable PR. The primary checkout is excluded. Multiple cooperating
+agents may write in the same task checkout with explicit, non-overlapping file
+ownership. One accountable task owner controls Git operations, dependency installation,
+integration and retirement, and coordinates builds and emulator use. Read-only
+investigation and review need no checkout. Inventory reports physical checkout count
+separately from governed slot occupancy; an owner-authorised bootstrap exception is
+recorded explicitly and never creates another ordinary claim slot.
 Existing linked worktrees and unregistered directories in the managed workspace root
 count against the limit. A tree outside governance can consume a slot and will appear
 as unmanaged. Keep it in place until identity and ownership are known.
@@ -13,12 +17,15 @@ as unmanaged. Keep it in place until identity and ownership are known.
 The one-time #687 owner bootstrap was a narrowly recorded exception to the ten-slot
 admission limit for the retirement repair itself. It is visible in physical inventory,
 does not reduce or expand ordinary capacity, cannot be requested by task workers, and
-must be retired or formally adopted after the repair is integrated. Do not reuse this
-exception for future capacity pressure.
+must be retired or formally adopted after the repair is integrated. Future lifecycle
+defects use the separately logged, scope-limited `create-recovery` mechanism below;
+ordinary capacity pressure still queues.
 
 ```powershell
 npm run fika -- workspace startup
 npm run fika -- workspace create <task> --owner <agent-task> --scope <paths>
+npm run fika -- workspace assign-writer <task> --owner <task-owner> --writer <agent-name> --scope <paths>
+npm run fika -- workspace writers <task>
 npm run fika -- workspace check <task>
 npm run fika -- workspace install <task> --package apps/<app-directory>
 npm run fika -- integrate --workspace <task> --pr <number>
@@ -73,15 +80,32 @@ Git admin index and reflog before native pruning. An unresolved path or unexpect
 prune result requires inspection. Archived data, deployment evidence and stashes
 remain in place.
 
-`workspace health --inventory-only` reports real volume free space, slot occupancy,
-queue and policy violations. Full `workspace health` also reports the C:\Fika NTFS
-file allocation by category and area and the maximum allocation associated with verified
-cleanup candidates. It counts hardlinked file allocation once and skips junctions and
-other reparse points. Directory metadata, alternate data streams and out-of-scope
-paths can make the filesystem footprint differ from volume free space. Allocation
-associated with candidates may remain allocated through other hardlinks. Set
+`workspace health` is a bounded inventory check by default. It reports volume free
+space, slot occupancy, queue and policy violations without cleanup or recursive disk
+traversal. `workspace health --deep` or `workspace storage-audit` explicitly runs the
+recursive C:\Fika NTFS allocation scan; it counts hardlinked file allocation once and
+skips junctions and other reparse points. Deep scans are bounded and can report an
+incomplete result with diagnostics. Directory metadata, alternate data streams and
+out-of-scope paths can make the filesystem footprint differ from volume free space.
+Allocation associated with candidates may remain allocated through other hardlinks. Set
 `FIKA_WORKSPACE_MIN_FREE_GB` or `--min-free-gb` to change the default 25 GB free-space
 warning. `--output <file>` saves the report.
+
+Completed task evidence is archived after the checkout registration and physical path
+are verified absent; archive records remain available to history searches. Git status,
+fetch, preservation and native worktree removal must run outside the shared SQLite
+capacity lock. Lifecycle commits revalidate owner, task identity and exact source SHA.
+A durable in-progress retirement continues occupying capacity until physical absence
+is verified.
+
+Infrastructure recovery is a separate owner-authorized path for repairing workspace
+admission or retirement itself. Use `workspace create-recovery infra-recovery-<slug>
+--owner <task-owner> --reason <reproducible-defect> --scope tools/workflow,AGENTS.md`.
+The tool admits only one recovery checkout at a time, records the reason and exact
+scope, and restricts edits to `tools/workflow` and the named governance documents. It
+does not authorize app changes or ordinary task capacity. The task remains subject to
+preservation, source validation, protected integration and retirement. Routine capacity
+pressure remains FIFO queued.
 
 ### Dependencies and generated data
 

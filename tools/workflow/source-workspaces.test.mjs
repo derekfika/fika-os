@@ -7,7 +7,7 @@ import { existsSync, linkSync, mkdirSync, readFileSync, readdirSync, renameSync,
 import { fileURLToPath } from 'node:url';
 import { fixture } from './lifecycle-fixture.mjs';
 import { createWorkspace, workspaceRecords } from './workspaces.mjs';
-import { integrateSourceWorkspace, createSourceWorkspace, completeSourceWorkspace, recoverSourceReservation, runSourceOperation } from './source-workspaces.mjs';
+import { integrateSourceWorkspace, assignSourceWriter, createInfrastructureRecoveryWorkspace, createSourceWorkspace, completeSourceWorkspace, recoverSourceReservation, runSourceOperation } from './source-workspaces.mjs';
 import { completionFile, managedRoot, sourceTaskFile, workspaceInventory } from './workspace-capacity.mjs';
 import { cleanupSourceWorkspaces, integrationEvidence, pruneStaleSourceRegistrations } from './workspace-retirement.mjs';
 import { installSourceDependencies, recordGenerated, validationOutputCandidates, verifiedTypeScriptBuildInfo } from './workspace-cache.mjs';
@@ -94,6 +94,9 @@ test('ten concurrent claims fill the slots and startup retirement promotes the q
     assert.equal(f.git('branch', '--list', `codex/${queued.name}`), '');
     const health = f.within(() => sourceWorkspaceHealth({ 'inventory-only': true }));
     assert.equal(health.limit, 10);
+    const lightweightHealth = f.within(() => sourceWorkspaceHealth());
+    assert.equal(lightweightHealth.disk.physicalScan, 'not requested');
+    assert.equal(Object.hasOwn(lightweightHealth, 'readyForCleanup'), false);
     assert.equal(health.occupied, 10);
     assert.equal(health.entries.some(entry => entry.branch === 'main'), false);
     assert.deepEqual(health.queue.map(entry => entry.name), [queued.name]);
@@ -152,6 +155,36 @@ test('ten concurrent claims fill the slots and startup retirement promotes the q
     assert.equal((await run('slot-new')).state, 'queued');
     assert.equal(existsSync(unmanaged), true);
   } finally { f.dispose(); }
+});
+
+test('infrastructure recovery has one owner-recorded exception slot and rejects app scope', () => {
+  const f = fixture();
+  try { f.within(() => {
+    const recovery = createInfrastructureRecoveryWorkspace('infra-recovery-capacity-repair', {
+      owner: 'recovery-owner', reason: 'Reproduce and repair the SQLite admission lock timeout.', scope: 'tools/workflow,AGENTS.md',
+    });
+    assert.equal(recovery.state, 'active');
+    assert.equal(workspaceInventory().bootstrapExceptions, 1);
+    assert.throws(() => createInfrastructureRecoveryWorkspace('infra-recovery-second-repair', {
+      owner: 'recovery-owner', reason: 'A second repair must not acquire another exception slot.', scope: 'tools/workflow',
+    }), /single infrastructure-recovery slot/);
+    assert.throws(() => createInfrastructureRecoveryWorkspace('infra-recovery-app-change', {
+      owner: 'recovery-owner', reason: 'This scope attempts to alter an application feature.', scope: 'apps/hospitality-menu-studio',
+    }), /limited to tools\/workflow/);
+  }); } finally { f.dispose(); }
+});
+
+test('a task owner records disjoint cooperating writer scopes', () => {
+  const f = fixture();
+  try { f.within(() => {
+    const task = createSourceWorkspace('shared-task-writers', { owner: 'task-owner' });
+    const first = assignSourceWriter(task.name, { owner: task.owner, writer: 'agent-one', scope: 'apps/menu-planning' });
+    assert.deepEqual(first.scope, ['apps/menu-planning']);
+    assert.deepEqual(assignSourceWriter(task.name, { owner: task.owner, writer: 'agent-two', scope: 'apps/hospitality-booking' }).scope,
+      ['apps/hospitality-booking']);
+    assert.throws(() => assignSourceWriter(task.name, { owner: task.owner, writer: 'agent-three', scope: 'apps/menu-planning/app' }), /scopes overlap/);
+    assert.throws(() => assignSourceWriter(task.name, { owner: 'other-owner', writer: 'agent-three', scope: 'tools/workflow' }), /accountable task owner/);
+  }); } finally { f.dispose(); }
 });
 
 test('governed validation refreshes verified output and dev preserves nested attachments', () => {

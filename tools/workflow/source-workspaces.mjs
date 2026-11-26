@@ -60,11 +60,15 @@ function reserveSourceTask(task, queued) {
 }
 
 function materializeSourceTask(claim) {
-  // Keep the lock order consistent: governed Git worktree mutations happen only
-  // after taking the capacity lock. Otherwise a claimant can hold Git's worktree
-  // lock while waiting for SQLite as another claimant holds SQLite during inventory.
+  // The creating reservation owns a slot. Git may be slow, so mutate the worktree
+  // outside SQLite and revalidate the reservation before marking it active.
+  git('worktree', 'add', '--quiet', '-b', claim.branch, claim.directory, claim.baseline);
   return withCapacityLock(() => {
-    git('worktree', 'add', '--quiet', '-b', claim.branch, claim.directory, claim.baseline);
+    const current = optionalJson(sourceTaskFile(claim.name));
+    if (current?.state !== 'creating' || current.owner !== claim.owner || current.baseline !== claim.baseline ||
+      !samePath(current.directory, claim.directory) || !localEntry(claim.directory)?.isDirectory()) {
+      throw Error('Checkout was created, but its reservation changed before activation; preserve for recovery');
+    }
     const active = { ...claim, state: 'active' };
     save(sourceTaskFile(claim.name), active);
     return active;
@@ -95,16 +99,21 @@ export function createSourceWorkspace(name, options) {
   const promoted = alreadyPromoted(name, options.owner);
   if (promoted) return promoted.state === 'active' ? annotatedTask(promoted) : promoted;
   const paths = options.scope ? options.scope.split(',').map(safeScope) : [];
-  const task = taskClaim(name, options.owner, fetchMain(), paths);
+  const task = { ...taskClaim(name, options.owner, fetchMain(), paths),
+    ...(options.infrastructureRecovery ? { bootstrapException: options.infrastructureRecovery } : {}) };
   if (git('ls-remote', '--heads', 'origin', 'refs/heads/' + task.branch)) throw Error('Task name, path or branch already exists; choose a new name');
+  const observedRegistrations = registrations();
   const claim = withCapacityLock(() => {
-    const promoted = alreadyPromoted(name, options.owner);
-    if (promoted) return { ...promoted, alreadyPromoted: true };
-    const inventory = workspaceInventory();
+    const currentTask = optionalJson(sourceTaskFile(name));
+    if (currentTask?.owner === options.owner && currentTask.queuedAt && currentTask.state === 'creating') return { ...currentTask, alreadyPromoted: true };
+    const inventory = workspaceInventory({ observedRegistrations });
     assertClaimAvailable(task, inventory);
+    if (task.bootstrapException && (inventory.bootstrapExceptions || stateRecords('source-tasks').some(item => item.bootstrapException && item.state === 'active'))) {
+      throw Error('The single infrastructure-recovery slot is already occupied');
+    }
     const existing = inventory.queue.find(entry => entry.name === name);
     if (existing && existing.owner !== options.owner) throw Error('This task is queued by a different owner');
-    if (!inventory.available || (inventory.queue.length && inventory.queue[0].name !== name)) {
+    if (!task.bootstrapException && (!inventory.available || (inventory.queue.length && inventory.queue[0].name !== name))) {
       const queued = existing || { name, owner: options.owner, paths, position: (inventory.queue.at(-1)?.position || 0) + 1, queuedAt: new Date().toISOString() };
       if (!existing) save(queueFile(name), queued);
       return { ...queued, state: 'queued', occupied: inventory.occupied, available: inventory.available, limit: inventory.limit };
@@ -113,6 +122,53 @@ export function createSourceWorkspace(name, options) {
   });
   if (claim.state === 'queued' || (claim.alreadyPromoted && claim.state === 'creating')) return claim;
   return annotatedTask(claim.alreadyPromoted ? claim : materializeSourceTask(claim));
+}
+
+export function createInfrastructureRecoveryWorkspace(name, options) {
+  requireCanonical();
+  if (!/^infra-recovery-[a-z0-9-]{3,40}$/.test(name || '') || !options.owner?.trim() || !options.reason?.trim()) {
+    throw Error('Infrastructure recovery requires an infra-recovery-* task name, --owner and a specific --reason');
+  }
+  const allowed = new Set(['tools/workflow', 'AGENTS.md', 'overnight.md', 'docs/deployment/workspace-management.md',
+    'docs/deployment/workflow.md', 'docs/deployment/hospitality-menu-studio-staging.md']);
+  const scope = options.scope?.split(',').map(safeScope) || [];
+  if (!scope.length || scope.some(item => !allowed.has(item))) {
+    throw Error('Recovery scope is limited to tools/workflow and the named governance documents');
+  }
+  if (options.reason.trim().length < 20) throw Error('Recovery reason must identify the reproducible admission or retirement defect');
+  return createSourceWorkspace(name, { ...options, scope: scope.join(','), infrastructureRecovery: {
+    authorization: 'owner-authorized-infrastructure-recovery', capacityExempt: true, taskName: name,
+    owner: options.owner, reason: options.reason.trim(), scope,
+    authorizedAt: new Date().toISOString(),
+  } });
+}
+
+export function assignSourceWriter(name, options) {
+  requireCanonical();
+  validateName(name);
+  if (!options.owner?.trim() || !options.writer?.trim()) throw Error('Writer assignment requires the task --owner and --writer');
+  const paths = options.scope?.split(',').map(safeScope) || [];
+  if (!paths.length) throw Error('Writer assignment requires explicit --scope paths');
+  return withCapacityLock(() => {
+    const file = sourceTaskFile(name), task = optionalJson(file);
+    if (!task || task.state !== 'active' || task.owner !== options.owner) throw Error('Only the active accountable task owner can assign writers');
+    const writers = task.writers || [];
+    if (writers.some(writer => writer.name === options.writer)) throw Error('Writer already has an assignment; update requires removing its existing ownership first');
+    const overlaps = writers.flatMap(writer => writer.scope.flatMap(owned => paths
+      .filter(candidate => partialPathOverlap(owned, candidate)).map(candidate => ({ writer: writer.name, owned, requested: candidate }))));
+    if (overlaps.length) throw Error(`Writer scopes overlap: ${JSON.stringify(overlaps)}`);
+    const assignment = { name: options.writer.trim(), scope: paths, assignedAt: new Date().toISOString(), assignedBy: options.owner };
+    save(file, { ...task, writers: [...writers, assignment] });
+    return assignment;
+  });
+}
+
+export function sourceWriters(name) {
+  requireCanonical();
+  validateName(name);
+  const task = optionalJson(sourceTaskFile(name));
+  if (!task) throw Error('Task has no active writer registry');
+  return { name, owner: task.owner, writers: task.writers || [] };
 }
 
 /** Reserve each released slot at the head of the FIFO queue. If Git or a head
@@ -135,8 +191,9 @@ export function promoteSourceQueue() {
       const paths = (head.paths ?? []).map(safeScope);
       const task = taskClaim(name, head.owner, baseline, paths);
       if (git('ls-remote', '--heads', 'origin', 'refs/heads/' + task.branch)) throw Error('Queued branch already exists remotely');
+      const observedRegistrations = registrations();
       const claim = withCapacityLock(() => {
-        const inventory = workspaceInventory();
+        const inventory = workspaceInventory({ observedRegistrations });
         const next = inventory.queue[0];
         if (!inventory.available || !next) return null;
         if (next.name !== name || next.owner !== head.owner || next.queuedAt !== head.queuedAt) return false;
@@ -265,7 +322,9 @@ export function recoverSourceOperation(id, options) {
 export function completeSourceWorkspace(name, options, dependencies) {
   requireCanonical();
   validateName(name);
-  const completion = withCapacityLock(() => completeUnderLock(name, options, dependencies));
+  const archived = optionalJson(path.join(stateDir(), 'source-archive', `${name}.json`));
+  if (archived?.owner === options.owner && archived.retirement === 'retired' && !localEntry(archived.directory)) return archived;
+  const completion = completeUnderLock(name, options, dependencies);
   return !options.preserve && completion.retirement === 'retired' && !localEntry(completion.directory)
     ? { ...completion, promotion: promoteSourceQueue() } : completion;
 }
@@ -275,8 +334,8 @@ function completeUnderLock(name, options, { readPrs = pullInventory } = {}) {
   if (previous?.retirement === 'retired' && previous.owner === options.owner && !localEntry(previous.directory)) return previous;
   if (['removing', 'removed', 'retired'].includes(previous?.retirement) && previous.owner === options.owner) {
     if (options.preserve) throw Error('Retirement already started. Inspect the preserved evidence with workspace cleanup without --execute');
-    const cleanup = cleanupSourceWorkspaces({ execute: true, name, locked: true, readPulls: () => readPrs(previous.branch) });
-    return { ...optionalJson(completionFile(name)), cleanup };
+    const cleanup = cleanupSourceWorkspaces({ execute: true, name, readPulls: () => readPrs(previous.branch) });
+    return { ...(optionalJson(completionFile(name)) || optionalJson(path.join(stateDir(), 'source-archive', `${name}.json`))), cleanup };
   }
   const { branch, directory, head, task, run } = sourceWorkspace(name);
   if (!task || !options.owner || task.owner !== options.owner || task.state === 'creating') throw Error('Use the registered task owner for the completion record');
@@ -305,8 +364,8 @@ function completeUnderLock(name, options, { readPrs = pullInventory } = {}) {
     directory, at: new Date().toISOString() };
   save(completionFile(name), result);
   if (options.preserve || !merged) return result;
-  const cleanup = cleanupSourceWorkspaces({ execute: true, name, locked: true, readPulls: () => pulls });
-  return { ...optionalJson(completionFile(name)), cleanup };
+  const cleanup = cleanupSourceWorkspaces({ execute: true, name, readPulls: () => pulls });
+  return { ...(optionalJson(completionFile(name)) || optionalJson(path.join(stateDir(), 'source-archive', `${name}.json`))), cleanup };
 }
 
 export function integrateSourceWorkspace(name, prNumber, { readPr = number => ghApi(`repos/${REPO}/pulls/${number}`), validate = successfulValidation,

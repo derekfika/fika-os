@@ -6,8 +6,9 @@ import { APPS, REPO, MAIN_CHECK, affected, target, supportedEnvironments } from 
 import { git, command, ghApi, save, jsonFile } from './runtime.mjs';
 import { workspaceRecords, cleanupPlan, applyCleanup } from './workspaces.mjs';
 import { cancelSourceQueue, checkSourceWorkspace, completeSourceWorkspace, createSourceWorkspace, devSourceWorkspace,
-  integrateSourceWorkspace, promoteSourceQueue, recoverSourceOperation, recoverSourceReservation, runSourceOperation } from './source-workspaces.mjs';
-import { requireCanonical, withCapacityLock, workspaceInventory } from './workspace-capacity.mjs';
+  assignSourceWriter, createInfrastructureRecoveryWorkspace, integrateSourceWorkspace, promoteSourceQueue, recoverSourceOperation, recoverSourceReservation, runSourceOperation,
+  sourceWriters } from './source-workspaces.mjs';
+import { requireCanonical, stateRecords, withCapacityLock, workspaceInventory } from './workspace-capacity.mjs';
 import { cleanupSourceWorkspaces, pruneStaleSourceRegistrations } from './workspace-retirement.mjs';
 import { sourceWorkspaceHealth } from './workspace-health.mjs';
 import { installSourceDependencies, validationOutputCandidates, recordGenerated } from './workspace-cache.mjs';
@@ -22,8 +23,8 @@ import { studioStagingPreflight } from './studio-staging.mjs';
 
 export function parse(args) {
   const positional = []; const options = {};
-  const flags = new Set(['execute', 'dry-run', 'staging', 'prod', 'resume', 'archive', 'preserve-generated', 'plan', 'tools-only', 'preserve', 'config-only', 'clear-config', 'activate-hotfix', 'inventory-only']);
-  const values = new Set(['sha', 'owner', 'scope', 'base', 'head', 'file', 'approve-hash', 'record', 'timeout-ms', 'output', 'workspace', 'release-id', 'resolution', 'rollout', 'reason', 'replacement', 'confirm', 'pr', 'port', 'lease-id', 'predecessor', 'predecessor-lease-id', 'config-value', 'min-free-gb', 'package']);
+  const flags = new Set(['execute', 'dry-run', 'staging', 'prod', 'resume', 'archive', 'preserve-generated', 'plan', 'tools-only', 'preserve', 'config-only', 'clear-config', 'activate-hotfix', 'inventory-only', 'deep']);
+  const values = new Set(['sha', 'owner', 'scope', 'writer', 'base', 'head', 'file', 'approve-hash', 'record', 'timeout-ms', 'output', 'workspace', 'release-id', 'resolution', 'rollout', 'reason', 'replacement', 'confirm', 'pr', 'port', 'lease-id', 'predecessor', 'predecessor-lease-id', 'config-value', 'min-free-gb', 'package']);
   for (let i = 0; i < args.length; i++) {
     if (!args[i].startsWith('--')) { positional.push(args[i]); continue; }
     const key = args[i].slice(2); if (Object.hasOwn(options, key)) throw Error(`Duplicate --${key}`);
@@ -91,6 +92,9 @@ async function main() {
     result = checkChangelogEntries(changePaths(options), options);
   } else if (verb === 'workspace') {
     if (arg === 'create') result = createSourceWorkspace(name, options);
+    else if (arg === 'create-recovery') result = createInfrastructureRecoveryWorkspace(name, options);
+    else if (arg === 'assign-writer') result = assignSourceWriter(name, options);
+    else if (arg === 'writers') result = sourceWriters(name);
     else if (arg === 'check') result = checkSourceWorkspace(name);
     else if (arg === 'complete') result = completeSourceWorkspace(name, options);
     else if (arg === 'cancel') {
@@ -113,21 +117,23 @@ async function main() {
     } else if (arg === 'startup') {
       requireCanonical();
       let cleanup;
+      process.stderr.write('workspace startup: checking verified retirements\n');
       try { cleanup = cleanupSourceWorkspaces({ execute: true }); }
       catch (error) { cleanup = { status: 'unavailable', reason: error.message.split(/\r?\n/)[0] }; }
+      process.stderr.write('workspace startup: promoting FIFO queue and reading inventory\n');
       result = { cleanup, promotion: promoteSourceQueue(), health: sourceWorkspaceHealth({ ...options, 'inventory-only': true }) };
-    } else if (arg === 'health') {
-      result = sourceWorkspaceHealth(options);
+    } else if (arg === 'health' || arg === 'storage-audit') {
+      result = sourceWorkspaceHealth({ ...options, ...(arg === 'storage-audit' ? { deep: true } : {}) });
       if (options.output) save(options.output, result);
     }
     else if (arg === 'status' || arg === 'list') result = { observedAt: new Date().toISOString(), ...workspaceInventory() };
-    else if (arg === 'history') result = workspaceRecords();
+    else if (arg === 'history') result = [...workspaceRecords(), ...stateRecords('source-archive')];
     else if (arg === 'migrate') result = migrateSourceHistory(options);
     else if (arg === 'install-fences') result = installWorkspaceFences();
     else if (arg === 'recover-validation') result = recoverValidationOperation(name,options);
     else if (arg === 'recover-dev') result = await recoverDevOperation(name,options);
     else if (arg === 'recover-deploy') result = recoverDeployOperation(name, options);
-    else throw Error('workspace create|check|complete|cancel|recover|install <name>; startup|cleanup|prune|health|status|list|history|migrate|install-fences; recover-operation|recover-validation|recover-dev|recover-deploy <operation-id>. Legacy lease mutations are retired.');
+    else throw Error('workspace create|create-recovery|assign-writer|writers|check|complete|cancel|recover|install <name>; startup|cleanup|prune|health|storage-audit|status|list|history|migrate|install-fences; recover-operation|recover-validation|recover-dev|recover-deploy <operation-id>. Legacy lease mutations are retired.');
   } else if (verb === 'integrate') {
     if (!options.workspace) throw Error('Integration requires --workspace');
     result = runSourceOperation('integrate', () => integrateSourceWorkspace(options.workspace, options.pr), options.workspace);

@@ -15,6 +15,8 @@ const traffic = `${backend}/traffic`;
 const domain = `${backend}/domains/menu-studio-staging.fikacatering.com`;
 const builds = `${backend}/builds?pageSize=1`;
 const rollouts = `${backend}/rollouts?pageSize=1`;
+const servingBuild = `${backend}/builds/build-2026-11-25-002`;
+const servingRollout = `${backend}/rollouts/rollout-2026-11-25-002`;
 const toolAccount = ['iam', 'service-accounts', 'describe', studioStaging.serviceAccount];
 const toolDatabase = ['firestore', 'databases', 'describe', '--database', 'hospitality-menu-studio'];
 const toolArtifacts = ['artifacts', 'packages', 'list', '--repository', 'firebaseapphosting-images', '--location', 'europe-west4', '--limit', '2'];
@@ -35,12 +37,15 @@ function evidence() {
         repository: 'projects/fika-os-dev/locations/europe-west4/connections/apphosting-test/gitRepositoryLinks/derekfika-fika-os',
       },
     },
-    [traffic]: { name: traffic, rolloutPolicy: { disabled: true, codebaseBranch: 'main' }, current: { splits: [] } },
+    [traffic]: { name: traffic, rolloutPolicy: { disabled: true, codebaseBranch: 'main' },
+      current: { splits: [{ build: servingBuild, percent: 100 }] }, target: { splits: [] } },
     [domain]: { name: domain, customDomainStatus: {
       ownershipState: 'OWNERSHIP_ACTIVE', hostState: 'HOST_ACTIVE', certState: 'CERT_ACTIVE',
     } },
-    [builds]: {},
-    [rollouts]: { rollouts: [] },
+    [builds]: { builds: [{ name: servingBuild, state: 'READY', source: { codebase: {
+      hash: 'a'.repeat(40), commit: 'a'.repeat(40), uri: `https://github.com/${'derekfika/fika-os'}/commit/${'a'.repeat(40)}`,
+    } } }] },
+    [rollouts]: { rollouts: [{ name: servingRollout, state: 'SUCCEEDED', build: servingBuild }] },
   };
   const account = { projectId: studioStaging.project, email: studioStaging.serviceAccount };
   const database = { name: 'projects/fika-os-dev/databases/hospitality-menu-studio', type: 'FIRESTORE_NATIVE',
@@ -128,7 +133,7 @@ test('App Hosting defaults to closed with only the pinned Studio staging overlay
   assert.match(readFileSync(new URL('firestore.rules', folder), 'utf8'), /allow read, write: if false;/);
 });
 
-test('preflight observes only scoped metadata and leaves release blocked even when consistent', async () => {
+test('existing successful Studio backend follows subsequent-release preflight without empty-state requirements', async () => {
   const fixture = evidence();
   const result = await studioStagingPreflight(fixture);
   assert.deepEqual(fixture.cloudReads, [backend, traffic, domain, builds, rollouts]);
@@ -148,7 +153,8 @@ test('preflight observes only scoped metadata and leaves release blocked even wh
     storageGrant: 'none',
     buildMetadataUpdates: 'staging-project',
   });
-  assert.match(result.pending.join(' '), /AUTHMOD.*IAM.*default Firestore, Cloud Storage, production resources.*mutable tags.*first-release plan/);
+  assert.match(result.pending.join(' '), /AUTHMOD.*IAM.*default Firestore, Cloud Storage, production resources.*mutable tags/);
+  assert.doesNotMatch(result.pending.join(' '), /first-release plan/);
 });
 
 test('mismatched identity, active traffic, overrides and unfinished domain certificate block the preflight', async () => {
@@ -165,7 +171,10 @@ test('mismatched identity, active traffic, overrides and unfinished domain certi
   assert.equal(result.status, 'BLOCKED');
   const { managedArtifactRepository, ...otherChecks } = result.checks;
   assert.equal(managedArtifactRepository, 'SHARED');
-  assert.ok(Object.values(otherChecks).every(value => value === 'MISMATCH'));
+  assert.equal(otherChecks.rolloutPolicy, 'VERIFIED');
+  assert.equal(otherChecks.buildHistory, 'MISMATCH');
+  assert.ok(Object.entries(otherChecks).filter(([name]) => !['rolloutPolicy', 'buildHistory'].includes(name))
+    .every(([, value]) => value === 'MISMATCH'));
 
   const overrides = evidence();
   overrides.resources[backend].overrideEnv = [{ variable: 'EXTERNAL_SECRET', secret: 'untrusted-reference' }];
@@ -236,8 +245,11 @@ test('direct Studio IAM holds on missing, broader or wrongly scoped access and r
   assert.equal(await studioStagingIamStatus(unverified.describeResource), 'UNVERIFIED');
 });
 
-test('empty history needs complete pages even if traffic is empty', async () => {
+test('a genuinely empty first release needs complete history pages and retains its approval gate', async () => {
   const fixture = evidence();
+  fixture.resources[traffic].current.splits = [];
+  fixture.resources[builds] = {};
+  fixture.resources[rollouts] = { rollouts: [] };
   fixture.resources[rollouts] = { rollouts: [], nextPageToken: 'opaque' };
   const partial = await studioStagingPreflight(fixture);
   assert.equal(partial.checks.buildHistory, 'UNVERIFIED');
@@ -245,7 +257,7 @@ test('empty history needs complete pages even if traffic is empty', async () => 
   fixture.resources[rollouts] = { rollouts: null };
   assert.equal((await studioStagingPreflight(fixture)).checks.buildHistory, 'UNVERIFIED');
   fixture.resources[rollouts] = { rollouts: [{}], nextPageToken: 'opaque' };
-  assert.equal((await studioStagingPreflight(fixture)).checks.buildHistory, 'MISMATCH');
+  assert.equal((await studioStagingPreflight(fixture)).checks.buildHistory, 'UNVERIFIED');
 });
 
 test('the artifact probe detects a foreign package without returning names or certifying an empty inventory', async () => {
@@ -263,6 +275,7 @@ test('the artifact probe detects a foreign package without returning names or ce
 test('first Studio release requires the exact integrated backend, main branch and active custom domain', async () => {
   const t = target('menu-studio', 'staging');
   const fixture = evidence();
+  fixture.resources[traffic].current.splits = [];
   const read = async resource => resource.endsWith('?pageSize=100') ? {} : fixture.read(resource);
   const before = await inspectEmptyFirstReleaseState(t, read);
   assert.equal(before.state, 'EMPTY');

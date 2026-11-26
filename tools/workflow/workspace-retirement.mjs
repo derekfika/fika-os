@@ -4,7 +4,7 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync,
 import { ancestor, command, common, git, ref, save, stateDir } from './runtime.mjs';
 import { REPO, exactSha } from './policy.mjs';
 import { canonical, completionFile, localEntry, managedRoot, optionalJson, pathKey, registrations, samePath, sourceTaskFile, split,
-  stateRecords, withCapacityLock, workspaceName } from './workspace-capacity.mjs';
+  stateRecords, workspaceName } from './workspace-capacity.mjs';
 import { generatedEntries, generatedRetirementPlan, verifiedTypeScriptBuildInfo } from './workspace-cache.mjs';
 import { dependencyLinkPlan, readArchivedRetirement, removeRetirementResidue, retirementResidue } from './workspace-residue.mjs';
 
@@ -36,6 +36,7 @@ export function sourceStatus(run) {
 
 const branchRef = branch => `refs/heads/${branch}`;
 const recordsByName = area => new Map(stateRecords(area).map(record => [record.name, record]));
+const archivedCompletions = () => new Set(stateRecords('source-archive').map(record => record.name));
 
 const retiring = new Set(['removing', 'removed', 'retired']);
 const retirementArchive = name => path.join(stateDir(), 'source-recovery', 'retirements', name);
@@ -203,34 +204,46 @@ export function pruneStaleSourceRegistrations({ execute = false } = {}) {
   return { stale, pruned: entries.map(entry => entry.tree) };
 }
 
-const nativeWorktreeRemove = directory => git('worktree', 'remove', directory);
+const nativeWorktreeRemove = directory => command('git', ['worktree', 'remove', directory], { timeout: 30000 });
 
-export function cleanupSourceWorkspaces({ execute = false, name, inspect = false, locked = false,
+export function cleanupSourceWorkspaces({ execute = false, name, inspect = false,
   readPulls = pullInventory, removeWorktree = nativeWorktreeRemove } = {}) {
   const tasks = recordsByName('source-tasks'), historical = recordsByName('workspaces');
   const recorded = recordsByName('source-completions');
+  const archived = archivedCompletions();
+  const trees = registrations();
   for (const [legacyName, record] of historical) {
-    if (record.state !== 'finished' || !record.finalSha || tasks.has(legacyName) || !workspaceName(legacyName)) continue;
+    if (archived.has(legacyName) || record.state !== 'finished' || !record.finalSha || tasks.has(legacyName) || !workspaceName(legacyName)) continue;
     tasks.set(legacyName, record);
     if (!recorded.has(legacyName)) recorded.set(legacyName, { name: legacyName, directory: record.directory, owner: record.owner,
       branch: record.branch, finalSha: record.finalSha, outcome: 'completed', retirement: 'retained' });
   }
-  const trees = registrations();
+  // Archived tasks normally stay out of startup processing. Reopen only a completed
+  // retirement whose supposedly removed checkout or registration physically reappears.
+  for (const task of stateRecords('source-archive')) {
+    if (!localEntry(task.directory) && !trees.some(tree => samePath(tree.worktree, task.directory))) continue;
+    tasks.set(task.name, task);
+    if (!recorded.has(task.name)) recorded.set(task.name, task);
+  }
   const completions = [...recorded.values()].filter(record => {
     if (record.outcome !== 'completed' || (name && name !== record.name)) return false;
-    if (record.retirement !== 'retired') return true;
     const task = tasks.get(record.name);
-    return task && samePath(task.directory, path.join(managedRoot(), task.name)) && Boolean(localEntry(task.directory));
+    // Historical completion records are searchable evidence, not startup work.
+    // Only reconcile a task while a physical checkout/residue or Git registration exists.
+    if (!task || !samePath(task.directory, path.join(managedRoot(), task.name))) return false;
+    return Boolean(localEntry(task.directory) || trees.some(tree => samePath(tree.worktree, task.directory)));
   });
   const result = { retired: [], ready: [], protected: [] };
   if (!completions.length) return result;
+  process.stderr.write(`workspace retirement: verifying ${completions.length} physical checkout(s)\n`);
   const management = managedRoot();
   const github = githubOrigin();
-  if (execute || inspect) git('fetch', '--no-write-fetch-head', 'origin');
+  if (execute || inspect) command('git', ['fetch', '--no-write-fetch-head', 'origin'], { timeout: 45000 });
   const main = new Set(git('rev-list', 'origin/main').split(/\r?\n/));
   const pulls = readPulls(name ? tasks.get(name)?.branch : undefined);
   const markers = () => [...stateRecords('workspace-operations'), ...stateRecords('source-operations')];
   for (const completion of completions) {
+    process.stderr.write(`workspace retirement: checking ${completion.name}\n`);
     const task = tasks.get(completion.name);
     const protect = reason => result.protected.push({ name: completion.name, directory: completion.directory, reason });
     const proof = integrationEvidence(pulls, completion.branch, completion.finalSha, { github, contains: sha => main.has(sha) });
@@ -251,7 +264,7 @@ export function cleanupSourceWorkspaces({ execute = false, name, inspect = false
         if (latest.retirement === 'retired' && !localEntry(task.directory)) return;
         if (latest.outcome !== 'completed' || latest.finalSha !== completion.finalSha) throw Error('Owner completion changed during cleanup');
         const history = optionalJson(path.join(stateDir(), 'workspaces', task.name + '.json'));
-        const currentTask = optionalJson(sourceTaskFile(task.name)) || history;
+        const currentTask = optionalJson(sourceTaskFile(task.name)) || history || optionalJson(path.join(stateDir(), 'source-archive', `${task.name}.json`));
         if (!currentTask) throw Error('Owner record disappeared during cleanup');
         const current = registrations().find(item => samePath(item.worktree, currentTask.directory));
         assertLocalIdentity(currentTask, latest, current, markers(), history, management);
@@ -279,11 +292,19 @@ export function cleanupSourceWorkspaces({ execute = false, name, inspect = false
         if (ref(branchRef(task.branch))) git('update-ref', '-d', branchRef(task.branch), latest.finalSha);
         save(file, { ...latest, retirement: 'retired', retiredAt: latest.retiredAt || new Date().toISOString(),
           ...(latest.retirement === 'retired' ? { residueReconciledAt: new Date().toISOString() } : {}), mergedPr: proof });
+        const retired = optionalJson(file);
+        save(path.join(stateDir(), 'source-archive', `${task.name}.json`), { ...currentTask, ...retired,
+          archivedAt: new Date().toISOString(), searchable: true });
+        unlinkSync(file);
+        const activeTaskFile = sourceTaskFile(task.name);
+        if (localEntry(activeTaskFile)) unlinkSync(activeTaskFile);
         result.ready.push({ ...candidate, action: current ? 'retire-checkout' : 'finish-retirement' });
         result.retired.push(candidate);
       };
-      if (locked) retire();
-      else withCapacityLock(retire);
+      // Git inspection, metadata archival and native worktree removal may take minutes.
+      // Never hold the shared SQLite admission lock during those operations. The retirement
+      // intent and identity are re-read immediately before the irreversible remove.
+      retire();
     } catch (error) { protect(error.message.split(/\r?\n/)[0]); }
   }
   return result;
