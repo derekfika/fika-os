@@ -10,6 +10,7 @@ export const studioStaging = Object.freeze({
 
 export function verifyStudioStagingOverlay(source) {
   const pins = {
+    FIKA_DATA_SOURCE_TRACE: '"1"',
     FIKA_RUNTIME_MODE: 'staging',
     FIREBASE_PROJECT_ID: STUDIO_STAGING.project,
     FIKA_HUB_BASE_URL: STUDIO_STAGING.hub,

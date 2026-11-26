@@ -51,7 +51,7 @@ const noStore = { headers: { "Cache-Control": "no-store, max-age=0" } };
 
 const path = "/api/hospitality-catalogue";
 
-export function GET(request: NextRequest) {
+export async function GET(request: NextRequest) {
   return traceHospitalityCatalogue(request, "admin.read", path, async () => {
     try {
       const actor = await requireActor(request);
@@ -70,7 +70,7 @@ export function GET(request: NextRequest) {
   });
 }
 
-export function POST(request: NextRequest) {
+export async function POST(request: NextRequest) {
   return traceHospitalityCatalogue(request, "admin.mutate", path, () => mutateCatalogue(request));
 }
 

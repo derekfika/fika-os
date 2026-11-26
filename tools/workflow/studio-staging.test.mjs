@@ -117,6 +117,7 @@ test('App Hosting defaults to closed with only the pinned Studio staging overlay
   assert.equal(config, 'env:\n  - variable: FIKA_RUNTIME_MODE\n    value: unconfigured\n    availability: [RUNTIME]');
   const staging = readFileSync(new URL('apphosting.staging.yaml', folder), 'utf8').replaceAll('\r\n', '\n').trim();
   const bindings = {
+    FIKA_DATA_SOURCE_TRACE: '"1"',
     FIKA_RUNTIME_MODE: 'staging',
     FIREBASE_PROJECT_ID: studioStaging.project,
     FIKA_HUB_BASE_URL: 'https://staging-os.fikacatering.com',
@@ -128,6 +129,7 @@ test('App Hosting defaults to closed with only the pinned Studio staging overlay
     `  - variable: ${key}\n    value: ${value}\n    availability: [RUNTIME]`).join('\n'));
   assert.doesNotThrow(() => verifyStudioStagingOverlay(staging));
   assert.throws(() => verifyStudioStagingOverlay(staging.replace(studioStaging.project, 'another-staging-project')), /exact Studio staging overlay/);
+  assert.throws(() => verifyStudioStagingOverlay(staging.replace('value: "1"', 'value: "0"')), /exact Studio staging overlay/);
   const rules = JSON.parse(readFileSync(new URL('firebase.staging.json', folder), 'utf8'));
   assert.deepEqual(rules, { firestore: [{ database: studioStaging.database, rules: 'firestore.rules' }] });
   assert.match(readFileSync(new URL('firestore.rules', folder), 'utf8'), /allow read, write: if false;/);
