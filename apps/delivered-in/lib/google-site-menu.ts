@@ -15,15 +15,55 @@ type Presentation = { pageSize?: { width?: { magnitude?: number }; height?: { ma
 const json = async <T>(response: Response): Promise<T> => { const text = await response.text(); let body: unknown; try { body = JSON.parse(text); } catch { throw new Error(`Google API returned ${response.status} without JSON.`); } if (!response.ok) throw new Error(`Google API ${response.status}: ${JSON.stringify(body)}`); return body as T; };
 export async function googleFetch(input: string, init: RequestInit, label: string) { const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 30000); try { return await fetch(input, { ...init, redirect: "error", signal: controller.signal }); } catch (error) { if ((error as { name?: string }).name === "AbortError") throw new Error(`${label} timed out after 30 seconds.`); throw new Error(`${label} failed: ${(error as Error).message}`); } finally { clearTimeout(timer); } }
 function resourceId(value?: string) { const raw = value?.trim().replace(/[),.;]+$/, ""); if (!raw) return undefined; return (raw.match(/\/folders\/([A-Za-z0-9_-]+)/)?.[1] || raw.match(/\/d\/([A-Za-z0-9_-]+)/)?.[1] || raw).replace(/[),.;]+$/, ""); }
-async function accessToken() {
-  const owner = resolveDriveOwner({ type: "app-workspace", appId: "delivered-in" });
-  return driveAccessToken(owner);
+function menuDriveRoute(oplocId: string) {
+  const config = siteMenuDriveConfig(oplocId);
+  const root = resourceId(config.folderId);
+  if (!root || !/^[A-Za-z0-9_-]+$/.test(root)) throw new MenuArtifactError("MENU_OUTPUT_FOLDER_NOT_CONFIGURED", "The Delivered-In menu output folder is invalid.", 409);
+  const owner = resolveDriveOwner(config.owner);
+  const key = stableDocumentId(JSON.stringify([oplocId, owner.type, owner.workspaceEmail?.toLowerCase() || "", root]));
+  return { owner, root, key };
 }
 async function assertFolder(folderId: string, headers: Record<string, string>) { const metadata = await json<{ mimeType?: string; trashed?: boolean }>(await googleFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(folderId)}?supportsAllDrives=true&fields=mimeType,trashed`, { headers }, "Delivered-In output folder validation")); if (metadata.mimeType !== "application/vnd.google-apps.folder" || metadata.trashed) throw new Error("The configured Delivered-In output folder is not accessible."); }
 export function weekFolderName(weekCommencing?: string) { return weekCommencing ? `WC_${weekCommencing}` : undefined; }
-async function weekFolderId(rootFolderId: string, weekCommencing: string, headers: Record<string, string>) { const name = weekFolderName(weekCommencing); if (!name) return rootFolderId; await assertFolder(rootFolderId, headers); const query = `'${rootFolderId}' in parents and name = '${name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`; const existing = await json<{ files?: Array<{ id: string }> }>(await googleFetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&spaces=drive&fields=files(id)&pageSize=1`, { headers }, "Delivered-In week folder lookup")); if (existing.files?.[0]?.id) return existing.files[0].id; const created = await json<{ id: string }>(await googleFetch("https://www.googleapis.com/drive/v3/files?supportsAllDrives=true&fields=id", { method: "POST", headers, body: JSON.stringify({ name, parents: [rootFolderId], mimeType: "application/vnd.google-apps.folder" }) }, "Delivered-In week folder creation")); return created.id; }
-async function trashDriveFile(fileId: string, headers: Record<string, string>) { await googleFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?supportsAllDrives=true`, { method: "PATCH", headers, body: JSON.stringify({ trashed: true }) }, "Delivered-In previous menu replacement"); }
-export async function retireGoogleSiteMenu(fileId?: string, oplocId?: string) { if (!fileId) return; const token = oplocId ? await driveAccessToken(resolveDriveOwner(siteMenuDriveConfig(oplocId).owner)) : await accessToken(); await trashDriveFile(fileId, { Authorization: `Bearer ${token}`, "content-type": "application/json" }); }
+async function findWeekFolder(root: string, week: string, headers: Record<string, string>) {
+  if (!week) return root;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(week)) throw new Error("Invalid published week date.");
+  const query = `'${root}' in parents and name = '${weekFolderName(week)}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+  const result = await json<{ files?: Array<{ id: string }> }>(await googleFetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&spaces=drive&supportsAllDrives=true&includeItemsFromAllDrives=true&fields=files(id)&pageSize=2`, { headers }, "Delivered-In week folder lookup"));
+  if ((result.files?.length || 0) > 1) throw new MenuArtifactError("MENU_FOLDER_AMBIGUOUS", "More than one output folder exists for this week.", 409);
+  return result.files?.[0]?.id;
+}
+async function weekFolderId(root: string, week: string, headers: Record<string, string>) {
+  await assertStagingDriveResource(root, headers.Authorization);
+  await assertFolder(root, headers);
+  const existing = await findWeekFolder(root, week, headers);
+  if (existing) return existing;
+  const created = await json<{ id: string }>(await googleFetch("https://www.googleapis.com/drive/v3/files?supportsAllDrives=true&fields=id", { method: "POST", headers, body: JSON.stringify({ name: weekFolderName(week), parents: [root], mimeType: "application/vnd.google-apps.folder" }) }, "Delivered-In week folder creation"));
+  return created.id;
+}
+type MenuDriveFile = { id: string; webViewLink?: string; parents?: string[]; ownedByMe?: boolean; driveId?: string; mimeType?: string; trashed?: boolean; appProperties?: Record<string, string> };
+export async function retireGoogleSiteMenu(fileId?: string, oplocId?: string) {
+  if (!fileId || !oplocId) return;
+  const route = menuDriveRoute(oplocId);
+  const token = await driveAccessToken(route.owner);
+  const headers = { Authorization: `Bearer ${token}`, "content-type": "application/json" };
+  const url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?supportsAllDrives=true`;
+  const response = await googleFetch(`${url}&fields=id,parents,ownedByMe,driveId,mimeType,trashed,appProperties`, { headers }, "Delivered-In previous menu provenance");
+  // Historical files can belong to the previous owner. Leave them intact when provenance is absent.
+  if (response.status === 403 || response.status === 404) return;
+  const file = await json<MenuDriveFile>(response);
+  const properties = file.appProperties;
+  if (file.trashed || file.mimeType !== "application/vnd.google-apps.presentation" || (!file.ownedByMe && !file.driveId) ||
+      properties?.fikaMenuRoute !== route.key || !properties.fikaMenuFolder || file.parents?.length !== 1 || file.parents[0] !== properties.fikaMenuFolder) return;
+  if (file.parents[0] !== route.root) {
+    const parentResponse = await googleFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(file.parents[0])}?supportsAllDrives=true&fields=parents,mimeType,trashed`, { headers }, "Delivered-In previous week folder provenance");
+    if (parentResponse.status === 403 || parentResponse.status === 404) return;
+    const parent = await json<MenuDriveFile>(parentResponse);
+    if (parent.trashed || parent.mimeType !== "application/vnd.google-apps.folder" || parent.parents?.length !== 1 || parent.parents[0] !== route.root) return;
+  }
+  await assertStagingDriveResource(fileId, headers.Authorization);
+  await json(await googleFetch(url, { method: "PATCH", headers, body: JSON.stringify({ trashed: true }) }, "Delivered-In previous menu replacement"));
+}
 async function readPresentation(id: string, headers: Record<string, string>) {
   await assertStagingDriveResource(id, headers.Authorization);
   return json<Presentation>(await googleFetch(`https://slides.googleapis.com/v1/presentations/${encodeURIComponent(id)}`, { headers }, "Delivered-In Slides template read"));
@@ -155,22 +195,36 @@ async function createSharedSiteMenu(day: ProjectedDay, site: Site, generatedBy: 
 export async function createGoogleSiteMenu(day: ProjectedDay, site: Site, generatedBy: string, existingFileId?: string, deliveryId?: string): Promise<SiteMenuArtifact> {
   assertPrintableCpuEvidence(day);
   if (deliveredInMenuSiteKey(site)) return createSharedSiteMenu(day, site, generatedBy, deliveryId);
-  const templateId = resourceId(process.env.GOOGLE_DELIVERED_IN_TEMPLATE_ID); const folderId = resourceId(process.env.GOOGLE_DELIVERED_IN_OUTPUT_FOLDER_ID || process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID_APP_DELIVERED_IN);
-  if (!templateId || !folderId) throw new Error("Delivered-In Google Slides template and output folder are not configured.");
-  const token = await accessToken(); const headers = { Authorization: `Bearer ${token}`, "content-type": "application/json" };
+  const route = menuDriveRoute(site.oplocId);
+  const templateId = resourceId(process.env.GOOGLE_DELIVERED_IN_TEMPLATE_ID);
+  if (!templateId) throw new MenuArtifactError("MENU_TEMPLATE_NOT_CONFIGURED", "The Delivered-In Google Slides template is not configured.", 409);
+  const token = await driveAccessToken(route.owner); const headers = { Authorization: `Bearer ${token}`, "content-type": "application/json" };
+  await assertStagingDriveResource(route.root, headers.Authorization);
   const fileName = siteMenuFileName(site.label, day); const stableDeliveryId = deliveryId ? stableDocumentId(`${site.oplocId}:${deliveryId}`) : undefined;
-  let copy: { id: string; webViewLink?: string; appProperties?: Record<string, string> } | undefined;
-  if (stableDeliveryId) {
-    const query = `appProperties has { key='fikaDeliveryId' and value='${stableDeliveryId}' } and trashed = false`;
-    const existing = await json<{ files?: Array<{ id: string; webViewLink?: string; appProperties?: Record<string, string> }> }>(await googleFetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&spaces=drive&fields=files(id,webViewLink,appProperties)&pageSize=1`, { headers }, "Delivered-In delivery artifact lookup"));
+  let copy: MenuDriveFile | undefined;
+  let outputFolderId = stableDeliveryId ? await findWeekFolder(route.root, day.weekCommencing || "", headers) : undefined;
+  if (stableDeliveryId && outputFolderId) {
+    const query = `'${outputFolderId}' in parents and appProperties has { key='fikaDeliveryId' and value='${stableDeliveryId}' } and mimeType = 'application/vnd.google-apps.presentation' and trashed = false`;
+    const existing = await json<{ files?: MenuDriveFile[] }>(await googleFetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&spaces=drive&supportsAllDrives=true&includeItemsFromAllDrives=true&fields=files(id,webViewLink,parents,ownedByMe,driveId,appProperties)&pageSize=2`, { headers }, "Delivered-In delivery artifact lookup"));
+    if ((existing.files?.length || 0) > 1) throw new MenuArtifactError("MENU_DELIVERY_AMBIGUOUS", "More than one site menu matches this delivery in the selected output folder.", 409);
     copy = existing.files?.[0];
+    if (copy) {
+      const properties = copy.appProperties;
+      const marked = properties?.fikaMenuRoute === route.key && properties.fikaMenuFolder === outputFolderId && (copy.ownedByMe || copy.driveId);
+      const legacy = route.owner.type === "app-workspace" && !properties?.fikaMenuRoute && !properties?.fikaMenuFolder && copy.ownedByMe;
+      if (properties?.fikaDeliveryId !== stableDeliveryId || copy.parents?.length !== 1 || copy.parents[0] !== outputFolderId || (!marked && !legacy)) {
+        throw new MenuArtifactError("MENU_DELIVERY_OWNERSHIP_UNVERIFIED", "The saved menu does not belong to the selected output route. Review its ownership before retrying.", 409);
+      }
+      await assertStagingDriveResource(copy.id, headers.Authorization);
+    }
   }
   const resuming = Boolean(copy);
   if (!copy) {
     const template = await readPresentation(templateId, headers);
     assertMenuSectionAnchors(day, template);
-    const outputFolderId = await weekFolderId(folderId, day.weekCommencing || "", headers);
-    copy = await json<{ id: string; webViewLink?: string }>(await googleFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(templateId)}/copy?supportsAllDrives=true&fields=id,webViewLink`, { method: "POST", headers, body: JSON.stringify({ name: fileName, parents: [outputFolderId], ...(stableDeliveryId ? { appProperties: { fikaDeliveryId: stableDeliveryId, fikaMaterializationStatus: "pending" } } : {}) }) }, "Delivered-In Slides template copy"));
+    outputFolderId ||= await weekFolderId(route.root, day.weekCommencing || "", headers);
+    const appProperties = { fikaMenuRoute: route.key, fikaMenuFolder: outputFolderId, ...(stableDeliveryId ? { fikaDeliveryId: stableDeliveryId, fikaMaterializationStatus: "pending" } : {}) };
+    copy = await json<MenuDriveFile>(await googleFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(templateId)}/copy?supportsAllDrives=true&fields=id,webViewLink`, { method: "POST", headers, body: JSON.stringify({ name: fileName, parents: [outputFolderId], appProperties }) }, "Delivered-In Slides template copy"));
   }
   const release = (day as ProjectedDay & { sourceLineage?: { cpu?: { releaseId?: string; releaseVersion?: string; contentHash?: string } } }).sourceLineage?.cpu;
   if (copy.appProperties?.fikaMaterializationStatus === "ready" && copy.appProperties.fikaMenuSections === "checked") return { artifactId: `delivered-in-menu:${site.oplocId}:${day.sourceDayId}:${stableDeliveryId || day.contentHash}`, oplocId: site.oplocId, sourceDayId: day.sourceDayId, sourcePublicationDayId: day.publicationDayId, sourceVersion: day.version, sourceContentHash: day.contentHash, generatedAt: new Date().toISOString(), generatedBy, driveFileId: copy.id, driveUrl: copy.webViewLink || `https://docs.google.com/presentation/d/${copy.id}/edit`, fileName, ...(deliveryId ? { deliveryId } : {}), ...(release?.releaseId ? { sourceReleaseId: release.releaseId } : {}), ...(release?.releaseVersion ? { sourceReleaseVersion: release.releaseVersion } : {}), ...(release?.contentHash ? { sourcePacketHash: release.contentHash } : {}) };
@@ -182,7 +236,7 @@ export async function createGoogleSiteMenu(day: ProjectedDay, site: Site, genera
     const requests = buildDeliveredInMenuRequests(day, site, presentation);
     await json(await googleFetch(`https://slides.googleapis.com/v1/presentations/${encodeURIComponent(copy.id)}:batchUpdate`, { method: "POST", headers, body: JSON.stringify({ requests }) }, "Delivered-In Slides generation"));
   }
-  if (stableDeliveryId) await json(await googleFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(copy.id)}?supportsAllDrives=true`, { method: "PATCH", headers, body: JSON.stringify({ appProperties: { fikaDeliveryId: stableDeliveryId, fikaMaterializationStatus: "ready", fikaMenuSections: "checked" } }) }, "Delivered-In delivery artifact certification"));
+  if (stableDeliveryId) await json(await googleFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(copy.id)}?supportsAllDrives=true`, { method: "PATCH", headers, body: JSON.stringify({ appProperties: { fikaMenuRoute: route.key, fikaMenuFolder: outputFolderId, fikaDeliveryId: stableDeliveryId, fikaMaterializationStatus: "ready", fikaMenuSections: "checked" } }) }, "Delivered-In delivery artifact certification"));
   const driveUrl = copy.webViewLink || `https://docs.google.com/presentation/d/${copy.id}/edit`;
   return { artifactId: `delivered-in-menu:${site.oplocId}:${day.sourceDayId}:${stableDeliveryId || day.contentHash}`, oplocId: site.oplocId, sourceDayId: day.sourceDayId, sourcePublicationDayId: day.publicationDayId, sourceVersion: day.version, sourceContentHash: day.contentHash, generatedAt: new Date().toISOString(), generatedBy, driveFileId: copy.id, driveUrl, fileName, ...(deliveryId ? { deliveryId } : {}), ...(release?.releaseId ? { sourceReleaseId: release.releaseId } : {}), ...(release?.releaseVersion ? { sourceReleaseVersion: release.releaseVersion } : {}), ...(release?.contentHash ? { sourcePacketHash: release.contentHash } : {}) };
 }
