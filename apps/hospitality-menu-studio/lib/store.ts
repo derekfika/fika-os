@@ -19,6 +19,7 @@ import { publicationContent } from "./scoped-publication";
 import { assortmentIsComplete, kitchenQuantities } from "./review";
 import { ProductMenuStore } from "./product-menu-store";
 import { ProductMenuPublicationStore } from "./product-menu-publication-store";
+import { readStudioDocument, readStudioDocuments, readStudioQuery } from "./data-trace";
 
 const root = "fikaHospitalityMenuStudioV1";
 const pageSize = 50;
@@ -52,7 +53,7 @@ export class StudioStore {
   }
 
   async list<T extends Draft>(kind: DraftCollection, cursor?: string): Promise<Page<T>> {
-    const snapshot = await this.page(this.db.collection(`${root}_${kind}`), cursor);
+    const snapshot = await readStudioQuery(`legacy.${kind}.page`, this.page(this.db.collection(`${root}_${kind}`), cursor));
     return {
       items: snapshot.docs.slice(0, pageSize).map(document => decodeDraft<T>(document.data() as StoredDraft).item),
       nextCursor: snapshot.docs.length > pageSize ? snapshot.docs[pageSize - 1].id : null,
@@ -63,11 +64,11 @@ export class StudioStore {
     const history = this.db.collection(`${root}_menus`).doc(menuId).collection("publications");
     let query = history.orderBy("revision", "desc").limit(pageSize + 1);
     if (cursor) {
-      const last = await history.doc(cursor).get();
+      const last = await readStudioDocument("legacy.history-cursor", history.doc(cursor).get());
       if (!last.exists) throw new StudioProblem(422, "INVALID_CURSOR", "This history page is unavailable.");
       query = query.startAfter(last);
     }
-    const snapshot = await query.get();
+    const snapshot = await readStudioQuery("legacy.publication-history", query.get());
     return {
       items: snapshot.docs.slice(0, pageSize).map(document => document.data() as Publication),
       nextCursor: snapshot.docs.length > pageSize ? snapshot.docs[pageSize - 1].id : null,
@@ -81,7 +82,7 @@ export class StudioStore {
   async publicationSigningKey(create: boolean) {
     const ref = this.db.collection(`${root}_schedules`).doc("publication-signing-key-v1");
     return this.db.runTransaction(async transaction => {
-      const record = await transaction.get(ref);
+      const record = await readStudioDocument("legacy.publication-signing-key", transaction.get(ref), true);
       if (record.exists) {
         const value = record.data()?.key;
         if (typeof value === "string" && /^[a-f0-9]{64}$/.test(value)) return value;
@@ -105,7 +106,7 @@ export class StudioStore {
   async recordPublicationDelivery(menuId: string, publicationId: string, contentHash: string) {
     const ref = this.draftHead("menus", menuId).collection("publicationOutbox").doc(publicationId);
     await this.db.runTransaction(async transaction => {
-      const pending = (await transaction.get(ref)).data();
+      const pending = (await readStudioDocument("legacy.publication-delivery", transaction.get(ref), true)).data();
       if (!pending || pending.contentHash !== contentHash || pending.publicationId !== publicationId) throw publicationIntegrity();
       if (pending.status === "pending") transaction.update(ref, { status: "delivered", deliveredAt: this.now().toISOString() });
       else if (pending.status !== "delivered") throw publicationIntegrity();
@@ -147,7 +148,7 @@ export class StudioStore {
   }
 
   private async readPublication(transaction: Transaction, head: DocumentReference, publicationId: string) {
-    const history = await transaction.get(head.collection("publications").doc(publicationId));
+    const history = await readStudioDocument("legacy.publication-history-entry", transaction.get(head.collection("publications").doc(publicationId)), true);
     if (!history.exists) throw new StudioProblem(404, "PUBLICATION_NOT_FOUND", "This publication could not be found.");
     const publication = history.data() as Publication;
     if (publication.id !== publicationId) throw publicationIntegrity();
@@ -157,7 +158,7 @@ export class StudioStore {
   async publicationImpactTarget(request: PublicationRequest) {
     const head = this.draftHead("menus", request.menuId);
     return this.db.runTransaction(async transaction => {
-      const [draft, latest] = await transaction.getAll(head, head.collection("publicationState").doc("head"));
+      const [draft, latest] = await readStudioDocuments("legacy.publication-impact-target", transaction.getAll(head, head.collection("publicationState").doc("head")), true);
       const stored = draft.data() as StoredDraft | undefined;
       if (!stored || stored.item.version !== request.version) throw conflict();
       const menu = archivedMenu(stored, request.menuId, request.version);
@@ -219,7 +220,7 @@ export class StudioStore {
   }
 
   private async readPublicationReceipt(transaction: Transaction, request: PublishCommand, actorId: string) {
-    const existing = (await transaction.get(this.receipt(request, actorId))).data();
+    const existing = (await readStudioDocument("legacy.publication-receipt", transaction.get(this.receipt(request, actorId)), true)).data();
     if (!existing) return undefined;
     const publication = existing.publication as Publication;
     if (existing.actorId !== actorId || publication?.menuId !== request.menuId || publication.sourceDraftVersion !== request.version
@@ -230,8 +231,8 @@ export class StudioStore {
 
   private async publicationCandidate(transaction: Transaction, request: PublicationRequest, inputs: ReviewInputs) {
     const head = this.draftHead("menus", request.menuId);
-    const [current, archived, latest, schedule] = await transaction.getAll(head, head.collection("revisions").doc(String(request.version)),
-      head.collection("publicationState").doc("head"), this.seasonSchedule());
+    const [current, archived, latest, schedule] = await readStudioDocuments("legacy.publication-review-snapshot",
+      transaction.getAll(head, head.collection("revisions").doc(String(request.version)), head.collection("publicationState").doc("head"), this.seasonSchedule()), true);
     const stored = current.data() as StoredDraft | undefined;
     if (!stored || stored.item.version !== request.version) throw conflict();
     const draft = archivedMenu(archived.data() as StoredDraft | undefined, request.menuId, request.version);
@@ -276,14 +277,14 @@ export class StudioStore {
   private async readPublicationDishes(transaction: Transaction, ids: string[]) {
     const dishes: Dish[] = [];
     for (let start = 0; start < ids.length; start += 50) {
-      const records = await transaction.getAll(...ids.slice(start, start + 50).map(id => this.draftHead("dishes", id)));
+      const records = await readStudioDocuments("legacy.publication-dish-heads", transaction.getAll(...ids.slice(start, start + 50).map(id => this.draftHead("dishes", id))), true);
       const drafts = records.filter(record => record.exists).map(record => {
         const dish = dishSchema.safeParse(record.data()!.item);
         if (!dish.success || dish.data.id !== record.id || dish.data.version < 1) throw publicationIntegrity();
         return { dish: dish.data, revision: record.ref.collection("revisions").doc(String(dish.data.version)) };
       });
       if (!drafts.length) continue;
-      const revisions = await transaction.getAll(...drafts.map(draft => draft.revision));
+      const revisions = await readStudioDocuments("legacy.publication-dish-revisions", transaction.getAll(...drafts.map(draft => draft.revision)), true);
       for (const [index, { dish }] of drafts.entries()) {
         const archived = dishSchema.safeParse(revisions[index].data()?.item);
         if (!archived.success || !isDeepStrictEqual(archived.data, dish)) throw publicationIntegrity();
@@ -294,7 +295,7 @@ export class StudioStore {
   }
 
   private async readPublicationPackage(transaction: Transaction, head: DocumentReference, publication: Publication) {
-    const snapshot = await transaction.get(head.collection("publicationPackages").doc(publication.id));
+    const snapshot = await readStudioDocument("legacy.publication-package", transaction.get(head.collection("publicationPackages").doc(publication.id)), true);
     const data = snapshot.data();
     if (!data || data.contract !== "hospitality-menu-studio.publication.v1" || typeof data.body !== "string"
       || data.contentHash !== publication.contentHash || publication.menuId !== head.id) {
@@ -309,7 +310,7 @@ export class StudioStore {
     const versions = this.draftHead(kind, id).collection("revisions");
     let query = versions.orderBy("item.version", "desc").limit(pageSize + 1);
     if (cursor) query = query.startAfter(cursor);
-    const snapshot = await query.get();
+    const snapshot = await readStudioQuery(`legacy.${kind}.draft-versions`, query.get());
     const items = snapshot.docs.slice(0, pageSize).map(document => {
       const { item, actorId, restoredFromVersion } = document.data() as StoredDraft;
       return {
@@ -321,12 +322,12 @@ export class StudioStore {
   }
 
   async readMenuRevision(menuId: string, version: number): Promise<Menu> {
-    const document = await this.draftHead("menus", menuId).collection("revisions").doc(String(version)).get();
+    const document = await readStudioDocument("legacy.menu-revision", this.draftHead("menus", menuId).collection("revisions").doc(String(version)).get());
     return archivedMenu(document.data() as StoredDraft | undefined, menuId, version);
   }
 
   async read<T extends Draft>(kind: DraftCollection, id: string): Promise<T> {
-    const document = await this.draftHead(kind, id).get();
+    const document = await readStudioDocument(`legacy.${kind}.draft`, this.draftHead(kind, id).get());
     if (!document.exists) throw new StudioProblem(404, "DRAFT_NOT_FOUND", "This draft could not be found.");
     return decodeDraft<T>(document.data() as StoredDraft).item;
   }
@@ -335,7 +336,7 @@ export class StudioStore {
     const dishes: Dish[] = [];
     const collection = this.db.collection(`${root}_dishes`);
     for (let offset = 0; offset < ids.length; offset += 100) {
-      const documents = await this.db.getAll(...ids.slice(offset, offset + 100).map(id => collection.doc(id)));
+      const documents = await readStudioDocuments("legacy.assigned-dish-drafts", this.db.getAll(...ids.slice(offset, offset + 100).map(id => collection.doc(id))));
       for (const document of documents) if (document.exists) dishes.push(decodeDraft<Dish>(document.data() as StoredDraft).item);
     }
     return dishes;
@@ -346,7 +347,7 @@ export class StudioStore {
     const key = studioDishReviewKey(dishId, version);
     const requestRef = this.db.collection(studioDishReviewRequests).doc(key);
     return this.db.runTransaction(async transaction => {
-      const [current, revision, existing] = await transaction.getAll(head, head.collection("revisions").doc(String(version)), requestRef);
+      const [current, revision, existing] = await readStudioDocuments("legacy.submit-dish-review", transaction.getAll(head, head.collection("revisions").doc(String(version)), requestRef), true);
       const request = this.dishReviewRequest(current, revision, dishId, version, actorId);
       const { dish, subject } = request;
       if (existing.exists) {
@@ -367,7 +368,7 @@ export class StudioStore {
   async prepareDishReview(dishId: string, version: number, actorId: string) {
     const head = this.draftHead("dishes", dishId);
     return this.db.runTransaction(async transaction => {
-      const [current, revision] = await transaction.getAll(head, head.collection("revisions").doc(String(version)));
+      const [current, revision] = await readStudioDocuments("legacy.prepare-dish-review", transaction.getAll(head, head.collection("revisions").doc(String(version))), true);
       return this.dishReviewRequest(current, revision, dishId, version, actorId);
     }, { readOnly: true });
   }
@@ -403,7 +404,8 @@ export class StudioStore {
       const key = studioDishReviewKey(subject.dishId, subject.revision);
       return [this.db.collection(studioDishReviewRequests).doc(key), this.db.collection(studioDishSafetyFences).doc(key)];
     });
-    const records = await transaction.getAll(...refs, { fieldMask: ["contract", "subject", "status", "releaseId", "matrixHash", "changedAt"] });
+    const records = await readStudioDocuments("legacy.dish-safety-state",
+      transaction.getAll(...refs, { fieldMask: ["contract", "subject", "status", "releaseId", "matrixHash", "changedAt"] }), true);
     const states = new Map<string, { status: StudioDishSafetyStatus; fence?: StudioDishSafetyFence }>();
     const active: { dishId: string; fence: StudioDishSafetyFence; head: DocumentReference }[] = [];
     for (const [index, subject] of subjects.entries()) {
@@ -417,9 +419,9 @@ export class StudioStore {
       else active.push({ dishId: subject.dishId, fence, head: this.db.collection(studioDishReviewRecords).doc(refs[index * 2].id) });
     }
     if (!active.length) return states;
-    const releases = await transaction.getAll(...active.map(row => row.head.collection("releases").doc(studioDishReleaseVersion(row.fence))), {
+    const releases = await readStudioDocuments("legacy.dish-safety-releases", transaction.getAll(...active.map(row => row.head.collection("releases").doc(studioDishReleaseVersion(row.fence))), {
       fieldMask: ["contract", "subject", "status", "releaseId", "matrixHash", "changedAt", "signatures"],
-    });
+    }), true);
     const candidates = active.flatMap((row, index) => {
       const header = releases[index].data() as StudioDishReleaseHeader | undefined;
       if (header && matchesStudioDishRelease(header, row.fence)) return [{ ...row, signatures: header.signatures }];
@@ -427,9 +429,9 @@ export class StudioStore {
       return [];
     });
     if (!candidates.length) return states;
-    const signatures = await transaction.getAll(...candidates.flatMap(row => row.signatures.map(signature => row.head.collection("events").doc(signature.eventId))), {
+    const signatures = await readStudioDocuments("legacy.dish-safety-signatures", transaction.getAll(...candidates.flatMap(row => row.signatures.map(signature => row.head.collection("events").doc(signature.eventId))), {
       fieldMask: ["action", "source", "role", "actorId", "eventId", "signedAt", "matrixHash", "sourceHash", "signatureHash"],
-    });
+    }), true);
     for (const [index, { dishId, fence, signatures: expected }] of candidates.entries()) {
       const complete = expected.every((signature, slot) => matchesStudioDishSignatureEvent(
         signatures[index * 2 + slot].data() as Parameters<typeof matchesStudioDishSignatureEvent>[0], signature));
@@ -441,7 +443,7 @@ export class StudioStore {
   async save<T extends Draft>(kind: DraftCollection, actorId: string, draft: T): Promise<T> {
     const head = this.draftHead(kind, draft.id);
     return this.db.runTransaction(async transaction => {
-      const previous = (await transaction.get(head)).data() as StoredDraft | undefined;
+      const previous = (await readStudioDocument(`legacy.${kind}.save`, transaction.get(head), true)).data() as StoredDraft | undefined;
       const existing = previous && decodeDraft<T>(previous);
       const baseVersion = existing?.item.version ?? 0;
       const sameContent = existing && isDeepStrictEqual(content(existing.item), content(draft));
@@ -463,12 +465,12 @@ export class StudioStore {
     const revisions = head.collection("revisions");
     const restoredVersion = expectedVersion + 1;
     return this.db.runTransaction(async transaction => {
-      const current = (await transaction.get(head)).data() as StoredDraft | undefined;
+      const current = (await readStudioDocument("legacy.restore-menu-head", transaction.get(head), true)).data() as StoredDraft | undefined;
       if (!current) throw new StudioProblem(404, "DRAFT_NOT_FOUND", "This draft could not be found.");
       if (current.item.version !== expectedVersion) {
         if (current.item.version < restoredVersion) throw conflict();
         const receipt = current.item.version === restoredVersion ? current
-          : (await transaction.get(revisions.doc(String(restoredVersion)))).data() as StoredDraft | undefined;
+          : (await readStudioDocument("legacy.restore-menu-receipt", transaction.get(revisions.doc(String(restoredVersion))), true)).data() as StoredDraft | undefined;
         if (receipt?.actorId === actorId && receipt.baseVersion === expectedVersion && receipt.restoredFromVersion === sourceVersion) {
           archivedMenu(receipt, id, restoredVersion);
           return { item: decodeDraft<Menu>(current).item, restoredVersion };
@@ -476,7 +478,7 @@ export class StudioStore {
         throw conflict();
       }
 
-      const archived = (await transaction.get(revisions.doc(String(sourceVersion)))).data() as StoredDraft | undefined;
+      const archived = (await readStudioDocument("legacy.restore-menu-revision", transaction.get(revisions.doc(String(sourceVersion))), true)).data() as StoredDraft | undefined;
       const item = this.writeRevision(transaction, head, archivedMenu(archived, id, sourceVersion), actorId, expectedVersion, sourceVersion);
       return { item, restoredVersion };
     });

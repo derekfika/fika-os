@@ -2,12 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Publication } from "../lib/contract";
 import { boxCount, publishedDishPage, publishedKitchenPreview, KitchenRequestGuard, type KitchenPreview, type PublishedDish } from "./published-kitchen-model";
-
-async function read(query: URLSearchParams) {
-  const response = await fetch(`/api/studio?${query}`, { cache: "no-store" });
-  if (!response.ok) throw Object.assign(new Error("Preview unavailable"), { status: response.status });
-  return response.json();
-}
+import { useStudioRequest } from "./use-studio-draft";
 function message(error: unknown) {
   const status = (error as { status?: number })?.status;
   if (status === 409) return "The signed evidence is no longer current, may have been revoked or replaced, or the publication changed. The specification cannot be shown.";
@@ -18,6 +13,8 @@ function message(error: unknown) {
 }
 
 export default function PublishedKitchenPreview({ menuId, publications, historyLoaded }: { menuId: string; publications: Publication[]; historyLoaded: boolean }) {
+  const request = useStudioRequest();
+  const read = (query: URLSearchParams) => request(undefined, "?" + query);
   const [publicationId, setPublicationId] = useState("");
   const [dishes, setDishes] = useState<PublishedDish[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);

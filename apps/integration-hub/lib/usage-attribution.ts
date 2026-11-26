@@ -42,7 +42,10 @@ export const CLOUD_LOGGING_PAGE_SIZE = 200;
 export const CLOUD_LOGGING_MAX_PAGES = 50;
 export const CLOUD_LOGGING_MAX_ENTRIES = CLOUD_LOGGING_PAGE_SIZE * CLOUD_LOGGING_MAX_PAGES;
 export const TRACE_DETAIL_LIMIT = 250;
-export const EXPECTED_STAGING_INSTRUMENTATION = Object.fromEntries(CANONICAL_OS_APPS.map(app => [app, ["integration-hub", "logistics", "menu-planning", "cpu-production", "delivered-in", "hospitality-booking"].includes(app) ? "enabled" : "unknown"])) as Record<string, "enabled" | "not-enabled" | "unknown">;
+export const EXPECTED_STAGING_INSTRUMENTATION: Record<string, "enabled" | "not-enabled" | "unknown"> = {
+  ...Object.fromEntries(CANONICAL_OS_APPS.map(app => [app, ["integration-hub", "logistics", "menu-planning", "cpu-production", "delivered-in", "hospitality-booking"].includes(app) ? "enabled" : "unknown"] as const)),
+  "hospitality-menu-studio": "enabled",
+};
 const MARKER = /^\[(FIKA_DATA_TRACE_TOTAL|FIKA_DATA_TRACE)\]\s+(\{.*\})\s*$/;
 
 type NormalizedRecord = { app: string; action: string; operation: string; route: string; dataset: string; source: string; returnedDocuments: number; estimatedBillableReads: number; estimatedWrites: number; estimatedDeletes: number; durationMs: number; level: string; cacheResult?: CacheResult; packageVersion?: number; projectionVersion?: number };
@@ -53,7 +56,7 @@ const stringValue = (value: unknown, fallback: string) => typeof value === "stri
 const objectValue = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const firstNumber = (object: Record<string, unknown>, names: string[]) => { for (const name of names) if (name in object) return numberValue(object[name]); return 0; };
 const firstString = (object: Record<string, unknown>, names: string[], fallback: string) => { for (const name of names) if (typeof object[name] === "string" && object[name]) return String(object[name]); return fallback; };
-const safeApp = (app: string) => (CANONICAL_OS_APPS as readonly string[]).includes(canonicalOsAppId(app)) ? canonicalOsAppId(app) : "unknown/other";
+const safeApp = (app: string) => Object.hasOwn(EXPECTED_STAGING_INSTRUMENTATION, canonicalOsAppId(app)) ? canonicalOsAppId(app) : "unknown/other";
 const emptyCacheCounters = (): CacheCounters => ({ HIT: 0, MISS: 0, IN_FLIGHT_JOIN: 0, FALLBACK: 0, BYPASS: 0, STALE: 0, REVALIDATED: 0 });
 function normalizeCacheCounters(value: unknown): CacheCounters {
   const source = objectValue(value); const result = emptyCacheCounters();

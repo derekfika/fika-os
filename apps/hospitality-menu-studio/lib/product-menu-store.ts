@@ -10,6 +10,7 @@ import { decodeStudioProductPublication, studioProductMenuId } from "../../share
 import { publicationIdFor, publicationHash, studioPublicationDescriptor } from "../../shared/hospitality-menu-studio-publication";
 import { productMenuDishKey, type ProductMenuDishReference } from "./product-menu-dishes";
 import { StudioProblem } from "./problem";
+import { readStudioDocument, readStudioDocuments, readStudioQuery } from "./data-trace";
 
 const pageSize = 50;
 
@@ -27,14 +28,14 @@ export class ProductMenuStore {
     private readonly now: () => Date, private readonly projectId: "demo-fika-os" | "fika-os-dev") {}
 
   async read(itemId: string) {
-    const record = await this.drafts.doc(itemId).get();
+    const record = await readStudioDocument("product-menu.draft", this.drafts.doc(itemId).get());
     return record.exists ? decodeDraft(itemId, record.data()).item : null;
   }
 
   async readDishRevisions(references: ProductMenuDishReference[]) {
     const unique = [...new Map(references.map(reference => [productMenuDishKey(reference), reference])).values()];
     if (!unique.length) return [];
-    const records = await this.drafts.firestore.getAll(...unique.map(reference => this.dishRevision(reference)));
+    const records = await readStudioDocuments("product-menu.dish-revisions", this.drafts.firestore.getAll(...unique.map(reference => this.dishRevision(reference))));
     return records.flatMap((record, index) => {
       if (!record.exists) return [];
       const { id, version, name, category, customerDescription } = decodeDishRevision(record.data(), unique[index]);
@@ -45,7 +46,7 @@ export class ProductMenuStore {
   async list(currentItemIds: ReadonlySet<string>, cursor?: string): Promise<{ items: ProductMenuListing[]; nextCursor: string | null }> {
     let query = this.drafts.select("summary").orderBy(FieldPath.documentId()).limit(pageSize + 1);
     if (cursor) query = query.startAfter(cursor);
-    const page = (await query.get()).docs;
+    const page = (await readStudioQuery("product-menu.summary-page", query.get())).docs;
     const rows = page.slice(0, pageSize).filter(record => currentItemIds.has(record.id))
       .map(record => {
         const summary = productMenuSummary.safeParse(record.get("summary"));
@@ -59,7 +60,8 @@ export class ProductMenuStore {
 
   private async publicationStatuses(rows: { ref: DocumentReference; summary: ProductMenuSummary }[]) {
     if (!rows.length) return new Map<string, Pick<ProductMenuListing, "publicationStatus" | "hasPublishedRevision">>();
-    const latest = await this.drafts.firestore.getAll(...rows.map(({ ref }) => ref.collection("productPublicationState").doc("latest")));
+    const latest = await readStudioDocuments("product-menu.publication-heads",
+      this.drafts.firestore.getAll(...rows.map(({ ref }) => ref.collection("productPublicationState").doc("latest"))));
     const entries = rows.map((row, index) => {
       const snapshot = latest[index]!;
       if (!snapshot.exists) return { ...row, status: { publicationStatus: "draft" as const, hasPublishedRevision: false } };
@@ -71,7 +73,8 @@ export class ProductMenuStore {
     });
     const packageEntries = entries.filter((entry): entry is typeof entry & { manifest: ReturnType<typeof studioPublicationDescriptor.parse> } => "manifest" in entry);
     const packages = packageEntries.length
-      ? await this.drafts.firestore.getAll(...packageEntries.map(({ ref, manifest }) => ref.collection("productPublicationPackages").doc(manifest.id)))
+      ? await readStudioDocuments("product-menu.publication-packages",
+        this.drafts.firestore.getAll(...packageEntries.map(({ ref, manifest }) => ref.collection("productPublicationPackages").doc(manifest.id))))
       : [];
     const verifiedPackages = packageEntries.flatMap((entry, index) => {
       const record = packages[index]!.data();
@@ -83,7 +86,8 @@ export class ProductMenuStore {
       return [{ ...entry, body: record.body }];
     });
     const outboxes = verifiedPackages.length
-      ? await this.drafts.firestore.getAll(...verifiedPackages.map(({ ref, manifest }) => ref.collection("productPublicationDelivery").doc(manifest.id)))
+      ? await readStudioDocuments("product-menu.publication-outboxes",
+        this.drafts.firestore.getAll(...verifiedPackages.map(({ ref, manifest }) => ref.collection("productPublicationDelivery").doc(manifest.id))))
       : [];
     const verifiedStatuses = new Map<string, Pick<ProductMenuListing, "publicationStatus" | "hasPublishedRevision">>();
     for (const [index, entry] of verifiedPackages.entries()) {
@@ -106,7 +110,7 @@ export class ProductMenuStore {
   async createOrOpen(actorId: string, itemId: string, setup: ProductMenuSetup) {
     const head = this.drafts.doc(itemId);
     return this.drafts.firestore.runTransaction(async transaction => {
-      const record = await transaction.get(head);
+      const record = await readStudioDocument("product-menu.create", transaction.get(head), true);
       if (record.exists) return decodeDraft(itemId, record.data()).item;
       return this.writeRevision(transaction, head, actorId, 0, initialProductMenuConfiguration(setup));
     });
@@ -115,7 +119,7 @@ export class ProductMenuStore {
   async save(actorId: string, request: ProductMenuDraft) {
     const head = this.drafts.doc(request.itemId);
     return this.drafts.firestore.runTransaction(async transaction => {
-      const record = await transaction.get(head);
+      const record = await readStudioDocument("product-menu.save", transaction.get(head), true);
       if (!record.exists) throw new StudioProblem(404, "PRODUCT_MENU_MISSING", "Create the product menu before saving changes.");
       const current = decodeDraft(head.id, record.data());
       const sameConfiguration = isDeepStrictEqual(current.item.configuration, request.configuration);
@@ -134,7 +138,7 @@ export class ProductMenuStore {
     const additions = [...dishRevisions(next)].filter(([key]) => !previous.has(key)).map(([, reference]) => reference);
     for (let start = 0; start < additions.length; start += 50) {
       const batch = additions.slice(start, start + 50);
-      const revisions = await transaction.getAll(...batch.map(reference => this.dishRevision(reference)));
+      const revisions = await readStudioDocuments("product-menu.save.verify-dishes", transaction.getAll(...batch.map(reference => this.dishRevision(reference))), true);
       for (const [index, record] of revisions.entries()) {
         if (!record.exists) throw new StudioProblem(422, "PRODUCT_MENU_DISH_REVISION_MISSING", "Choose a saved dish revision before assigning it.");
         decodeDishRevision(record.data(), batch[index]);
