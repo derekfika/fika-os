@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import type { CatalogueRow } from "./catalogue-wire";
+import { normalizeCatalogueSearch, type StudioProduct } from "./studio-catalogue-index";
 import type { ProductMenuListing } from "../../shared/hospitality-menu-studio-product-content";
 import { filterMenuBuilderProducts, menuChoicesForCategory } from "./menu-builder-home-model";
 import { StudioButton, StudioField, StudioPageHeader, StudioSegmentedControl, StudioStatus } from "./studio-design-system";
@@ -18,7 +18,7 @@ export function MenuBuilderHome({
   onOpen,
   onCreate,
 }: {
-  products: CatalogueRow[];
+  products: StudioProduct[];
   summaries: ProductMenuListing[];
   canManage?: boolean;
   onOpen: (itemId: string) => void;
@@ -27,19 +27,21 @@ export function MenuBuilderHome({
   const dialog = useRef<HTMLDialogElement>(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "published" | "draft" | "not-configured">("all");
-  const [selected, setSelected] = useState<CatalogueRow | null>(null);
+  const [selected, setSelected] = useState<StudioProduct | null>(null);
   const [kind, setKind] = useState<"fixed" | "rotation">("fixed");
   const [weeks, setWeeks] = useState("4");
   const [anchorMonday, setAnchorMonday] = useState("");
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
   const configured = useMemo(() => new Map(summaries.map((item) => [item.itemId, item])), [summaries]);
+  const configuredIds = useMemo(() => new Set(configured.keys()), [configured]);
+  const publishedIds = useMemo(() => new Set(summaries.filter(item => item.publicationStatus === "published").map(item => item.itemId)), [summaries]);
+  const searchable = useMemo(() => new Map(products.map(product => [product.itemId, normalizeCatalogueSearch(product.name + " " + product.category)])), [products]);
   const visible = useMemo(() => {
-    return filterMenuBuilderProducts(products, new Set(configured.keys()), query, statusFilter,
-      new Set(summaries.filter((item) => item.publicationStatus === "published").map((item) => item.itemId)));
-  }, [configured, products, query, statusFilter, summaries]);
+    return filterMenuBuilderProducts(products, configuredIds, query, statusFilter, publishedIds, searchable);
+  }, [configuredIds, products, query, statusFilter, publishedIds, searchable]);
 
-  function startCreate(product: CatalogueRow) {
+  function startCreate(product: StudioProduct) {
     setSelected(product);
     setKind("fixed");
     setWeeks("4");

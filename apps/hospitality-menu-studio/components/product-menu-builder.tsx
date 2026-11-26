@@ -6,45 +6,28 @@ import type { StudioPublicationDescriptor } from "../../shared/hospitality-menu-
 import { categories, type Dish } from "../lib/contract";
 import type { StudioPublicationPilot } from "../lib/hub-publication";
 import { productMenuDishKey, type ProductMenuDish, type ProductMenuDishReference } from "../lib/product-menu-dishes";
-import type { CataloguePayload, CatalogueRow } from "./catalogue-wire";
 import { MenuBuilderHome, type ProductMenuSetup } from "./menu-builder-home";
 import { filterPickerDishes } from "./product-menu-picker-model";
 import { menuChoiceReferences, removeProductMenuGroup } from "./product-menu-editor-model";
 import { ProductMenuPreview } from "./product-menu-preview";
 import { StudioButton, StudioEditorLayout, StudioField, StudioIcon, StudioPageHeader, StudioPanel, StudioSegmentedControl, StudioShell, StudioStatus, type StudioDestination } from "./studio-design-system";
-import { request } from "./use-studio-draft";
+import { useStudioRequest } from "./use-studio-draft";
+import { useStudioRead, useStudioReads } from "./studio-reads";
 import { useProductMenuDishes } from "./use-product-menu-dishes";
+import { useAssignedDishes } from "./use-assigned-dishes";
 import styles from "./product-menu-builder.module.css";
 
 type PendingExit = { kind: "product"; itemId: string } | { kind: "destination"; destination: StudioDestination } | { kind: "home" };
 type Notice = { kind: "neutral" | "info" | "success" | "warning" | "danger"; message: string };
 
-async function readJson<T>(url: string): Promise<T> {
-  const response = await fetch(url, { cache: "no-store" });
-  const body = await response.json();
-  if (!response.ok) throw new Error(body.error || body.message || "This information is unavailable. Try again.");
-  return body as T;
-}
-
-async function sendJson<T>(body: unknown): Promise<T> {
-  const response = await fetch("/api/studio/product-menus", {
+async function sendStudioProduct<T>(read: typeof fetch, endpoint: "product-menus" | "product-publication", body: unknown): Promise<T> {
+  const response = await read("/api/studio/" + endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   const result = await response.json();
-  if (!response.ok) throw new Error(result.error || "The menu draft could not be saved.");
-  return result as T;
-}
-
-async function sendPublication<T>(body: unknown): Promise<T> {
-  const response = await fetch("/api/studio/product-publication", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.error || "The product review could not be completed.");
+  if (!response.ok) throw new Error(result.error || "The product request could not be completed.");
   return result as T;
 }
 
@@ -76,6 +59,7 @@ function summarizeDraft(draft: ProductMenuDraft, previous?: ProductMenuListing):
 type DishDisplay = (reference: ProductMenuDishReference) => string;
 
 function ProductMenuReview({ draft, productName, dishes, canPublish, pilot, onBack }: { draft: ProductMenuDraft; productName: string; dishes: Dish[]; canPublish: boolean; pilot?: StudioPublicationPilot; onBack: () => void }) {
+  const reads = useStudioReads();
   const [effectiveDate, setEffectiveDate] = useState(pilot?.firstDate || "");
   const [review, setReview] = useState<{ issues: string[]; reviewToken: string | null } | null>(null);
   const [publicationId, setPublicationId] = useState("");
@@ -84,9 +68,10 @@ function ProductMenuReview({ draft, productName, dishes, canPublish, pilot, onBa
   const [activated, setActivated] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const lookup = new Map(dishes.map((dish) => [dish.id, dish]));
   const slots = draft.configuration.schedule.kind === "fixed" ? [draft.configuration.schedule.choices] : draft.configuration.schedule.weeks;
   const allReferences = slots.flatMap(menuChoiceReferences);
+  const currentDishes = useAssignedDishes(allReferences.map(reference => reference.dishId), dishes);
+  const lookup = new Map([...dishes, ...currentDishes.items].map((dish) => [dish.id, dish]));
   const assigned = useProductMenuDishes(allReferences, dishes);
   const dishName = (reference: ProductMenuDishReference) => archivedDishName(assigned, reference);
   const emptySlots = slots.filter((slot) => !menuChoiceReferences(slot).length).length;
@@ -99,7 +84,7 @@ function ProductMenuReview({ draft, productName, dishes, canPublish, pilot, onBa
     if (!pilot || !canPublish || !effectiveDate) return;
     setBusy(true); setError(""); setReview(null);
     try {
-      const result = await sendPublication<{ issues: string[]; reviewToken: string | null }>({ action: "review", itemId: draft.itemId, version: draft.version, effectiveDate });
+      const result = await sendStudioProduct<{ issues: string[]; reviewToken: string | null }>(reads.fetch, "product-publication", { action: "review", itemId: draft.itemId, version: draft.version, effectiveDate });
       setReview(result);
     } catch (failure) { setError((failure as Error).message || "The CPU and Hub checks could not be completed."); }
     finally { setBusy(false); }
@@ -109,8 +94,11 @@ function ProductMenuReview({ draft, productName, dishes, canPublish, pilot, onBa
     if (!review?.reviewToken || !pilot || !canPublish) return;
     setBusy(true); setError("");
     try {
-      const result = await sendPublication<{ publication: StudioPublicationDescriptor }>({ action: "publish", itemId: draft.itemId, version: draft.version, effectiveDate, reviewToken: review.reviewToken, confirmed: true });
+      const result = await sendStudioProduct<{ publication: StudioPublicationDescriptor }>(reads.fetch, "product-publication", { action: "publish", itemId: draft.itemId, version: draft.version, effectiveDate, reviewToken: review.reviewToken, confirmed: true });
       setPublicationId(result.publication.id);
+      if (result.publication.sourceDraftVersion === draft.version) {
+        reads.rememberDraft(draft, { ...summarizeDraft(draft), publicationStatus: "published", hasPublishedRevision: true });
+      }
     } catch (failure) { setError((failure as Error).message || "The publication was not confirmed by Hub."); }
     finally { setBusy(false); }
   }
@@ -120,7 +108,7 @@ function ProductMenuReview({ draft, productName, dishes, canPublish, pilot, onBa
     const attempt = activationAttempt || { commandId: crypto.randomUUID(), expectedGeneration: pilot.generation };
     setActivationAttempt(attempt); setBusy(true); setError("");
     try {
-      await sendPublication({ action: "activate", itemId: draft.itemId, publicationId, ...attempt, reason: activationReason });
+      await sendStudioProduct(reads.fetch, "product-publication", { action: "activate", itemId: draft.itemId, publicationId, ...attempt, reason: activationReason });
       setActivated(true);
     } catch (failure) { setError((failure as Error).message || "Hub did not confirm activation. Retry the same request."); }
     finally { setBusy(false); }
@@ -173,13 +161,15 @@ function ProductMenuReview({ draft, productName, dishes, canPublish, pilot, onBa
   </div>;
 }
 
-function ProductMenuEditor({ draft, productName, dishes, dishCursor, loadingDishes, canManage, onLoadMoreDishes, onDishCreated, onSave, onReview, onDirtyChange, onBack }: {
+function ProductMenuEditor({ draft, productName, dishes, dishCursor, loadingDishes, dishError, canManage, onLoadDishes, onLoadMoreDishes, onDishCreated, onSave, onReview, onDirtyChange, onBack }: {
   draft: ProductMenuDraft;
   productName: string;
   dishes: Dish[];
   dishCursor: string | null;
   loadingDishes: boolean;
+  dishError?: string;
   canManage: boolean;
+  onLoadDishes: () => void;
   onLoadMoreDishes: () => void;
   onDishCreated: (dish: Dish) => void;
   onSave: (configuration: ProductMenuConfiguration) => Promise<void>;
@@ -187,6 +177,7 @@ function ProductMenuEditor({ draft, productName, dishes, dishCursor, loadingDish
   onDirtyChange: (dirty: boolean) => void;
   onBack: () => void;
 }) {
+  const request = useStudioRequest();
   const [configuration, setConfiguration] = useState(draft.configuration);
   const [week, setWeek] = useState(0);
   const [dirty, setDirty] = useState(false);
@@ -285,6 +276,7 @@ function ProductMenuEditor({ draft, productName, dishes, dishCursor, loadingDish
   }
 
   function openDishPicker(groupId?: string) {
+    onLoadDishes();
     setTargetGroupId(groupId || configuration.groups[0]?.id || "");
     setSelectedDishIds([]);
     setDishQuery("");
@@ -367,7 +359,8 @@ function ProductMenuEditor({ draft, productName, dishes, dishCursor, loadingDish
         <div className={styles.pickerTools}><StudioField label="Search dishes"><input type="search" value={dishQuery} onChange={(event) => setDishQuery(event.target.value)} placeholder="Search name or category" /></StudioField><StudioButton variant="secondary" disabled={!canManage} disabledReason="Your account has read-only access to dishes." onClick={() => { setCreatingDish(true); setCreatingDishError(""); }}>Create new dish</StudioButton></div>
         <div className={styles.categoryFilters} role="group" aria-label="Filter dishes by category"><StudioButton variant={dishCategory === "all" ? "primary" : "secondary"} aria-pressed={dishCategory === "all"} onClick={() => setDishCategory("all")}>All dishes</StudioButton>{categories.map((category) => <StudioButton key={category} variant={dishCategory === category ? "primary" : "secondary"} aria-pressed={dishCategory === category} onClick={() => setDishCategory(category)}>{category.replaceAll("_", " ")}</StudioButton>)}</div>
         <div className={styles.pickerList}>{visibleDishes.map((dish) => <label className={styles.pickerRow} key={dish.id}><input type="checkbox" checked={selectedDishIds.includes(dish.id)} onChange={(event) => setSelectedDishIds((ids) => event.target.checked ? [...ids, dish.id] : ids.filter((id) => id !== dish.id))} /><span><strong>{dish.name}</strong><small>{dish.category}{dish.customerDescription ? ` · ${dish.customerDescription}` : ""}</small></span></label>)}
-          {!visibleDishes.length && <p className={styles.muted}>{loadingDishes ? "Loading dishes…" : "No dishes match this search and category."}</p>}
+          {dishError && <p role="alert">{dishError} <StudioButton onClick={onLoadDishes}>Try again</StudioButton></p>}
+          {!visibleDishes.length && !dishError && <p className={styles.muted}>{loadingDishes ? "Loading dishes…" : "No dishes match this search and category."}</p>}
           {dishCursor && <StudioButton onClick={onLoadMoreDishes} disabled={loadingDishes}>{loadingDishes ? "Loading…" : "Load more dishes"}</StudioButton>}
         </div>
         <div className={styles.dialogActions}><span aria-live="polite">{selectedDishIds.length} {selectedDishIds.length === 1 ? "dish" : "dishes"} selected</span><StudioButton onClick={() => dialog.current?.close()}>Cancel</StudioButton><StudioButton variant="primary" disabled={!selectedDishIds.length} onClick={addSelectedDishes}>Add selected dishes</StudioButton></div>
@@ -396,7 +389,7 @@ function DishList({ references, dishes, dishName, move, remove }: { references: 
   })}</ol>;
 }
 
-export default function ProductMenuBuilder({ actorName, canManage, canPublish, publicationPilot, onNavigate, embedded = false, requestedProductId, requestedDestination, onProductRequestHandled, onNavigationHandled, onDirtyStateChange, onProductsLoaded, onActiveProductChange }: {
+export default function ProductMenuBuilder({ actorName, canManage, canPublish, publicationPilot, onNavigate, embedded = false, requestedProductId, requestedDestination, onProductRequestHandled, onNavigationHandled, onDirtyStateChange, onActiveProductChange }: {
   actorName: string;
   canManage: boolean;
   canPublish: boolean;
@@ -408,17 +401,19 @@ export default function ProductMenuBuilder({ actorName, canManage, canPublish, p
   onProductRequestHandled?: () => void;
   onNavigationHandled?: () => void;
   onDirtyStateChange?: (dirty: boolean) => void;
-  onProductsLoaded?: (products: CatalogueRow[], summaries: ProductMenuListing[]) => void;
   onActiveProductChange?: (itemId: string | null) => void;
 }) {
-  const [products, setProducts] = useState<CatalogueRow[]>([]);
-  const [summaries, setSummaries] = useState<ProductMenuListing[]>([]);
+  const reads = useStudioReads();
+  const catalogue = useStudioRead(reads.catalogue);
+  const menuIndex = useStudioRead(reads.summaries);
+  const library = useStudioRead(reads.dishes);
+  const products = catalogue.value?.products ?? [];
+  const summaries = menuIndex.value ?? [];
+  const dishes = library.value?.items ?? [];
+  const dishCursor = library.value?.nextCursor ?? null;
+  const loading = catalogue.status === "idle" || catalogue.status === "loading" || menuIndex.status === "idle" || menuIndex.status === "loading";
+  const error = catalogue.error?.message || menuIndex.error?.message;
   const [draft, setDraft] = useState<ProductMenuDraft | null>(null);
-  const [dishes, setDishes] = useState<Dish[]>([]);
-  const [dishCursor, setDishCursor] = useState<string | null>(null);
-  const [loadingDishes, setLoadingDishes] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
   const [draftError, setDraftError] = useState("");
   const [dirty, setDirty] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -427,74 +422,58 @@ export default function ProductMenuBuilder({ actorName, canManage, canPublish, p
   const [pendingExit, setPendingExit] = useState<PendingExit | null>(null);
   const [notice, setNotice] = useState<Notice>({ kind: "info", message: "Menu Builder" });
   const discardDialog = useRef<HTMLDialogElement>(null);
-  const productName = useMemo(() => products.find((item) => item.itemId === draft?.itemId)?.name || "Hospitality menu", [draft?.itemId, products]);
+  const openGeneration = useRef(0);
+  const initialLinkHandled = useRef(false);
+  const productName = (draft && catalogue.value?.productsById.get(draft.itemId)?.name) || "Hospitality menu";
+  const currentProduct = Boolean(draft && catalogue.value?.productsById.has(draft.itemId));
   const productLinks = useMemo(() => summaries.flatMap((summary) => {
-    const product = products.find((item) => item.itemId === summary.itemId);
+    const product = catalogue.value?.productsById.get(summary.itemId);
     return product ? [{ id: summary.itemId, name: product.name, status: "Draft", summary: summary.kind === "fixed" ? `Fixed · ${summary.dishCount ?? 0} dishes` : `${summary.cycleWeeks}-week rotation` }] : [];
-  }), [products, summaries]);
+  }), [catalogue.value, summaries]);
 
-  const loadIndex = useCallback(async () => {
-    setLoading(true); setError("");
-    try {
-      const catalogue = await readJson<CataloguePayload>("/api/catalogue");
-      const items: ProductMenuListing[] = [];
-      let cursor: string | null = null;
-      for (let page = 0; page < 20; page++) {
-        const queryString: string = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
-        const listPage: { items: ProductMenuListing[]; nextCursor: string | null } = await readJson<{ items: ProductMenuListing[]; nextCursor: string | null }>(`/api/studio/product-menus${queryString}`);
-        items.push(...listPage.items);
-        cursor = listPage.nextCursor;
-        if (!cursor) break;
-        if (page === 19) throw new Error("Too many configured menus to verify in one session. Narrow the catalogue and try again.");
-      }
-      setProducts(catalogue.rows.filter((item) => item.status === "active"));
-      setSummaries(items);
-    } catch (failure) { setError((failure as Error).message || "Menu Builder could not load."); }
-    finally { setLoading(false); }
-  }, []);
+  const loadIndex = useCallback((force = false) => {
+    void reads.loadBuilder(force).catch(() => undefined);
+  }, [reads]);
+  const loadDishes = useCallback((cursor?: string) => {
+    void reads.loadDishPage(cursor).catch(() => undefined);
+  }, [reads]);
 
-  const loadDishes = useCallback(async (cursor?: string) => {
-    setLoadingDishes(true);
-    try {
-      const query = cursor ? `?list=dishes&cursor=${encodeURIComponent(cursor)}` : "?list=dishes";
-      const result = await request(undefined, query);
-      setDishes((previous) => cursor ? [...previous, ...result.items] : result.items);
-      setDishCursor(result.nextCursor || null);
-    } catch (failure) { setDraftError((failure as Error).message || "The Dish Library is unavailable."); }
-    finally { setLoadingDishes(false); }
-  }, []);
-
-  useEffect(() => { void loadIndex(); }, [loadIndex]);
-  useEffect(() => { onProductsLoaded?.(products, summaries); }, [onProductsLoaded, products, summaries]);
+  useEffect(() => { loadIndex(); return () => { openGeneration.current++; }; }, [loadIndex]);
+  useEffect(() => {
+    if (menuIndex.status === "idle") void reads.loadSummaries().catch(() => undefined);
+  }, [menuIndex.status, reads]);
   useEffect(() => {
     onActiveProductChange?.(editing ? draft?.itemId || null : null);
     return () => onActiveProductChange?.(null);
   }, [draft?.itemId, editing, onActiveProductChange]);
-  useEffect(() => { if (draft) void loadDishes(); }, [draft?.itemId, loadDishes]);
-  useEffect(() => { if (!requestedProductId) return; if (requestedProductId !== draft?.itemId) requestProduct(requestedProductId); onProductRequestHandled?.(); }, [requestedProductId, draft?.itemId]);
+  useEffect(() => { if (!requestedProductId || !catalogue.value) return; if (requestedProductId !== draft?.itemId) requestProduct(requestedProductId); onProductRequestHandled?.(); }, [requestedProductId, draft?.itemId, catalogue.value]);
   useEffect(() => { if (!requestedDestination) return; navigate(requestedDestination); onNavigationHandled?.(); }, [requestedDestination]);
   useEffect(() => {
+    if (initialLinkHandled.current || !menuIndex.value || !catalogue.value) return;
+    initialLinkHandled.current = true;
     const itemId = new URLSearchParams(window.location.search).get("product");
-    if (!itemId || !summaries.some((item) => item.itemId === itemId) || draft) return;
+    if (!itemId || !summaries.some((item) => item.itemId === itemId) || draft || requestedProductId) return;
     void openProduct(itemId);
-  }, [draft, summaries]);
+  }, [menuIndex.value, catalogue.value]);
 
   async function openProduct(itemId: string) {
+    const generation = ++openGeneration.current;
     setDraftError("");
     setBusy(true);
     try {
-      const result = await readJson<{ item: ProductMenuDraft | null }>(`/api/studio/product-menus?itemId=${encodeURIComponent(itemId)}`);
-      if (!result.item) throw new Error("This menu draft is no longer available. Refresh the product list.");
-      setDraft(result.item); setEditing(true); setReviewing(false); setDirty(false); onDirtyStateChange?.(false); setNotice({ kind: "info", message: "Draft loaded" });
+      const item = await reads.loadDraft(itemId, menuIndex.value?.find(summary => summary.itemId === itemId)?.version);
+      if (generation !== openGeneration.current) return;
+      if (!item) throw new Error("This menu draft is no longer available. Refresh the product list.");
+      setDraft(item); setEditing(true); setReviewing(false); setDirty(false); onDirtyStateChange?.(false); setNotice({ kind: "info", message: "Draft loaded" });
       window.history.replaceState(null, "", `/?product=${encodeURIComponent(itemId)}`);
-    } catch (failure) { setDraftError((failure as Error).message || "The menu draft could not be opened."); }
-    finally { setBusy(false); }
+    } catch (failure) { if (generation === openGeneration.current) setDraftError((failure as Error).message || "The menu draft could not be opened."); }
+    finally { if (generation === openGeneration.current) setBusy(false); }
   }
 
   async function createProduct(itemId: string, setup: ProductMenuSetup) {
-    const result = await sendJson<{ item: ProductMenuDraft }>({ action: "create", itemId, setup });
+    const result = await sendStudioProduct<{ item: ProductMenuDraft }>(reads.fetch, "product-menus", { action: "create", itemId, setup });
     setDraft(result.item); setEditing(true); setReviewing(false); setDirty(false); onDirtyStateChange?.(false); setDraftError("");
-    setSummaries((previous) => [summarizeDraft(result.item), ...previous.filter((item) => item.itemId !== itemId)]);
+    reads.rememberDraft(result.item, summarizeDraft(result.item));
     window.history.replaceState(null, "", `/?product=${encodeURIComponent(itemId)}`);
   }
 
@@ -507,6 +486,8 @@ export default function ProductMenuBuilder({ actorName, canManage, canPublish, p
 
   function requestHome() {
     if (dirty) { setPendingExit({ kind: "home" }); discardDialog.current?.showModal(); return; }
+    openGeneration.current++;
+    setBusy(false);
     setEditing(false); setReviewing(false); setDraft(null); setDirty(false); onDirtyStateChange?.(false); setDraftError(""); setNotice({ kind: "info", message: "Menu Builder" });
     window.history.replaceState(null, "", "/");
   }
@@ -529,8 +510,9 @@ export default function ProductMenuBuilder({ actorName, canManage, canPublish, p
 
   async function saveConfiguration(configuration: ProductMenuConfiguration) {
     if (!draft) return;
-    const result = await sendJson<{ item: ProductMenuDraft }>({ action: "save", item: { ...draft, configuration } });
-    setDraft(result.item); setSummaries((previous) => [summarizeDraft(result.item, previous.find((item) => item.itemId === result.item.itemId)), ...previous.filter((item) => item.itemId !== result.item.itemId)]);
+    const result = await sendStudioProduct<{ item: ProductMenuDraft }>(reads.fetch, "product-menus", { action: "save", item: { ...draft, configuration } });
+    setDraft(result.item);
+    reads.rememberDraft(result.item, summarizeDraft(result.item, reads.summaries.snapshot().value?.find((item) => item.itemId === result.item.itemId)));
     setDirty(false); setNotice({ kind: "success", message: "Draft saved" });
     onDirtyStateChange?.(false);
   }
@@ -542,9 +524,13 @@ export default function ProductMenuBuilder({ actorName, canManage, canPublish, p
 
   const headerActions: ReactNode = undefined;
   const content = <>
-    {loading && <p role="status">Loading Hospitality products and menu drafts…</p>}
-    {error && <div className={styles.errorBox} role="alert"><p>{error}</p><StudioButton onClick={() => void loadIndex()}>Try again</StudioButton></div>}
-    {!loading && !error && (editing && draft ? reviewing ? <ProductMenuReview draft={draft} productName={productName} dishes={dishes} canPublish={canPublish} pilot={publicationPilot} onBack={() => setReviewing(false)} /> : <ProductMenuEditor draft={draft} productName={productName} dishes={dishes} dishCursor={dishCursor} loadingDishes={loadingDishes} canManage={canManage} onLoadMoreDishes={() => void loadDishes(dishCursor || undefined)} onDishCreated={(dish) => setDishes((previous) => [...previous.filter((item) => item.id !== dish.id), dish])} onSave={saveConfiguration} onReview={() => setReviewing(true)} onDirtyChange={markDirty} onBack={requestHome} /> : <MenuBuilderHome products={products} summaries={summaries} canManage={canManage} onOpen={(itemId) => { void openProduct(itemId); }} onCreate={createProduct} />)}
+    {(loading || busy) && <p role="status">{busy ? "Opening menu draft…" : "Loading Hospitality products and menu drafts…"}</p>}
+    {error && <div className={styles.errorBox} role="alert"><p>{error}</p><StudioButton onClick={() => loadIndex(true)}>Try again</StudioButton></div>}
+    {editing && draft && !currentProduct && !loading && !error && <p role="alert">This product is unavailable in the current Hospitality catalogue.</p>}
+    {editing && draft ? reviewing ? <ProductMenuReview key={draft.itemId} draft={draft} productName={productName} dishes={dishes} canPublish={canPublish && currentProduct} pilot={publicationPilot} onBack={() => setReviewing(false)} />
+      : <ProductMenuEditor key={draft.itemId} draft={draft} productName={productName} dishes={dishes} dishCursor={dishCursor} loadingDishes={library.status === "loading"} dishError={library.error?.message} canManage={canManage && currentProduct}
+        onLoadDishes={() => loadDishes()} onLoadMoreDishes={() => loadDishes(dishCursor || undefined)} onDishCreated={reads.rememberDish} onSave={saveConfiguration} onReview={() => setReviewing(true)} onDirtyChange={markDirty} onBack={requestHome} />
+      : !loading && !error && <MenuBuilderHome products={products} summaries={summaries} canManage={canManage} onOpen={(itemId) => { void openProduct(itemId); }} onCreate={createProduct} />}
     {draftError && <p className={styles.errorBox} role="alert">{draftError}</p>}
     <dialog className={styles.discardDialog} ref={discardDialog} aria-labelledby="discard-heading">
       <h2 id="discard-heading">Discard unsaved changes?</h2><p>Your latest edits have not been saved. You can save the draft first, or discard the edits and continue.</p>

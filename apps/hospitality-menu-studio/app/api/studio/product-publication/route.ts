@@ -3,7 +3,8 @@ import { z } from "zod";
 import { dateSchema, idSchema, revisionSchema } from "../../../../../shared/hospitality-menu-studio-content";
 import { publicationDigest } from "../../../../../shared/hospitality-menu-studio-publication";
 import { studioProductMenuId } from "../../../../../shared/hospitality-menu-studio-product-publication";
-import { assertStudioRequestHost, authoriseStudio, requireSameOrigin, studioSessionCookie } from "../../../../lib/auth";
+import { assertStudioRequestHost, authoriseStudioRequest, requireSameOrigin, studioSessionCookie } from "../../../../lib/auth";
+import { studioRouteTrace } from "../../../../lib/data-trace";
 import { readStudioCatalogue } from "../../../../lib/catalogue";
 import { cpuDishReview } from "../../../../lib/cpu-dish-review";
 import { activateStudioProduct, deliverStudioPublication } from "../../../../lib/hub-publication";
@@ -24,13 +25,15 @@ const publicationCommand = z.discriminatedUnion("action", [
 const headers = { "Cache-Control": "private, no-store" };
 const maximumBytes = 4_096;
 
-export async function POST(request: NextRequest) {
+export const POST = studioRouteTrace("/api/studio/product-publication", submit);
+
+async function submit(request: NextRequest) {
   try {
     const config = studioRuntime();
     assertStudioRequestHost(config, request.headers.get("host"));
     requireSameOrigin(request, config);
     const cookie = request.cookies.get(config.name)?.value;
-    const actor = await authoriseStudio(cookie, config);
+    const actor = await authoriseStudioRequest(request, cookie, config);
     if (config.mode !== "staging" || !config.publicationPilot || !cookie || !actor.canPublish) throw denied();
     const command = publicationCommand.parse(await readJson(request));
     const pilot = actor.publicationPilot;
