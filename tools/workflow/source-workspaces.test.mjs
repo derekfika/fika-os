@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import path from 'node:path';
-import { execFile, execFileSync } from 'node:child_process';
+import { execFile, execFileSync, spawnSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { existsSync, linkSync, mkdirSync, readFileSync, readdirSync, renameSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -18,6 +18,9 @@ import { command, lock, save, SOURCE_HISTORY_BARRIER, stateDir } from './runtime
 
 const cli = fileURLToPath(new URL('./cli.mjs', import.meta.url));
 const runAsync = promisify(execFile);
+const hasPython314 = spawnSync('python', ['-I', '-B', '-c',
+  "import sys; sys.exit(not (sys.implementation.name == 'cpython' and sys.version_info[:2] == (3, 14)))",
+], { windowsHide: true, timeout: 15000 }).status === 0;
 const migration = { authorize: () => ({ administrator: true, login: 'fixture-owner' }), verifySource: () => {} };
 
 test('overlapping workers in independent worktrees ignore legacy history and orphan mutex', async () => {
@@ -702,7 +705,9 @@ test('retirement removes a structurally valid compiler cache matching the tracke
   }); } finally { f.dispose(); }
 });
 
-test('retirement revalidates only the two print-agent Python caches after checkout removal', () => {
+test('retirement revalidates only the two print-agent Python caches after checkout removal', {
+  skip: !hasPython314 && 'requires CPython 3.14',
+}, () => {
   for (const changed of [false, true]) {
     const f = fixture();
     try { f.within(() => {
