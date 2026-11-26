@@ -7,47 +7,40 @@
   "region": "europe-west4",
   "branch": "release/staging/hub",
   "validation": {
-    "id": 138397173650,
-    "url": "https://github.com/derekfika/fika-os/actions/runs/45379732014/job/138397173650",
-    "sha": "5e436da8d5666ad2f9794b1655be6352cec3d62d"
+    "id": 139779325436,
+    "url": "https://github.com/derekfika/fika-os/actions/runs/45781597010/job/139779325436",
+    "sha": "fce6de55363e70a11cf734d55af6dcef8a0a6096"
   },
   "provenance": {
-    "number": 685,
-    "url": "https://github.com/derekfika/fika-os/pull/685",
-    "head": "49cb5d444f49baea114998aa6d02ad855fb1806d"
+    "number": 712,
+    "url": "https://github.com/derekfika/fika-os/pull/712",
+    "head": "5f726b899c2f297d61b5bd690558d0d00adec956"
   },
-  "sourceSha": "5e436da8d5666ad2f9794b1655be6352cec3d62d",
-  "scopeHash": "a5c24df2d809744a05cf594681b7dd3163dff7eae235194ff39a960090a154b9",
+  "sourceSha": "fce6de55363e70a11cf734d55af6dcef8a0a6096",
+  "scopeHash": "c15c022443b14a6335f2e9e0a656df057e310803d9bacf9efdc0cd35b0692782",
   "rollback": false,
   "approval": {
     "actor": "derekfika",
     "method": "authenticated-repository-writer",
     "app": "hub",
     "environment": "staging",
-    "sourceSha": "5e436da8d5666ad2f9794b1655be6352cec3d62d",
+    "sourceSha": "fce6de55363e70a11cf734d55af6dcef8a0a6096",
     "action": "deploy",
-    "instruction": "Execute deploy",
+    "instruction": "Owner authorised coordinated staging rollouts for the P0 Menu Studio read-efficiency acceptance of PR 712.",
     "releaseId": null,
-    "id": "2f226e1de91348b5fdd7dcb03b6b458173bdb13a2dc1380ce4b1b7d623977d86",
+    "id": "4e6daf7b64f2b509357ad690ce657a02c1a126ab63e3fb537594efc65d5658c3",
     "explicitExecute": true,
-    "authorisedAt": "2026-11-24T11:02:00.222Z"
+    "authorisedAt": "2026-11-26T08:28:34.613Z"
   },
-  "rollout": "build-2026-11-24-001",
-  "state": "SUCCEEDED",
-  "percent": 100,
-  "kind": "deploy",
+  "kind": "intent",
+  "state": "PENDING",
+  "releaseId": "0149f769-9aed-4789-8e9b-70592b2061c1",
   "previousGood": {
-    "sourceSha": "a2e123b4af1629828e4046004b74ae423161d41d",
-    "rollout": "build-2026-11-23-004",
+    "sourceSha": "5e436da8d5666ad2f9794b1655be6352cec3d62d",
+    "rollout": "build-2026-11-24-001",
     "state": "SUCCEEDED",
     "percent": 100
   },
-  "previousGoodRecord": "ca518e55a0834dc53f6c216c69f4d7323e9608f1",
-  "releaseId": "19d85f66-956b-44f4-9ec1-a9cf2e69702d",
-  "completedAt": "2026-11-24T11:07:33.057Z",
-  "smoke": {
-    "ok": true,
-    "status": 200,
-    "url": "https://fika-os-staging--fika-os-dev.europe-west4.hosted.app/"
-  }
+  "previousGoodRecord": "1fe408a9354998fba9930a786757eae5e20a49a8",
+  "createdAt": "2026-11-26T08:28:37.627Z"
 }
