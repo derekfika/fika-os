@@ -12,6 +12,7 @@ const { values } = parseArgs({ options: {
   viewports: { type: "string", default: "native,desktop,tablet,mobile" },
   playwright: { type: "string" }, checks: { type: "boolean", default: false },
   "shell-interactions": { type: "boolean", default: false },
+  "catalogue-interactions": { type: "boolean", default: false },
   "working-tree": { type: "boolean", default: false },
 } });
 assert(values.base && values.output && values["expect-sha"], "Specify --base, --expect-sha and --output.");
@@ -101,7 +102,7 @@ async function openScene(page, scene) {
   if (scene.catalogue) address.searchParams.set("page", "catalogue");
   await page.goto(address.href, { waitUntil: "domcontentloaded" });
   if (scene.catalogue) {
-    await page.getByRole("heading", { name: "Catalogue", exact: true }).waitFor();
+    await page.getByRole("heading", { name: /^Catalogue(?: management)?$/ }).waitFor();
     await productInList(page, "06", "Breakfast Pots").waitFor();
   } else if (scene.product) {
     await page.getByRole("heading", { name: scene.title, exact: true }).first().waitFor();
@@ -228,6 +229,44 @@ async function testShellInteractions(page, requests, viewportName) {
   return result;
 }
 
+
+async function testCatalogueInteractions(page, requests, viewportName) {
+  const initialRequests = requests.length;
+  const table = page.getByRole("table");
+  const original = await table.getByRole("rowheader").first().innerText();
+  await table.getByRole("button", { name: "Product name", exact: true }).press("Enter");
+  assert.notEqual(await table.getByRole("rowheader").first().innerText(), original, "The sort order did not change.");
+  if (viewportName === "mobile") {
+    const toggle = page.getByRole("button", { name: /^Filters/ });
+    assert.equal(await toggle.getAttribute("aria-expanded"), "false");
+    await toggle.press("Enter");
+    assert.equal(await toggle.getAttribute("aria-expanded"), "true");
+  }
+  await page.getByLabel("Category", { exact: true }).selectOption("Breakfast");
+  await productInList(page, "06", "Finger Food").waitFor({ state: "hidden" });
+  await productInList(page, "06", "Breakfast Pots").waitFor();
+  await page.getByRole("button", { name: "Reset", exact: true }).press("Enter");
+  await productInList(page, "06", "Finger Food").waitFor();
+  assert.equal(requests.length, initialRequests, "Local filters and sort made API calls: " + JSON.stringify(requests));
+  await table.getByRole("button", { name: "View Breakfast Pots details", exact: true }).click();
+  await page.getByRole("region", { name: "Product details", exact: true }).getByRole("heading", { name: "Breakfast Pots", exact: true }).waitFor();
+  await table.getByRole("button", { name: "Edit Breakfast Pots", exact: true }).click();
+  const editor = page.getByRole("dialog", { name: "Breakfast Pots", exact: true });
+  await editor.waitFor();
+  await page.keyboard.press("Escape");
+  await editor.waitFor({ state: "hidden" });
+  const responsiveWidths = await readWidths(page);
+  assert.equal(responsiveWidths.document, responsiveWidths.viewport, "The Catalogue overflows the viewport.");
+  assert.equal(requests.length, initialRequests, "Contextual product editing made unexpected API calls: " + JSON.stringify(requests));
+  const linkedSections = page.getByText(/^Linked sections in loaded menus/);
+  await Promise.all([
+    page.waitForResponse(response => new URL(response.url()).pathname === "/api/studio" && new URL(response.url()).searchParams.get("list") === "menus"),
+    linkedSections.click(),
+  ]);
+  assert.deepEqual(requests.slice(initialRequests), ["/api/studio?list=menus"], "Legacy links should load only when opened.");
+  return { localSort: true, localFilterAndReset: true, contextualDetailsAndEdit: true, legacyLinksLoadedOnDemand: true, responsiveWidths };
+}
+
 async function capture(browser, screen, viewportName, build) {
   const scene = scenes[screen];
   const viewport = viewportName === "native" ? { width: screen === "01" ? 1672 : 1671, height: 941 } : dimensions[viewportName];
@@ -250,7 +289,9 @@ async function capture(browser, screen, viewportName, build) {
     const snapshotRequests = [...requests];
     const widths = await readWidths(page);
     if (values.checks) await assertLocalInteraction(page, screen, requests);
-    const interactions = values["shell-interactions"] && screen === "03" ? await testShellInteractions(page, requests, viewportName) : undefined;
+    let interactions;
+    if (values["shell-interactions"] && screen === "03") interactions = await testShellInteractions(page, requests, viewportName);
+    if (values["catalogue-interactions"] && screen === "06") interactions = await testCatalogueInteractions(page, requests, viewportName);
     assert.deepEqual(violations, [], "The fixture page attempted an unrecognised API request or mutation.");
     const metadata = { app: build, playwrightVersion, chromiumVersion: browser.version(), fixtureHash, viewportName, viewport,
       screen, url: currentUrl, imageSha256: digest(png), requests: snapshotRequests, widths, horizontalOverflow: widths.document > widths.viewport,
