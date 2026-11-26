@@ -88,6 +88,18 @@ test("already-created weeks keep persisted legacy template rows visible", () => 
   assert.ok(groupedSlots(historical).flatMap(([, slots]) => slots).includes("COLD PROTEIN 3"));
 });
 
+test("selecting a supplementary week renders only that menu's saved category order", () => {
+  const mainLunch = emptyWeek("2026-11-23");
+  mainLunch.week.templateSlots = ["SALAD 1", "HOT MAIN", "DESSERT 1"];
+  const breakfast = emptyWeek("2026-11-23", "test", ["SOUP 1", "SALAD 2", "DESSERT 2"], "rolling-week:2026-11-23:menu:breakfast");
+  breakfast.week.supplementaryMenu = { id: "breakfast", name: "Breakfast", serviceType: "Breakfast", siteIds: ["site:munich"] };
+  breakfast.week.customSlots = ["DESSERT 3"];
+
+  assert.deepEqual(groupedSlots(mainLunch).flatMap(([, slots]) => slots), ["SALAD 1", "HOT MAIN", "DESSERT 1", "DESSERT 2", "DESSERT 3"]);
+  assert.deepEqual(groupedSlots(breakfast).flatMap(([, slots]) => slots), ["SALAD 2", "SOUP 1", "DESSERT 1", "DESSERT 2", "DESSERT 3"]);
+  assert.deepEqual(mainLunch.week.templateSlots, ["SALAD 1", "HOT MAIN", "DESSERT 1"], "viewing another menu does not rewrite Main Lunch rows");
+});
+
 test("standard Dessert rows are permanent and cannot be removed from a draft week", () => {
   assert.throws(() => assertMenuSlotCanBeRemoved("DESSERT 2"), (error: any) => error.status === 409);
   assert.doesNotThrow(() => assertMenuSlotCanBeRemoved("SALAD 1"));
