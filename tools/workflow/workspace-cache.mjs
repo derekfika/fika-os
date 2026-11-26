@@ -1,7 +1,8 @@
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { closeSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readlinkSync, readSync, realpathSync, statSync } from 'node:fs';
-import { command, save, stateDir } from './runtime.mjs';
+import { command, git, save, stateDir } from './runtime.mjs';
 import { APPS, safeScope } from './policy.mjs';
 import { canonical, localEntry, managedRoot, optionalJson, samePath, split } from './workspace-capacity.mjs';
 import { dependencyLinkPlan, inside as isInside, matchesDependencyLink, trackedJson } from './workspace-residue.mjs';
@@ -107,6 +108,64 @@ export function verifiedTypeScriptBuildInfo(workspace, relative, head) {
   } catch { return false; }
 }
 
+const pythonCacheDirectory = 'apps/cpu-production/tools/xchange-print-agent/__pycache__';
+const pythonCacheFiles = ['agent.cpython-314.pyc', 'test_agent.cpython-314.pyc'];
+const pythonCacheCompiler = `import importlib._bootstrap_external as external, pathlib, sys
+if sys.implementation.name != 'cpython' or sys.version_info[:2] != (3, 14): raise SystemExit(2)
+p = pathlib.Path(sys.argv[1])
+filename = sys.argv[2]
+timestamp = int(sys.argv[3])
+size = int(sys.argv[4])
+s = p.read_bytes()
+if len(s) != size: raise SystemExit(3)
+c = compile(s, filename, 'exec', dont_inherit=True, optimize=0)
+sys.stdout.buffer.write(external._code_to_timestamp_pyc(c, timestamp, size))`;
+
+/** Only the two exact CPython 3.14 cache files in the print-agent package are
+ * rebuildable. Verify their source blobs are tracked and the bytecode is exactly
+ * what the local CPython compiler produces without executing either module. */
+export function verifiedPythonCache(workspace, relative, head) {
+  if (relative !== pythonCacheDirectory) return false;
+  const directory = path.join(workspace.directory, relative);
+  const dirEntry = localEntry(directory);
+  if (!dirEntry?.isDirectory() || dirEntry.isSymbolicLink() || !samePath(realpathSync(directory), directory)) return false;
+  const names = readdirSync(directory).sort();
+  if (names.join('\0') !== [...pythonCacheFiles].sort().join('\0')) return false;
+  for (const cacheName of pythonCacheFiles) {
+    const cacheFile = path.join(directory, cacheName);
+    const info = localEntry(cacheFile);
+    if (!info?.isFile() || info.isSymbolicLink() || info.size > 8 * 1024 * 1024 || !samePath(realpathSync(cacheFile), cacheFile)) return false;
+    const sourceName = cacheName.replace(/\.cpython-314\.pyc$/, '.py');
+    const sourceRelative = `${path.posix.dirname(relative)}/${sourceName}`;
+    const cacheBytes = readFileSync(cacheFile);
+    if (cacheBytes.length < 16 || cacheBytes.readUInt32LE(4) !== 0) return false;
+    const timestamp = cacheBytes.readUInt32LE(8), sourceSize = cacheBytes.readUInt32LE(12);
+    if (sourceSize > 8 * 1024 * 1024) return false;
+    const taskSource = path.join(workspace.directory, sourceRelative);
+    const taskSourceInfo = localEntry(taskSource);
+    const sourceFile = taskSourceInfo ? taskSource : path.join(canonical(), sourceRelative);
+    const sourceInfo = localEntry(sourceFile);
+    if (!sourceInfo?.isFile() || sourceInfo.isSymbolicLink() || !samePath(realpathSync(sourceFile), sourceFile)) return false;
+    if (taskSourceInfo && (Math.floor(taskSourceInfo.mtimeMs / 1000) !== timestamp || taskSourceInfo.size !== sourceSize)) return false;
+    if (sourceInfo.size !== sourceSize) return false;
+    try {
+      if (git('ls-files', '--error-unmatch', '--', sourceRelative) !== sourceRelative ||
+          git('rev-parse', `${head}:${sourceRelative}`) !== git('hash-object', sourceFile)) return false;
+    } catch { return false; }
+    const compiled = spawnSync('python', ['-B', '-c', pythonCacheCompiler, sourceFile, taskSource, String(timestamp), String(sourceSize)], {
+      windowsHide: true, encoding: 'buffer', timeout: 15000, maxBuffer: 8 * 1024 * 1024,
+      env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
+    });
+    if (compiled.error || compiled.status !== 0 || !Buffer.isBuffer(compiled.stdout) ||
+        !compiled.stdout.equals(cacheBytes)) return false;
+  }
+  return true;
+}
+
+export function pythonCacheRetirementFiles(relative) {
+  return relative === pythonCacheDirectory ? pythonCacheFiles.map(file => `${relative}/${file}`) : [];
+}
+
 export function recordGenerated(workspace, candidates) {
   const paths = [], protectedPaths = [];
   if (!candidates.length) return { paths, protectedPaths };
@@ -169,10 +228,12 @@ export function generatedRetirementPlan(workspace, status, head) {
     const fingerprinted = matchesGenerated(workspace, relative, entries, { knownLinks, observedLinks: links });
     const nextDeclaration = verifiedNextDeclaration(workspace, relative, head);
     const buildInfo = verifiedTypeScriptBuildInfo(workspace, relative, head);
-    if (!fingerprinted && !nextDeclaration && !buildInfo) {
+    const pythonCache = verifiedPythonCache(workspace, relative, head);
+    if (!fingerprinted && !nextDeclaration && !buildInfo && !pythonCache) {
       throw Error(`Unverified ignored output: ${relative}`);
     }
     if (buildInfo) verifiedGenerated.push(relative);
+    if (pythonCache) verifiedGenerated.push(...pythonCacheFiles.map(file => `${pythonCacheDirectory}/${file}`));
   }
   links.verifiedGenerated = verifiedGenerated;
   return links;
