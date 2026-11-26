@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { assertOperationalStoreAvailable } from "./hosted-runtime";
 import { assertExpectedVersion, MenuPlanningFirestoreRepository, type EventReplayState, type HostedTransactionState, type MenuPlanningTransactionScope } from "./firestore-operational-store";
+import type { SupplementaryMenuTemplate } from "./rolling-menu";
 import { applyRollingEntryPatch, commandDayIds, commandEntryIds, type RollingMutationCommand, type RollingMutationDelta } from "./rolling-command";
 import type { CompiledPublishedWeekSnapshot } from "./menu-publication";
 import type { RollingDay, RollingEntry, RollingSnapshot, RollingWeek } from "./rolling-menu-types";
@@ -68,6 +69,7 @@ export type MenuPlanningOperationalStore = {
   readonly kind: "sqlite" | "firestore";
   readRollingState<T>(): Promise<T>;
   getMenuTemplateSlots(): Promise<string[]>;
+  getSupplementaryMenuTemplates(): Promise<SupplementaryMenuTemplate[]>;
   listWeekSummaries<T>(): Promise<T[]>;
   listWeekSummariesByCommencing<T>(weekCommencings: string[]): Promise<T[]>;
   getWeekHead<T>(weekId: string): Promise<T | undefined>;
@@ -113,6 +115,7 @@ class SqliteOperationalStore implements MenuPlanningOperationalStore {
   readonly kind = "sqlite" as const;
   async readRollingState<T>() { const database = open(); try { return parseDocument(database, "rolling") as T; } finally { database.close(); } }
   async getMenuTemplateSlots() { return (await this.readRollingState<{ menuTemplateSlots?: string[] }>()).menuTemplateSlots || []; }
+  async getSupplementaryMenuTemplates() { return (await this.readRollingState<{ supplementaryMenuTemplates?: SupplementaryMenuTemplate[] }>()).supplementaryMenuTemplates || []; }
   async listWeekSummaries<T>() { return (await this.readRollingState<{ weeks: T[] }>()).weeks; }
   async listWeekSummariesByCommencing<T>(weekCommencings: string[]) { const wanted = new Set(weekCommencings); return (await this.readRollingState<{ weeks: T[] }>()).weeks.filter((candidate: any) => wanted.has(candidate.weekCommencing)); }
   async getWeekHead<T>(weekId: string) { const state = await this.readRollingState<{ weeks: T[] }>(); return state.weeks.find((candidate: any) => candidate.id === weekId); }
@@ -183,6 +186,7 @@ class FirestoreOperationalStore implements MenuPlanningOperationalStore {
   constructor(private readonly repository = new MenuPlanningFirestoreRepository()) {}
   readRollingState<T>() { return this.repository.readRollingState() as Promise<T>; }
   getMenuTemplateSlots() { return this.repository.getMenuTemplateSlots(); }
+  getSupplementaryMenuTemplates() { return this.repository.getSupplementaryMenuTemplates(); }
   listWeekSummaries<T>() { return this.repository.listWeekSummaries() as Promise<T[]>; }
   listWeekSummariesByCommencing<T>(weekCommencings: string[]) { return this.repository.listWeekSummariesByCommencing(weekCommencings) as Promise<T[]>; }
   getWeekHead<T>(weekId: string) { return this.repository.getWeekHead(weekId) as Promise<T | undefined>; }

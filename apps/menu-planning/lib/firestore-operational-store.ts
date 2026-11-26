@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { claimEvent, eventIsDue, markEventDeadLetter, outboxRecord, resetEventForReplay, type DurableDomainEvent } from "./fika-contracts";
 import type { CompiledPublishedWeekSnapshot, MenuPublication } from "./menu-publication";
 import type { RollingDay, RollingEntry, RollingSnapshot, RollingWeek } from "./rolling-menu-types";
+import type { SupplementaryMenuTemplate } from "./rolling-menu";
 import { recordMenuPlanningReadBudget } from "./read-budget";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import { decodeWeeklyPublicationPacket } from "@fika/server-shared/weekly-publication-packet";
@@ -23,8 +24,8 @@ const queueCursorDocument = (state: QueueCursorState) => ({
   ...(state.legacy ? { legacy: state.legacy } : {}),
 });
 export type EventReplayState = "claimed" | "blocked" | "dead-lettered" | "missing";
-export type HostedTransactionState = { rolling: { version?: number; weeks: RollingWeek[]; days: RollingDay[]; entries: RollingEntry[]; menuTemplateSlots?: string[] }; publications: { version: number; publications: MenuPublication[]; events: DurableDomainEvent[] } };
-export type MenuPlanningTransactionScope = { weekId?: string; sourceWeekId?: string; includeEvents?: boolean; includeTemplateSettings?: boolean };
+export type HostedTransactionState = { rolling: { version?: number; weeks: RollingWeek[]; days: RollingDay[]; entries: RollingEntry[]; menuTemplateSlots?: string[]; supplementaryMenuTemplates?: SupplementaryMenuTemplate[] }; publications: { version: number; publications: MenuPublication[]; events: DurableDomainEvent[] } };
+export type MenuPlanningTransactionScope = { weekId?: string; sourceWeekId?: string; includeEvents?: boolean; includeTemplateSettings?: boolean; recurrence?: "settings-only" | "with-week" };
 export class ExpectedVersionConflict extends Error { status = 409 as const; }
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const omit = (value: Record<string, unknown>, key: string) => Object.fromEntries(Object.entries(value).filter(([name]) => name !== key));
@@ -38,6 +39,18 @@ export class MenuPlanningFirestoreRepository {
   readonly db: Firestore;
   constructor(db = new Firestore({ projectId: process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT })) { this.db = db; }
   async readRollingState() { return this.db.runTransaction(transaction => this.readRolling(transaction, undefined, true)); }
+  private recurrenceSettings() {
+    return this.db.collection(MENU_PLANNING_COLLECTIONS.settings).doc("supplementary-recurrence");
+  }
+  async getSupplementaryMenuTemplates(transaction?: Transaction): Promise<SupplementaryMenuTemplate[]> {
+    const ref = this.recurrenceSettings();
+    const document = transaction ? await transaction.get(ref) : await ref.get();
+    recordFirestore("recurrence.settings-read", document.exists ? 1 : 0);
+    if (!document.exists) return [];
+    const templates = document.data()?.templates;
+    if (!Array.isArray(templates)) throw new Error("Invalid supplementary recurrence settings.");
+    return templates;
+  }
   async getMenuTemplateSlots() {
     const document = await this.db.collection(MENU_PLANNING_COLLECTIONS.settings).doc("menu-template").get();
     recordFirestore("template.settings-read", document.exists ? 1 : 0);
@@ -331,7 +344,11 @@ export class MenuPlanningFirestoreRepository {
   }
   async runTransaction<T>(mutator: (state: HostedTransactionState) => T | Promise<T>, expected?: { weekId?: string; weekVersion?: number }, scope: MenuPlanningTransactionScope = {}) {
     return this.db.runTransaction(async transaction => {
-      const before = { rolling: await this.readRolling(transaction, scope.weekId, scope.includeTemplateSettings === true), publications: await this.readPublications(transaction, scope.sourceWeekId, scope.includeEvents !== false) };
+      const before: HostedTransactionState = {
+        rolling: scope.recurrence === "settings-only" ? { weeks: [], days: [], entries: [] } : await this.readRolling(transaction, scope.weekId, scope.includeTemplateSettings === true),
+        publications: scope.recurrence ? { version: 2, publications: [], events: [] } : await this.readPublications(transaction, scope.sourceWeekId, scope.includeEvents !== false),
+      };
+      if (scope.recurrence) before.rolling.supplementaryMenuTemplates = await this.getSupplementaryMenuTemplates(transaction);
       recordMenuPlanningReadBudget({ operation: "transaction", reads: { weeks: before.rolling.weeks.length, days: before.rolling.days.length, entries: before.rolling.entries.length, publications: before.publications.publications.length, publicationDays: before.publications.publications.reduce((total, publication) => total + publication.days.length, 0), events: before.publications.events.length, scoped: scope.weekId || scope.sourceWeekId ? 1 : 0 } });
       if (expected?.weekId && expected.weekVersion !== undefined) assertExpectedVersion(before.rolling.weeks.find((week: RollingWeek) => week.id === expected.weekId)?.version, expected.weekVersion, expected.weekId);
       const state = structuredClone(before) as HostedTransactionState;
@@ -341,7 +358,7 @@ export class MenuPlanningFirestoreRepository {
       return result;
     });
   }
-  private async readRolling(transaction: Transaction, weekId?: string, includeTemplateSettings = false) {
+  private async readRolling(transaction: Transaction, weekId?: string, includeTemplateSettings = false): Promise<HostedTransactionState["rolling"]> {
     const weekSnap = weekId ? await transaction.get(this.db.collection(MENU_PLANNING_COLLECTIONS.weeks).doc(weekId)) : await transaction.get(this.db.collection(MENU_PLANNING_COLLECTIONS.weeks));
     recordFirestore("week.transaction-read", weekId ? ((weekSnap as DocumentSnapshot).exists ? 1 : 0) : (weekSnap as QuerySnapshot).size);
     const weeks: RollingWeek[] = weekId ? ((weekSnap as DocumentSnapshot).exists ? [(weekSnap as DocumentSnapshot).data() as RollingWeek] : []) : (weekSnap as QuerySnapshot).docs.map(doc => doc.data() as RollingWeek);
@@ -365,6 +382,10 @@ export class MenuPlanningFirestoreRepository {
     return { version: 2, publications, events: eventSnap.docs.map(doc => doc.data() as DurableDomainEvent) };
   }
   private async writeRollingDiff(transaction: Transaction, before: HostedTransactionState["rolling"], after: HostedTransactionState["rolling"]) {
+    if (before.supplementaryMenuTemplates && digest(before.supplementaryMenuTemplates) !== digest(after.supplementaryMenuTemplates)) {
+      transaction.set(this.recurrenceSettings(), { templates: after.supplementaryMenuTemplates }, { merge: true });
+      recordDataAccess({ app: "menu-planning", operation: "recurrence.settings-write", source: "FIRESTORE", documents: 1, estimatedFirestoreWrites: 1 });
+    }
     const beforeWeeks = new Map(before.weeks.map(value => [value.id, value])); const afterWeeks = new Map(after.weeks.map(value => [value.id, value]));
     const beforeDays = new Map(before.days.map(value => [value.id, value])); const afterDays = new Map(after.days.map(value => [value.id, value]));
     const beforeEntries = new Map(before.entries.map(value => [value.id, value])); const afterEntries = new Map(after.entries.map(value => [value.id, value]));
