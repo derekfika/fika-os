@@ -4,6 +4,8 @@ import { after, afterEach, mock, test } from "node:test";
 import { JSDOM } from "jsdom";
 import type { ComponentProps } from "react";
 import type { CanonicalBooking } from "../lib/canonical-types";
+import { amendmentPatchDto } from "../lib/amendment-dto";
+import { MUNICH_RE_LOCATIONS } from "../lib/munich-re-locations";
 
 register("data:text/javascript," + encodeURIComponent(`export async function load(url, context, next) {
   if (url.endsWith('.css')) return { format: 'module', source: 'export default {}', shortCircuit: true };
@@ -74,4 +76,43 @@ test("a different dashboard destination does not enable the site-specific contro
   await openPanel("mnk", { floorLevel: "Level 3" }, false, "oploc:different");
   assert.equal(screen.queryByRole("textbox", { name: "Room / area" }), null);
   assert.equal(field("Floor, room or delivery point").value, "Level 3");
+});
+
+for (const admin of [false, true]) {
+  test(`Munich RE ${admin ? "admin" : "manager"} switches a booking between rooms and collection points`, async () => {
+    const service = await openPanel("munich-re", { roomOrArea: "Flex" }, admin);
+    const select = screen.getByRole<HTMLSelectElement>("combobox", { name: "Meeting room or collection point" });
+    assert.equal(select.value, "flex");
+    assert.deepEqual(Array.from(select.options).slice(1).map(option => option.value), MUNICH_RE_LOCATIONS.map(location => location.id));
+    assert.equal(screen.queryByRole("textbox", { name: "Delivery point" }), null);
+    for (const [id, room, point] of [
+      ["collection-level-5-cafe", "", "Collection from Level 5 Cafe"], ["acacia", "Acacia", ""],
+    ]) {
+      fireEvent.change(select, { target: { value: id } });
+      const draft = service();
+      const patch = amendmentPatchDto({ service: draft, client: { name: "Fixture", email: "staff@example.test", companyName: "Fixture" },
+        order: { items: [], currency: "GBP", netTotal: 0, vatTotal: 0, grossTotal: 0 }, notes: "", deliveryChargeRequired: true,
+        ...(admin ? { adminOplocId: "oploc:fixture" } : {}) });
+      assert.equal(select.value, id);
+      assert.deepEqual([patch.service.floorLevel, patch.service.roomOrArea, patch.service.deliveryPoint], ["", room, point]);
+      assert.equal(draft.oplocId, "oploc:fixture");
+      assert.equal("oplocId" in patch.service, false);
+    }
+  });
+}
+
+test("Munich RE retains historical location snapshots until a replacement is chosen", async () => {
+  const location = { floorLevel: "Mezzanine", roomOrArea: "Old boardroom", deliveryPoint: "Historic foyer" };
+  const service = await openPanel("munich-re", location);
+  const select = screen.getByRole<HTMLSelectElement>("combobox", { name: "Meeting room or collection point" });
+  assert.equal(select.value, "");
+  assert.equal(select.selectedOptions[0].text, "Recorded location · Mezzanine · Old boardroom · Historic foyer");
+  for (const key of Object.keys(location) as Array<keyof typeof location>) assert.equal(service()[key], location[key]);
+  fireEvent.change(select, { target: { value: "aloe" } });
+  assert.deepEqual([service().floorLevel, service().roomOrArea, service().deliveryPoint], ["", "Aloe", ""]);
+});
+
+test("another OPLOC does not inherit the Munich RE location directory", async () => {
+  await openPanel("munich-re", { roomOrArea: "Acacia" }, true, "oploc:other");
+  assert.equal(screen.queryByRole("combobox", { name: "Meeting room or collection point" }), null);
 });
