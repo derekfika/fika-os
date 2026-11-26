@@ -20,9 +20,14 @@ import { getWeekSnapshot, readPublicationState } from "../lib/operational-store"
 import { readDeliveredInOplocs } from "../lib/oploc-authority";
 
 const isolatedDatabaseDirectory = mkdtempSync(join(tmpdir(), "fika-menu-planning-test-"));
+const originalCwd = process.cwd();
+process.chdir(isolatedDatabaseDirectory);
 process.env.MENU_PLANNING_DB_PATH = join(isolatedDatabaseDirectory, "operational.sqlite");
 process.env.MENU_PLANNING_TEST_MODE = "1";
-process.on("exit", () => rmSync(isolatedDatabaseDirectory, { recursive: true, force: true }));
+process.on("exit", () => {
+  process.chdir(originalCwd);
+  rmSync(isolatedDatabaseDirectory, { recursive: true, force: true });
+});
 
 test("rolling menu importer preserves slots, destination quantities and source evidence", () => {
   const sheet = XLSX.utils.aoa_to_sheet([
