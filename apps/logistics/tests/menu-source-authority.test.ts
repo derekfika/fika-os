@@ -111,7 +111,7 @@ test("Delivered-In keeps Production Order v3 distinct from its current Menu day 
     sourceVersion: 3,
   };
   const v1PublicationDayId = `${publicationId}:${sourceDayId}:v1`;
-  const canonicalOrder = {
+  const canonicalOrder:ReturnType<typeof order> & { supersededBy?:string } = {
     ...order(requirement, "menu_available", 1),
     version: 3,
     sourceEntityId: sourceDayId,
