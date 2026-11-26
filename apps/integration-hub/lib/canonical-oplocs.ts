@@ -52,9 +52,14 @@ export async function listCanonicalRecordsByTypes(types: string[], perTypeLimit 
   const wanted = [...new Set(types)].slice(0, 30);
   const limit = Math.max(1, Math.min(perTypeLimit, 1000));
   const snapshots = await Promise.all(wanted.map(type => db.collection("integrationHubCanonical").where("entityType", "==", type).limit(limit + 1).get()));
+  snapshots.forEach((snapshot, index) => recordDataAccess({
+    operation: "canonical.by-type.bounded",
+    source: "FIRESTORE",
+    dataset: "integrationHubCanonical/" + wanted[index],
+    documents: snapshot.size,
+    firestoreReadKind: "query",
+  }));
   const overflow = snapshots.find(snapshot => snapshot.size > limit);
   if (overflow) throw Object.assign(new Error("Canonical reference dataset exceeds the bounded read limit; use an explicit package or reconciliation path."), { status: 503, code: "CANONICAL_REFERENCE_READ_LIMIT" });
-  const documents = snapshots.reduce((total, snapshot) => total + snapshot.size, 0);
-  recordDataAccess({ app: "integration-hub", operation: "canonical.by-type.bounded", source: "FIRESTORE", documents });
   return snapshots.flatMap(snapshot => snapshot.docs.map(document => document.data()));
 }

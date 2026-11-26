@@ -11,6 +11,7 @@ import { stableDocumentId } from "../lib/canonical-editor";
 import type { Actor } from "../lib/auth";
 import { runCatalogueCommand, REVIEW_DECISIONS_COLLECTION, type CatalogueCommand } from "../lib/hospitality-catalogue-admin";
 import { loadCataloguePayload, loadCatalogueRows } from "../lib/hospitality-catalogue-loader";
+import { readCatalogueAdminVersion } from "../lib/hospitality-catalogue-version";
 import { hospitalityPortalReadFromRecords } from "../lib/hospitality-catalogue-service";
 import { ukBusinessDate } from "../lib/hospitality-catalogue-read-model";
 import type { CanonicalRecord } from "../lib/types";
@@ -38,6 +39,31 @@ const activeOplocIds = async () => (await loadCataloguePayload(admin)).oplocs.fi
 const exceptionsOf = async (itemId: string) => (await canonical().where("record.hospitalityMenuItemId", "==", itemId).get()).docs.map(doc => doc.data() as CanonicalRecord).filter(record => record.entityType === "Hospitality Menu Offering");
 const unique = () => randomUUID().replace(/-/g, "").slice(0, 12);
 const createInput = (key: string, oplocIds: string[], extra: Record<string, unknown> = {}) => ({ action: "create-item" as const, requestId: `req-${key}-${unique()}`, name: `Test Item ${key}`, category: "Drinks", routing: "cpu_hospitality" as const, defaultPrice: { amount: 3 }, oplocIds, ...extra });
+
+test("admin version follows committed catalogue and OPLOC changes and UK business dates", { skip: !enabled }, async () => {
+  const key = unique();
+  const site = await newOploc(key, "version");
+  const input = createInput(key, [site]);
+  const date = new Date("2026-07-01T22:59:59Z");
+  const readVersion = async () => (await readCatalogueAdminVersion(db, date)).version;
+  const before = await readVersion();
+  await assert.rejects(run(input, viewer));
+  assert.equal(await readVersion(), before);
+  await run(input);
+  const after = await readVersion();
+  assert.notEqual(after, before);
+  await run(input);
+  assert.equal(await readVersion(), after);
+  const decision = { action: "record-review-decision" as const, memberIds: [`item:${key}:first`, `item:${key}:second`], decision: "defer" as const };
+  await run(decision);
+  const reviewed = await readVersion();
+  assert.notEqual(reviewed, after);
+  const nextDay = (await readCatalogueAdminVersion(db, new Date("2026-07-01T23:00:00Z"))).version;
+  assert.notEqual(nextDay, reviewed);
+  assert.equal(nextDay.split(":")[1], "2026-07-02");
+  await db.collection("integrationHubCacheManifests").doc("oplocs").set({ version: 1 });
+  assert.notEqual(await readVersion(), reviewed);
+});
 
 test("create-item writes Item + default Price + routing + audit atomically; availability is the default so ONLY excluded sites get an exception; replays safely and refuses duplicates", { skip: !enabled }, async () => {
   const key = unique(); const [a, b] = [await newOploc(key, "a"), await newOploc(key, "b")];

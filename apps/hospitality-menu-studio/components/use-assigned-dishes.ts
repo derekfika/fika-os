@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Dish } from "../lib/contract";
+import { useStudioReads } from "./studio-reads";
 
 type Hydration = {
   items: Dish[];
@@ -14,6 +15,7 @@ export function useAssignedDishes(
   ids: readonly string[],
   dishes: readonly Dish[],
 ) {
+  const reads = useStudioReads();
   const known = new Set(dishes.map((dish) => dish.id));
   const key = JSON.stringify(
     [...new Set(ids.filter((id) => !known.has(id)))].sort(),
@@ -29,28 +31,12 @@ export function useAssignedDishes(
       setResult({ key, value: empty });
       return;
     }
-    const controller = new AbortController();
+    let active = true;
     setResult({ key, value: { ...empty, loading: true } });
     (async () => {
-      const items: Dish[] = [];
       try {
-        for (let offset = 0; offset < missingIds.length; offset += 24) {
-          const params = new URLSearchParams({
-            list: "assigned-dishes",
-            ids: missingIds.slice(offset, offset + 24).join(","),
-          });
-          const response = await fetch(`/api/studio?${params}`, {
-            cache: "no-store",
-            signal: controller.signal,
-          });
-          if (!response.ok)
-            throw new Error("Assigned dishes could not be loaded.");
-          const body = await response.json();
-          if (!Array.isArray(body.items))
-            throw new Error("Assigned dishes could not be loaded.");
-          items.push(...body.items);
-        }
-        if (!controller.signal.aborted) {
+        const items = await reads.loadAssigned(missingIds);
+        if (active) {
           const returned = new Set(items.map((item) => item.id));
           setResult({
             key,
@@ -63,7 +49,7 @@ export function useAssignedDishes(
           });
         }
       } catch {
-        if (!controller.signal.aborted)
+        if (active)
           setResult({
             key,
             value: {
@@ -75,8 +61,8 @@ export function useAssignedDishes(
           });
       }
     })();
-    return () => controller.abort();
-  }, [key, missingIds, attempt]);
+    return () => { active = false; };
+  }, [reads, key, missingIds, attempt]);
   const current =
     result.key === key
       ? result.value

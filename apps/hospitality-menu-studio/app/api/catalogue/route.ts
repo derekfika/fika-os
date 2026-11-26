@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { catalogueGateway } from "../../../lib/catalogue-gateway";
 import { studioRuntime } from "../../../lib/runtime";
+import { studioRouteTrace } from "../../../lib/data-trace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,5 +16,5 @@ async function handle(request: NextRequest, method: "GET" | "POST") {
   }
 }
 
-export const GET = (request: NextRequest) => handle(request, "GET");
-export const POST = (request: NextRequest) => handle(request, "POST");
+export const GET = studioRouteTrace("/api/catalogue", (request: NextRequest) => handle(request, "GET"));
+export const POST = studioRouteTrace("/api/catalogue", (request: NextRequest) => handle(request, "POST"));
