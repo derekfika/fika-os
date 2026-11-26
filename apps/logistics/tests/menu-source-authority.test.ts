@@ -101,6 +101,71 @@ test("a current active Delivered-In requirement resolves publication day through
   });
 });
 
+test("Delivered-In keeps Production Order v3 distinct from its current Menu day v1", async () => {
+  const sourceDayId = "source-day:test";
+  const productionOrderId = "production-order:v1:menu-planning:source-day:test:oploc:test";
+  const requirement:FulfilmentRequirement = {
+    ...baseRequirement("cpu-production", "Delivered-In"),
+    canonicalId: "fulfilment-requirement:cpu-production:production-order:v1:menu-planning:source-day:test:oploc:test:oploc:test",
+    sourceEntityId: productionOrderId,
+    sourceVersion: 3,
+  };
+  const v1PublicationDayId = `${publicationId}:${sourceDayId}:v1`;
+  const canonicalOrder:ReturnType<typeof order> & { supersededBy?:string } = {
+    ...order(requirement, "menu_available", 1),
+    version: 3,
+    sourceEntityId: sourceDayId,
+    sourcePublicationDayId: v1PublicationDayId,
+    sourceContentHash: "content-hash-v1",
+  };
+  const currentPublication = publication();
+  currentPublication.publication.days[0] = {
+    ...currentPublication.publication.days[0],
+    publicationDayId: v1PublicationDayId,
+    version: 1,
+    contentHash: "content-hash-v1",
+  };
+
+  await withFetch(url => url.includes("/api/production?") ? Response.json({ order: canonicalOrder }) : Response.json(currentPublication), async () => {
+    await assert.doesNotReject(() => assertMenuProductionAuthority([requirement]));
+
+    canonicalOrder.version = 2;
+    await assert.rejects(() => assertMenuProductionAuthority([requirement]), { status: 409 });
+
+    canonicalOrder.version = 3;
+    canonicalOrder.sourceVersion = 2;
+    await assert.rejects(() => assertMenuProductionAuthority([requirement]), { status: 409 });
+
+    canonicalOrder.sourceVersion = 1;
+    currentPublication.publication.days[0].contentHash = "changed-menu-content";
+    await assert.rejects(() => assertMenuProductionAuthority([requirement]), { status: 409 });
+
+    currentPublication.publication.days[0].contentHash = canonicalOrder.sourceContentHash;
+    currentPublication.publication.days[0].entries = [{ allocations: [{ destinationId: "oploc:other-site" }] }];
+    await assert.rejects(() => assertMenuProductionAuthority([requirement]), { status: 409 });
+
+    currentPublication.publication.days[0].entries = [{ allocations: [{ destinationId: "oploc:test" }] }];
+    canonicalOrder.status = "cancelled";
+    await assert.rejects(() => assertMenuProductionAuthority([requirement]), { status: 409 });
+
+    canonicalOrder.status = "menu_available";
+    canonicalOrder.supersededBy = "replacement-order";
+    await assert.rejects(() => assertMenuProductionAuthority([requirement]), { status: 409 });
+    delete canonicalOrder.supersededBy;
+
+    currentPublication.publication.publicationStatus = "withdrawn";
+    await assert.rejects(() => assertMenuProductionAuthority([requirement]), { status: 409 });
+    currentPublication.publication.publicationStatus = "published";
+
+    currentPublication.publication.days[0].status = "withdrawn";
+    await assert.rejects(() => assertMenuProductionAuthority([requirement]), { status: 409 });
+    currentPublication.publication.days[0].status = "published";
+
+    canonicalOrder.sourcePublicationDayId = `${publicationId}:${sourceDayId}:v2`;
+    await assert.rejects(() => assertMenuProductionAuthority([requirement]), { status: 409 });
+  });
+});
+
 test("source version drift blocks stale menu actions", async () => {
   const requirement = baseRequirement();
   await withFetch(url => url.includes("/api/production?") ? Response.json({ order: order(requirement, "menu_available", 5) }) : Response.json(publication()), async () => {
