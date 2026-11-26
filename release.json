@@ -33,9 +33,10 @@
     "explicitExecute": true,
     "authorisedAt": "2026-11-26T09:49:42.548Z"
   },
-  "kind": "intent",
-  "state": "PENDING",
-  "releaseId": "acf9231a-5052-427b-a130-6a87abd6d1c9",
+  "rollout": "build-2026-11-26-001",
+  "state": "SUCCEEDED",
+  "percent": 100,
+  "kind": "deploy",
   "previousGood": {
     "sourceSha": "b74f0c372fda350bfcf8764621fd94ce25a1197a",
     "rollout": "build-2026-11-23-003",
@@ -43,5 +44,12 @@
     "percent": 100
   },
   "previousGoodRecord": "202d7aafc1da63b75c97f0f0d77d06e95c453c26",
-  "createdAt": "2026-11-26T09:49:44.808Z"
+  "releaseId": "acf9231a-5052-427b-a130-6a87abd6d1c9",
+  "completedAt": "2026-11-26T09:53:24.473Z",
+  "smoke": {
+    "ok": true,
+    "status": 200,
+    "url": "https://fika-hospitality-staging--fika-os-dev.europe-west4.hosted.app/",
+    "entryRedirect": "/workspace"
+  }
 }
