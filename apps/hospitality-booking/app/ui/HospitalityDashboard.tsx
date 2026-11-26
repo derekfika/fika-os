@@ -2870,6 +2870,9 @@ export function BookingAmendmentPanel({
   const [amendmentCatalogue, setAmendmentCatalogue] = useState<AmendmentCatalogue>();
   const [cutoffWarning, setCutoffWarning] = useState("Checking current catalogue constraints…");
   const catalogueOplocId = amendment.adminOplocId || booking.service.oplocId;
+  const sameBookingSite = booking.service.portalSiteId === siteKey && booking.service.oplocId === oplocId;
+  const separateLocations = Boolean(oplocId) && sameBookingSite && (siteKey === "angel-court" || siteKey === "mnk");
+  const rcoaLocation = sameBookingSite && siteKey === "rcoa";
   useEffect(() => {
     const controller = new AbortController();
     setCutoffWarning("Checking current catalogue constraints…");
@@ -3002,12 +3005,14 @@ export function BookingAmendmentPanel({
               }
             />
           </label>
-          {amendment.adminOplocId && <>
-            <label>End time<input type="time" value={amendment.service.endTime || ""} onChange={event => changeService("endTime", event.target.value)} /></label>
-            {([["floorLevel", "Floor"], ["deliveryPoint", "Delivery point"], ["onsiteContactName", "On-site contact"], ["onsiteContactPhone", "On-site telephone"]] as const).filter(([key]) => !(siteKey === "rcoa" && booking.service.portalSiteId === "rcoa" && booking.service.oplocId === oplocId && key === "floorLevel")).map(([key, label]) =>
-              <label key={key}>{label}<input value={amendment.service[key] || ""} onChange={event => changeService(key, event.target.value)} /></label>)}
-          </>}
-          {siteKey === "rcoa" && booking.service.portalSiteId === "rcoa" && booking.service.oplocId === oplocId ? <RcoaLocationFields floor={amendment.service.floorLevel || ""} location={amendment.service.roomOrArea || ""} onFloorChange={value => { const next = rcoaFloorChange(value, amendment.service.roomOrArea || ""); onChange({ ...amendment, service: { ...amendment.service, floorLevel: next.floor, roomOrArea: next.location } }); }} onLocationChange={value => changeService("roomOrArea", value)} /> : <label>Floor, room or delivery point<input value={amendment.service.roomOrArea || amendment.service.floorLevel || amendment.service.deliveryPoint || ""} onChange={event => changeService("roomOrArea", event.target.value)} /></label>}
+          {amendment.adminOplocId && <label>End time<input type="time" value={amendment.service.endTime || ""} onChange={event => changeService("endTime", event.target.value)} /></label>}
+          {(separateLocations || (amendment.adminOplocId && !rcoaLocation)) && <label>Floor<input value={amendment.service.floorLevel || ""} onChange={event => changeService("floorLevel", event.target.value)} /></label>}
+          {separateLocations && <label>Room / area<input value={amendment.service.roomOrArea || ""} onChange={event => changeService("roomOrArea", event.target.value)} /></label>}
+          {(separateLocations || amendment.adminOplocId) && <label>Delivery point<input value={amendment.service.deliveryPoint || ""} onChange={event => changeService("deliveryPoint", event.target.value)} /></label>}
+          {amendment.adminOplocId && ([["onsiteContactName", "On-site contact"], ["onsiteContactPhone", "On-site telephone"]] as const).map(([key, label]) =>
+            <label key={key}>{label}<input value={amendment.service[key] || ""} onChange={event => changeService(key, event.target.value)} /></label>)}
+          {rcoaLocation && <RcoaLocationFields floor={amendment.service.floorLevel || ""} location={amendment.service.roomOrArea || ""} onFloorChange={value => { const next = rcoaFloorChange(value, amendment.service.roomOrArea || ""); onChange({ ...amendment, service: { ...amendment.service, floorLevel: next.floor, roomOrArea: next.location } }); }} onLocationChange={value => changeService("roomOrArea", value)} />}
+          {!separateLocations && !rcoaLocation && <label>Floor, room or delivery point<input value={amendment.service.roomOrArea || amendment.service.floorLevel || amendment.service.deliveryPoint || ""} onChange={event => changeService("roomOrArea", event.target.value)} /></label>}
         </div>
       </section>
       <section className="booking-amendment-panel__section">
