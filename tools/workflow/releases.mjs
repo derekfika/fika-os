@@ -349,15 +349,45 @@ export function productionDelta(from, to) {
   return { from, to, paths, hash: digest({ from, to, paths }) };
 }
 
-function mergedSource(sha, github, { historicalRollback = false } = {}) {
+function stagingHeadProvenance(sha, github, endpoint, firstPage) {
+  const matches = [];
+  const pageEnds = new Set();
+  let pulls = firstPage;
+  for (let page = 1; ; page++) {
+    matches.push(...pulls.filter(pr => pr.state === 'closed' && pr.merged_at && pr.base?.ref === 'main' &&
+      pr.base?.repo?.full_name === REPO && pr.head?.repo?.full_name === REPO && pr.head.sha === sha));
+    if (matches.length > 1 || pulls.length < 100) break;
+    const last = pulls.at(-1)?.number;
+    if (!Number.isSafeInteger(last) || pageEnds.has(last)) throw Error('Could not verify a complete list of staging PRs');
+    pageEnds.add(last);
+    pulls = github(`${endpoint}&page=${page + 1}`);
+  }
+  if (matches.length !== 1) throw Error('Pinned staging head must identify exactly one merged same-repository PR into main');
+  const [pr] = matches;
+  if (!Number.isSafeInteger(pr.number) || pr.number < 1) throw Error('Pinned staging head lacks a valid PR number');
+  const mergeSha = exactSha(pr.merge_commit_sha);
+  if (!ancestor(mergeSha, 'origin/main')) throw Error('The staging PR merge commit is not integrated into origin/main');
+  const parents = git('rev-list', '--parents', '-n', '1', mergeSha).split(' ').slice(1);
+  if (parents.length !== 2 || parents[1] !== sha || !ancestor(parents[0], sha)) {
+    throw Error('The staging PR head must be the exact second parent and include the main base of its two-parent merge');
+  }
+  if (git('rev-parse', `${sha}^{tree}`) !== git('rev-parse', `${mergeSha}^{tree}`)) {
+    throw Error('The staging PR head tree differs from its protected merge tree');
+  }
+  return { number:pr.number, url:pr.html_url, head:sha, mergeSha };
+}
+
+function mergedSource(sha, github, { historicalRollback = false, pinnedStaging = false } = {}) {
   if (!ancestor(sha, 'origin/main')) throw Error('Release source must already be integrated into origin/main');
-  const pulls = github(`repos/${REPO}/commits/${sha}/pulls?per_page=100`);
+  const endpoint = `repos/${REPO}/commits/${sha}/pulls?per_page=100`;
+  const pulls = github(endpoint);
   // Historical releases sometimes pinned the PR head before integration. A verified rollback can
   // reuse that exact green head once it is an ancestor of main and its own PR is merged.
   const pr = pulls.find(p => p.merged_at && p.base?.ref === 'main' && p.base?.repo?.full_name === REPO &&
     (p.merge_commit_sha === sha || (historicalRollback && p.head?.sha === sha)));
-  if (!pr) throw Error('Exact release source must be the result of a merged PR into the protected main branch');
-  return { validation: successfulValidation(sha, github), provenance: { number: pr.number, url: pr.html_url, head: pr.head.sha } };
+  if (!pr && !pinnedStaging) throw Error('Exact release source must be the result of a merged PR into the protected main branch');
+  const provenance = pr ? { number:pr.number, url:pr.html_url, head:pr.head.sha } : stagingHeadProvenance(sha, github, endpoint, pulls);
+  return { validation:successfulValidation(sha, github), provenance };
 }
 
 export function rollbackSelection(t, current, options = {}, before) {
@@ -416,7 +446,8 @@ function planRelease(t, options, pointer, before, access) {
   const rollback = options.rollback || Boolean(options.record);
   const selected = rollback ? rollbackSelection(t, pointer, options, before) : options;
   const sourceSha = exactSha(selected.sha || git('rev-parse', 'origin/main'));
-  const source = mergedSource(sourceSha, access.github, { historicalRollback:rollback });
+  const source = mergedSource(sourceSha, access.github, { historicalRollback:rollback,
+    pinnedStaging:t.environment === 'staging' && !rollback && Boolean(options.sha) });
   const plan = { ...t, ...source, sourceSha, scopeHash: scopeHash(t.app, sourceSha), rollback };
   if (rollback) {
     const record = exactSha(selected.record);
@@ -668,6 +699,8 @@ export async function deploy(app, environment, options, {
       }
       if (pinned.rollbackRecord !== pointer.record.rollbackRecord || (options.record && options.record !== pinned.rollbackRecord) || (options.rollback && !pinned.rollback)) throw Error('Resume rollback differs from original intent');
       assertResume(pointer.record, journal, plan);
+      if ((pinned.provenance?.mergeSha || pointer.record.provenance?.mergeSha) &&
+          digest(pinned.provenance ?? null) !== digest(pointer.record.provenance ?? null)) throw Error('Staging PR provenance differs from the original intent');
       if (journal.intentCommit && journal.intentCommit !== (pointer.record.retryClaim?.originalIntent || pointer.commit)) throw Error('Resume intent commit differs from the original journal');
       if (digest(plan.productionDelta || null) !== digest(pointer.record.productionDelta || null)) throw Error('Resume production delta differs from original intent');
       if (!options.execute) return { dryRun:true, plan, pendingReleaseId:pointer.record.releaseId, next:'Restore the matching journal and use --resume --execute to verify this attempt.' };
@@ -846,7 +879,13 @@ export async function deploy(app, environment, options, {
       };
       try {
         if (!pointer.record.retryClaim && (journal.submissionFailure || !journal.submissionStartedAt)) {
-          if (!plan.hotfix) mergedSource(plan.sourceSha, github, { historicalRollback:plan.rollback });
+          if (!plan.hotfix) {
+            const pinnedStaging = t.environment === 'staging' && !plan.rollback && Boolean(plan.provenance?.mergeSha);
+            const fresh = mergedSource(plan.sourceSha, github, { historicalRollback:plan.rollback, pinnedStaging });
+            if (pinnedStaging && (fresh.provenance.number !== plan.provenance.number || fresh.provenance.mergeSha !== plan.provenance.mergeSha)) {
+              throw Error('Staging PR provenance changed before retrying the original intent');
+            }
+          }
           else {
             const prepared = await prepareHotfixRelease({ app:plan.app, releaseId:plan.releaseId, sourceSha:plan.sourceSha,
               serving:journal.before, backend, github, read, requireApproval:false });
