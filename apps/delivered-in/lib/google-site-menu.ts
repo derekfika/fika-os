@@ -10,7 +10,26 @@ import { siteMenuDriveConfig } from "./site-menu-drive-config";
 
 type OAuthClient = { installed?: { client_id: string; client_secret: string; token_uri?: string } };
 type OAuthToken = { access_token?: string; refresh_token?: string; expiry_date?: number; token_type?: string };
-type Presentation = { pageSize?: { width?: { magnitude?: number }; height?: { magnitude?: number } }; slides?: Array<{ objectId: string; pageElements?: Array<{ objectId: string; size?: { width?: { magnitude?: number }; height?: { magnitude?: number } }; transform?: { translateX?: number; translateY?: number }; shape?: { text?: { textElements?: Array<{ textRun?: { content?: string } }> } } }> }> };
+type Dimension = { magnitude?: number; unit?: string };
+type PageElement = {
+  objectId: string;
+  size?: { width?: Dimension; height?: Dimension };
+  transform?: { translateX?: number; translateY?: number; scaleX?: number; scaleY?: number; shearX?: number; shearY?: number; unit?: string };
+  shape?: { text?: { textElements?: Array<{ textRun?: { content?: string } }> } };
+};
+type Slide = { objectId: string; pageElements?: PageElement[] };
+type Presentation = { pageSize?: { width?: Dimension; height?: Dimension }; slides?: Slide[] };
+
+function emu(value: number | undefined, unit?: string) {
+  if (value === undefined || (unit && unit !== "EMU" && unit !== "PT")) return NaN;
+  return unit === "PT" ? value * 12_700 : value;
+}
+
+function pageDimensions(presentation: Presentation) {
+  const size = presentation.pageSize;
+  return { width: size ? emu(size.width?.magnitude, size.width?.unit) : 10_000_000,
+    height: size ? emu(size.height?.magnitude, size.height?.unit) : 5_625_000 };
+}
 
 const json = async <T>(response: Response): Promise<T> => { const text = await response.text(); let body: unknown; try { body = JSON.parse(text); } catch { throw new Error(`Google API returned ${response.status} without JSON.`); } if (!response.ok) throw new Error(`Google API ${response.status}: ${JSON.stringify(body)}`); return body as T; };
 export async function googleFetch(input: string, init: RequestInit, label: string) { const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 30000); try { return await fetch(input, { ...init, redirect: "error", signal: controller.signal }); } catch (error) { if ((error as { name?: string }).name === "AbortError") throw new Error(`${label} timed out after 30 seconds.`); throw new Error(`${label} failed: ${(error as Error).message}`); } finally { clearTimeout(timer); } }
@@ -107,33 +126,57 @@ function assertMenuSectionAnchors(day: ProjectedDay, presentation: Presentation)
   }
 }
 
-// A pending Drive receipt can outlive a successful, atomic Slides batch. Check
-// the generated dish and declaration text before reusing a copy with no anchors.
-function hasRenderedMenu(day: ProjectedDay, presentation: Presentation) {
+// Slides can succeed atomically before Drive records the delivery receipt. Verify
+// the readable order on the actual pages, including each dish's declarations.
+export function hasRenderedMenu(day: ProjectedDay, presentation: Presentation) {
   const sections = groupSiteMenuEntries(day.entries);
   if (!sections.length) return false;
-  const expected = new Map(sections.map(section => [section.key, section.entries.flatMap((entry, index) => {
+  const expected = new Map(sections.map(section => [section.key as string, section.entries.flatMap((entry, index) => {
     const allergens = declaredAllergens(entry);
-    return [[`dish-${index}`, titleCase(entry.dishName)], ...(allergens.length ? [[`allergens-${index}`, `(${allergens.join(", ")})`]] : [])];
+    return [{ key: `dish-${index}`, text: titleCase(entry.dishName) }, ...(allergens.length
+      ? [{ key: `allergens-${index}`, text: `(${allergens.join(", ")})` }] : [])];
   })]));
-  const groups = new Map<string, Map<string, string>>();
-  for (const slide of presentation.slides || []) {
+  const page = pageDimensions(presentation);
+  type Row = { key: string; text: string; slide: number; top: number };
+  const groups = new Map<string, Row[]>();
+  for (const [slideIndex, slide] of (presentation.slides || []).entries()) {
+    const rectangles: { left: number; right: number; top: number; bottom: number }[] = [];
     for (const element of slide.pageElements || []) {
       if (!element.objectId.startsWith("fika-delivered-in-")) continue;
       const match = /^fika-delivered-in-(salads|hot_mains|sides_extras)-(\d+)-((?:dish|allergens)-\d+)$/.exec(element.objectId);
-      if (!match) return false;
+      if (!match || !expected.has(match[1])) return false;
+      const transform = element.transform;
+      if (!transform || transform.shearX || transform.shearY) return false;
+      const left = emu(transform.translateX ?? 0, transform.unit);
+      const top = emu(transform.translateY ?? 0, transform.unit);
+      const height = emu(element.size?.height?.magnitude, element.size?.height?.unit) * (transform.scaleY ?? 1);
+      const width = emu(element.size?.width?.magnitude, element.size?.width?.unit) * (transform.scaleX ?? 1);
+      if (!(left >= 0 && top >= 0 && height > 0 && width > 0 && left + width <= page.width && top + height <= page.height)) return false;
+      rectangles.push({ left, right: left + width, top, bottom: top + height });
       const group = `${match[1]}-${match[2]}`;
-      const rows = groups.get(group) || new Map<string, string>();
+      const rows = groups.get(group) || [];
       const text = (element.shape?.text?.textElements || []).map(run => run.textRun?.content || "").join("").replace(/\n$/, "");
-      rows.set(match[3], text);
+      rows.push({ key: match[3], text, slide: slideIndex, top });
       groups.set(group, rows);
+    }
+    rectangles.sort((a, b) => a.top - b.top);
+    for (let i = 0; i < rectangles.length; i++) {
+      const box = rectangles[i];
+      for (let j = i + 1; j < rectangles.length && rectangles[j].top < box.bottom - 1; j++) {
+        if (rectangles[j].left < box.right && box.left < rectangles[j].right) return false;
+      }
     }
   }
   if (!sections.every(section => groups.has(`${section.key}-0`))) return false;
   for (const [group, rows] of groups) {
-    const section = sections.find(candidate => group.startsWith(`${candidate.key}-`));
-    const items = section && expected.get(section.key);
-    if (!items || items.length !== rows.size || !items.every(([id, value]) => rows.get(id) === value)) return false;
+    const items = expected.get(group.slice(0, group.lastIndexOf("-")))!;
+    rows.sort((a, b) => a.slide - b.slide || a.top - b.top);
+    if (items.length !== rows.length) return false;
+    for (const [index, row] of rows.entries()) {
+      if (items[index].key !== row.key || items[index].text !== row.text) return false;
+      const previous = rows[index - 1];
+      if (row.key.startsWith("allergens-") && previous?.slide !== row.slide) return false;
+    }
   }
   return true;
 }
@@ -146,33 +189,113 @@ function textBoxRequest(slideId: string, objectId: string, text: string, x: numb
     { updateParagraphStyle: { objectId, style: { alignment: "CENTER", lineSpacing: 100 }, textRange: { type: "ALL" }, fields: "alignment,lineSpacing" } },
   ];
 }
-function sectionRequests(day: ProjectedDay, presentation: Presentation, key: "salads" | "hot_mains" | "sides_extras") {
-  const token = `{{${key.toUpperCase()}}}`; const anchors = sectionAnchors(presentation, token);
-  const sections = groupSiteMenuEntries(day.entries);
-  const entries = sections.find(section => section.key === key)?.entries || [];
-  if (!entries.length) return anchors.map(({ slide, element }) => {
-    const hasPopulatedSection = sections.some(section => sectionAnchors({ slides: [slide] }, `{{${section.key.toUpperCase()}}}`).length > 0);
-    return { deleteObject: { objectId: hasPopulatedSection ? element.objectId : slide.objectId } };
-  });
-  const requests: Array<Record<string, unknown>> = []; const pageWidth = presentation.pageSize?.width?.magnitude || 10_000_000; const pageHeight = presentation.pageSize?.height?.magnitude || 5_625_000;
-  anchors.forEach((anchor, anchorIndex) => {
-    const y = anchor.element.transform?.translateY || 1_000_000; const sideMargin = Math.max(650_000, Math.min(900_000, pageWidth * .08)); const x = sideMargin; const width = pageWidth - (sideMargin * 2); const tokenHeight = anchor.element.size?.height?.magnitude || 0; const safeHeight = Math.max(1_800_000, pageHeight - y - 950_000); const height = Math.min(Math.max(tokenHeight, safeHeight), pageHeight - y - 650_000);
-    const measure = (font: number) => { const charsPerLine = Math.max(24, Math.floor((width / 12_700) / (font * .70))); return entries.map(entry => { const nameLines = Math.max(1, Math.ceil(titleCase(entry.dishName).length / charsPerLine)); const allergens = declaredAllergens(entry); const allergenCharsPerLine = Math.max(30, charsPerLine + 10); const allergenLines = allergens.length ? Math.max(1, Math.ceil(`(${allergens.join(", ")})`.length / allergenCharsPerLine)) : 0; const lineHeight = Math.max(190_000, font * 12_700 * 1.24 + 70_000); const allergenFont = Math.max(10, font * .68); const allergenHeight = allergenLines ? allergenLines * allergenFont * 12_700 * 1.18 + 75_000 : 0; return { entry, allergens, nameHeight: nameLines * lineHeight + 65_000, allergenHeight }; }); };
-    let font = 28; let allergenFont = Math.max(11, font * .68); const gap = Math.max(65_000, Math.min(145_000, 195_000 - entries.length * 14_000)); let blocks = measure(font); let total = blocks.reduce((sum, block) => sum + block.nameHeight + block.allergenHeight + gap, 0);
-    while (total > height && font > 12) { font -= .5; allergenFont = Math.max(10, font * .68); blocks = measure(font); total = blocks.reduce((sum, block) => sum + block.nameHeight + block.allergenHeight + gap, 0); }
-    let cursor = y + Math.max(100_000, (height - total) / 2); requests.push({ deleteObject: { objectId: anchor.element.objectId } });
-    blocks.forEach((block, index) => { const dishId = `fika-delivered-in-${key}-${anchorIndex}-dish-${index}`; requests.push(...textBoxRequest(anchor.slide.objectId, dishId, titleCase(block.entry.dishName), x, cursor, width, block.nameHeight, font, { red: 0, green: 0, blue: 0 }, false)); cursor += block.nameHeight; if (block.allergens.length) { const allergenId = `fika-delivered-in-${key}-${anchorIndex}-allergens-${index}`; requests.push(...textBoxRequest(anchor.slide.objectId, allergenId, `(${block.allergens.join(", ")})`, x, cursor, width, block.allergenHeight, allergenFont, { red: 1, green: 0, blue: 0 }, true)); cursor += block.allergenHeight; } cursor += gap; });
-  });
-  return requests;
+type Section = ReturnType<typeof groupSiteMenuEntries>[number];
+type MenuRequest = Record<string, unknown>;
+type DishBlock = { index: number; dish: string; declaration: string; dishHeight: number; declarationHeight: number };
+
+function wrappedLines(text: string, columns: number) {
+  let lines = 0;
+  for (const paragraph of text.split(/\r?\n/)) {
+    lines++;
+    let used = 0;
+    for (const word of paragraph.split(/\s+/).filter(Boolean)) {
+      if (used && used + 1 + word.length > columns) { lines++; used = 0; }
+      const length = used + (used ? 1 : 0) + word.length;
+      lines += Math.floor((length - 1) / columns);
+      used = (length - 1) % columns + 1;
+    }
+  }
+  return lines;
 }
+
+function layoutSection(section: Section, anchor: PageElement, page: { width: number; height: number }) {
+  const transform = anchor.transform;
+  const y = emu(transform?.translateY ?? 1_000_000, transform?.unit);
+  const x = Math.max(650_000, Math.min(900_000, page.width * .08));
+  const width = page.width - 2 * x;
+  const anchorHeight = emu(anchor.size?.height?.magnitude ?? 0, anchor.size?.height?.unit) * (transform?.scaleY ?? 1);
+  const safeHeight = Math.max(1_800_000, page.height - y - 950_000);
+  const height = Math.min(Math.max(anchorHeight, safeHeight), page.height - y - 650_000);
+  if (!(y >= 0 && width > 0 && height > 0)) throw new MenuArtifactError("MENU_TEMPLATE_GEOMETRY", `The ${section.title} slide has no usable content area.`, 409);
+  const gap = Math.max(65_000, Math.min(145_000, 195_000 - section.entries.length * 14_000));
+  const texts = section.entries.map((entry, index) => {
+    const allergens = declaredAllergens(entry);
+    return { index, dish: titleCase(entry.dishName), declaration: allergens.length ? `(${allergens.join(", ")})` : "" };
+  });
+  function measure(font: number) {
+    const declarationFont = Math.max(10, font * .68);
+    const textWidthPt = width / 12_700 - 12;
+    const columns = Math.max(1, Math.floor(textWidthPt / (font * .70)));
+    const declarationColumns = Math.max(1, Math.floor(textWidthPt / (declarationFont * .70)));
+    return texts.map(row => ({ ...row,
+      dishHeight: wrappedLines(row.dish, columns) * Math.max(190_000, font * 12_700 * 1.24 + 70_000) + 65_000,
+      declarationHeight: row.declaration ? wrappedLines(row.declaration, declarationColumns) * declarationFont * 12_700 * 1.18 + 75_000 : 0,
+    }));
+  }
+  const used = (blocks: DishBlock[]) => blocks.reduce((sum, b) => sum + b.dishHeight + b.declarationHeight + gap, -gap);
+  let font = 28;
+  let blocks = measure(font);
+  while (font > 12 && used(blocks) > height) { font -= .5; blocks = measure(font); }
+  const pages: DishBlock[][] = [[]];
+  let occupied = 0;
+  for (const block of blocks) {
+    const blockHeight = block.dishHeight + block.declarationHeight;
+    if (blockHeight > height) throw new MenuArtifactError("MENU_DISH_OVERFLOW", `"${block.dish}" and its allergen declarations cannot fit on a ${section.title} slide. Review the template content area.`, 422);
+    if (occupied && occupied + gap + blockHeight > height) { pages.push([]); occupied = 0; }
+    pages[pages.length - 1].push(block);
+    occupied += (occupied ? gap : 0) + blockHeight;
+  }
+  return pages.map(rows => ({ rows, font, x, width, gap, top: y + (height - used(rows)) / 2 }));
+}
+
 export function buildDeliveredInMenuRequests(day: ProjectedDay, site: Site, presentation: Presentation) {
   assertMenuSectionAnchors(day, presentation);
-  const requests: Array<Record<string, unknown>> = [
+  const requests: MenuRequest[] = [
     { replaceAllText: { containsText: { text: "{{SITE_NAME}}", matchCase: true }, replaceText: site.label } },
     { replaceAllText: { containsText: { text: "{{SERVICE_DATE}}", matchCase: true }, replaceText: new Date(`${day.date}T00:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }) } },
     { replaceAllText: { containsText: { text: "{{WEEK_COMMENCING}}", matchCase: true }, replaceText: day.weekCommencing || "" } },
   ];
-  for (const key of ["salads", "hot_mains", "sides_extras"] as const) requests.push(...sectionRequests(day, presentation, key));
+  const sections = groupSiteMenuEntries(day.entries);
+  const keys = ["salads", "hot_mains", "sides_extras"] as const;
+  const counts = { salads: 0, hot_mains: 0, sides_extras: 0 };
+  const dimensions = pageDimensions(presentation);
+  for (const [slideIndex, slide] of (presentation.slides || []).entries()) {
+    const anchors = keys.flatMap(key => sectionAnchors({ slides: [slide] }, `{{${key.toUpperCase()}}}`).map(({ element }) => ({ key, element })));
+    if (!anchors.length) continue;
+    const pages = anchors.flatMap(({ key, element }) => {
+      const section = sections.find(group => group.key === key);
+      if (!section) return [];
+      const prefix = `fika-delivered-in-${key}-${counts[key]++}`;
+      return layoutSection(section, element, dimensions).map(layout => ({ ...layout, prefix }));
+    });
+    if (!pages.length) {
+      requests.push({ deleteObject: { objectId: slide.objectId } });
+      continue;
+    }
+    const pageId = (index: number) => index ? `fika-di-page-${slideIndex}-${index}` : slide.objectId;
+    const placeholderIds = [...new Set(anchors.map(({ element }) => element.objectId))];
+    const placeholderId = (page: number, i: number) => page ? `fika-di-anchor-${slideIndex}-${page}-${i}` : placeholderIds[i];
+    // Slides inserts each duplicate immediately after its original. Duplicate in
+    // reverse order, before modifying any of the source artwork or anchors.
+    for (let page = pages.length - 1; page > 0; page--) {
+      const objectIds: Record<string, string> = { [slide.objectId]: pageId(page) };
+      placeholderIds.forEach((id, i) => { objectIds[id] = placeholderId(page, i); });
+      requests.push({ duplicateObject: { objectId: slide.objectId, objectIds } });
+    }
+    pages.forEach(({ prefix, rows, font, x, width, gap, top }, page) => {
+      placeholderIds.forEach((_, i) => requests.push({ deleteObject: { objectId: placeholderId(page, i) } }));
+      let y = top;
+      for (const row of rows) {
+        requests.push(...textBoxRequest(pageId(page), `${prefix}-dish-${row.index}`, row.dish, x, y, width, row.dishHeight, font, { red: 0, green: 0, blue: 0 }, false));
+        y += row.dishHeight;
+        if (row.declaration) {
+          requests.push(...textBoxRequest(pageId(page), `${prefix}-allergens-${row.index}`, row.declaration, x, y, width, row.declarationHeight, Math.max(10, font * .68), { red: 1, green: 0, blue: 0 }, true));
+          y += row.declarationHeight;
+        }
+        y += gap;
+      }
+    });
+  }
   return requests;
 }
 
@@ -221,13 +344,14 @@ export async function createGoogleSiteMenu(day: ProjectedDay, site: Site, genera
   const resuming = Boolean(copy);
   if (!copy) {
     const template = await readPresentation(templateId, headers);
-    assertMenuSectionAnchors(day, template);
+    // Validate geometry and pair fit before creating a folder or a Drive copy.
+    buildDeliveredInMenuRequests(day, site, template);
     outputFolderId ||= await weekFolderId(route.root, day.weekCommencing || "", headers);
     const appProperties = { fikaMenuRoute: route.key, fikaMenuFolder: outputFolderId, ...(stableDeliveryId ? { fikaDeliveryId: stableDeliveryId, fikaMaterializationStatus: "pending" } : {}) };
     copy = await json<MenuDriveFile>(await googleFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(templateId)}/copy?supportsAllDrives=true&fields=id,webViewLink`, { method: "POST", headers, body: JSON.stringify({ name: fileName, parents: [outputFolderId], appProperties }) }, "Delivered-In Slides template copy"));
   }
   const release = (day as ProjectedDay & { sourceLineage?: { cpu?: { releaseId?: string; releaseVersion?: string; contentHash?: string } } }).sourceLineage?.cpu;
-  if (copy.appProperties?.fikaMaterializationStatus === "ready" && copy.appProperties.fikaMenuSections === "checked") return { artifactId: `delivered-in-menu:${site.oplocId}:${day.sourceDayId}:${stableDeliveryId || day.contentHash}`, oplocId: site.oplocId, sourceDayId: day.sourceDayId, sourcePublicationDayId: day.publicationDayId, sourceVersion: day.version, sourceContentHash: day.contentHash, generatedAt: new Date().toISOString(), generatedBy, driveFileId: copy.id, driveUrl: copy.webViewLink || `https://docs.google.com/presentation/d/${copy.id}/edit`, fileName, ...(deliveryId ? { deliveryId } : {}), ...(release?.releaseId ? { sourceReleaseId: release.releaseId } : {}), ...(release?.releaseVersion ? { sourceReleaseVersion: release.releaseVersion } : {}), ...(release?.contentHash ? { sourcePacketHash: release.contentHash } : {}) };
+  if (copy.appProperties?.fikaMaterializationStatus === "ready" && copy.appProperties.fikaMenuSections === "paginated-v1") return { artifactId: `delivered-in-menu:${site.oplocId}:${day.sourceDayId}:${stableDeliveryId || day.contentHash}`, oplocId: site.oplocId, sourceDayId: day.sourceDayId, sourcePublicationDayId: day.publicationDayId, sourceVersion: day.version, sourceContentHash: day.contentHash, generatedAt: new Date().toISOString(), generatedBy, driveFileId: copy.id, driveUrl: copy.webViewLink || `https://docs.google.com/presentation/d/${copy.id}/edit`, fileName, ...(deliveryId ? { deliveryId } : {}), ...(release?.releaseId ? { sourceReleaseId: release.releaseId } : {}), ...(release?.releaseVersion ? { sourceReleaseVersion: release.releaseVersion } : {}), ...(release?.contentHash ? { sourcePacketHash: release.contentHash } : {}) };
   const presentation = await readPresentation(copy.id, headers);
   if (!resuming || !hasRenderedMenu(day, presentation)) {
     if (copy.appProperties?.fikaMaterializationStatus === "ready") {
@@ -236,7 +360,7 @@ export async function createGoogleSiteMenu(day: ProjectedDay, site: Site, genera
     const requests = buildDeliveredInMenuRequests(day, site, presentation);
     await json(await googleFetch(`https://slides.googleapis.com/v1/presentations/${encodeURIComponent(copy.id)}:batchUpdate`, { method: "POST", headers, body: JSON.stringify({ requests }) }, "Delivered-In Slides generation"));
   }
-  if (stableDeliveryId) await json(await googleFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(copy.id)}?supportsAllDrives=true`, { method: "PATCH", headers, body: JSON.stringify({ appProperties: { fikaMenuRoute: route.key, fikaMenuFolder: outputFolderId, fikaDeliveryId: stableDeliveryId, fikaMaterializationStatus: "ready", fikaMenuSections: "checked" } }) }, "Delivered-In delivery artifact certification"));
+  if (stableDeliveryId) await json(await googleFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(copy.id)}?supportsAllDrives=true`, { method: "PATCH", headers, body: JSON.stringify({ appProperties: { fikaMenuRoute: route.key, fikaMenuFolder: outputFolderId, fikaDeliveryId: stableDeliveryId, fikaMaterializationStatus: "ready", fikaMenuSections: "paginated-v1" } }) }, "Delivered-In delivery artifact certification"));
   const driveUrl = copy.webViewLink || `https://docs.google.com/presentation/d/${copy.id}/edit`;
   return { artifactId: `delivered-in-menu:${site.oplocId}:${day.sourceDayId}:${stableDeliveryId || day.contentHash}`, oplocId: site.oplocId, sourceDayId: day.sourceDayId, sourcePublicationDayId: day.publicationDayId, sourceVersion: day.version, sourceContentHash: day.contentHash, generatedAt: new Date().toISOString(), generatedBy, driveFileId: copy.id, driveUrl, fileName, ...(deliveryId ? { deliveryId } : {}), ...(release?.releaseId ? { sourceReleaseId: release.releaseId } : {}), ...(release?.releaseVersion ? { sourceReleaseVersion: release.releaseVersion } : {}), ...(release?.contentHash ? { sourcePacketHash: release.contentHash } : {}) };
 }

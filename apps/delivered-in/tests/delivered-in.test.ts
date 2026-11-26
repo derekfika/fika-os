@@ -189,7 +189,12 @@ test("generic output preflight and retry verify dishes and declarations without 
     entries: [{ ...published.entries[0], allergensVisible: true, allergens: { milk: "may_contain" } }],
   };
   let status: "pending" | "ready" = "pending";
-  const shape = (objectId: string, content: string) => ({ objectId, shape: { text: { textElements: [{ textRun: { content } }] } } });
+  const shape = (objectId: string, content: string) => ({
+    objectId,
+    size: { width: { magnitude: 1_000_000 }, height: { magnitude: 100_000 } },
+    transform: { translateX: 100_000, translateY: objectId.includes("allergens") ? 300_000 : 100_000 },
+    shape: { text: { textElements: [{ textRun: { content } }] } },
+  });
   const elements = [shape("fika-delivered-in-salads-0-dish-0", "Mixed Baby Leaf\n")];
   const requests: string[] = [];
   const reply = (body: unknown) => new Response(JSON.stringify(body));
