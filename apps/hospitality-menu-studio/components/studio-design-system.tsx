@@ -209,6 +209,7 @@ export function StudioShell({
   environmentLabel,
   headerActions,
   contentWidth = "wide",
+  homeLayout = false,
   children,
 }: {
   actorName: string;
@@ -222,6 +223,7 @@ export function StudioShell({
   environmentLabel?: ReactNode;
   headerActions?: ReactNode;
   contentWidth?: "standard" | "wide";
+  homeLayout?: boolean;
   children: ReactNode;
 }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -244,7 +246,7 @@ export function StudioShell({
     { id: "catalogue", label: "Catalogue", icon: "catalogue" },
   ];
   return (
-    <div className={styles.shell}>
+    <div className={`${styles.shell} ${homeLayout ? styles.shellHome : ""}`}>
       <a className={styles.skip} href="#studio-main">Skip to content</a>
       <header className={styles.header}>
         <div className={styles.brand}><Image src="/fika-logo.png" alt="FIKA OS" width={84} height={50} priority /></div>

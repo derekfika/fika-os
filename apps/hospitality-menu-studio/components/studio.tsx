@@ -729,7 +729,8 @@ export default function Studio({
       onSelectProduct={selectBuilderProduct}
       environmentLabel={demo ? <StudioStatus tone="info">Local preview</StudioStatus> : undefined}
       saveState={builderActiveProductId ? <StudioStatus tone={builderDirty ? "warning" : "success"}>{builderDirty ? "Unsaved changes" : "Draft saved"}</StudioStatus> : menu ? <StudioStatus tone={menuDraft.state === "saved" ? "success" : menuDraft.state === "error" ? "danger" : "warning"}>{menuDraft.state === "saved" ? "Draft saved" : menuDraft.state === "saving" ? "Saving…" : menuDraft.state === "conflict" ? "Version conflict" : "Unsaved changes"}</StudioStatus> : undefined}
-      contentWidth={page === "home" ? (builderActiveProductId ? "wide" : "standard") : "wide"}
+      contentWidth="wide"
+      homeLayout={page === "home" && !builderActiveProductId}
     >
       {page !== "home" &&
         page !== "dishes" &&
