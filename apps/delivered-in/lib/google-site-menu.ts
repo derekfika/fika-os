@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import type { ProjectedDay, Site } from "./projection";
 import { groupSiteMenuEntries, siteMenuFileName, type SiteMenuArtifact } from "./site-menu";
 import { CANONICAL_ALLERGEN_COLUMNS } from "./allergen-columns";
-import { driveAccessToken, resolveDriveOwner } from "@fika/server-shared/drive-owner";
+import { assertStagingDriveResource, driveAccessToken, resolveDriveOwner } from "@fika/server-shared/drive-owner";
 import { stableDocumentId } from "@fika/server-shared/stable-document-id";
 import { MenuArtifactError, menuAllergenLabel, publishMenuArtifact, resolveMenuTemplate } from "@fika/server-shared/menu-artifact";
 import { deliveredInMenuFromDay, deliveredInMenuSiteKey } from "./menu-adapter";
@@ -24,7 +24,10 @@ export function weekFolderName(weekCommencing?: string) { return weekCommencing 
 async function weekFolderId(rootFolderId: string, weekCommencing: string, headers: Record<string, string>) { const name = weekFolderName(weekCommencing); if (!name) return rootFolderId; await assertFolder(rootFolderId, headers); const query = `'${rootFolderId}' in parents and name = '${name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`; const existing = await json<{ files?: Array<{ id: string }> }>(await googleFetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&spaces=drive&fields=files(id)&pageSize=1`, { headers }, "Delivered-In week folder lookup")); if (existing.files?.[0]?.id) return existing.files[0].id; const created = await json<{ id: string }>(await googleFetch("https://www.googleapis.com/drive/v3/files?supportsAllDrives=true&fields=id", { method: "POST", headers, body: JSON.stringify({ name, parents: [rootFolderId], mimeType: "application/vnd.google-apps.folder" }) }, "Delivered-In week folder creation")); return created.id; }
 async function trashDriveFile(fileId: string, headers: Record<string, string>) { await googleFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?supportsAllDrives=true`, { method: "PATCH", headers, body: JSON.stringify({ trashed: true }) }, "Delivered-In previous menu replacement"); }
 export async function retireGoogleSiteMenu(fileId?: string, oplocId?: string) { if (!fileId) return; const token = oplocId ? await driveAccessToken(resolveDriveOwner(siteMenuDriveConfig(oplocId).owner)) : await accessToken(); await trashDriveFile(fileId, { Authorization: `Bearer ${token}`, "content-type": "application/json" }); }
-function slideText(slide: NonNullable<Presentation["slides"]>[number]) { return (slide.pageElements || []).flatMap(element => element.shape?.text?.textElements || []).map(element => element.textRun?.content || "").join(""); }
+async function readPresentation(id: string, headers: Record<string, string>) {
+  await assertStagingDriveResource(id, headers.Authorization);
+  return json<Presentation>(await googleFetch(`https://slides.googleapis.com/v1/presentations/${encodeURIComponent(id)}`, { headers }, "Delivered-In Slides template read"));
+}
 function titleCase(value: string) { return value.trim().toLocaleLowerCase("en-GB").replace(/(^|[^A-Za-zÀ-ÿ])([a-zà-ÿ])/g, (_, prefix: string, letter: string) => `${prefix}${letter.toLocaleUpperCase("en-GB")}`); }
 function declaredAllergens(entry: ProjectedDay["entries"][number]) {
   const labels = new Map<string, string>(CANONICAL_ALLERGEN_COLUMNS);
@@ -55,6 +58,45 @@ export function assertPrintableCpuEvidence(day: ProjectedDay) {
   }
 }
 function sectionAnchors(presentation: Presentation, token: string) { return (presentation.slides || []).flatMap(slide => (slide.pageElements || []).filter(element => (element.shape?.text?.textElements || []).map(item => item.textRun?.content || "").join("").includes(token)).map(element => ({ slide, element }))); }
+function assertMenuSectionAnchors(day: ProjectedDay, presentation: Presentation) {
+  for (const section of groupSiteMenuEntries(day.entries)) {
+    const token = `{{${section.key.toUpperCase()}}}`;
+    if (!sectionAnchors(presentation, token).length) {
+      throw new MenuArtifactError("MENU_TEMPLATE_SECTION_MISSING", `The site menu template needs a ${token} placeholder for ${section.title}. Restore the placeholder and generate the menu again.`, 409);
+    }
+  }
+}
+
+// A pending Drive receipt can outlive a successful, atomic Slides batch. Check
+// the generated dish and declaration text before reusing a copy with no anchors.
+function hasRenderedMenu(day: ProjectedDay, presentation: Presentation) {
+  const sections = groupSiteMenuEntries(day.entries);
+  if (!sections.length) return false;
+  const expected = new Map(sections.map(section => [section.key, section.entries.flatMap((entry, index) => {
+    const allergens = declaredAllergens(entry);
+    return [[`dish-${index}`, titleCase(entry.dishName)], ...(allergens.length ? [[`allergens-${index}`, `(${allergens.join(", ")})`]] : [])];
+  })]));
+  const groups = new Map<string, Map<string, string>>();
+  for (const slide of presentation.slides || []) {
+    for (const element of slide.pageElements || []) {
+      if (!element.objectId.startsWith("fika-delivered-in-")) continue;
+      const match = /^fika-delivered-in-(salads|hot_mains|sides_extras)-(\d+)-((?:dish|allergens)-\d+)$/.exec(element.objectId);
+      if (!match) return false;
+      const group = `${match[1]}-${match[2]}`;
+      const rows = groups.get(group) || new Map<string, string>();
+      const text = (element.shape?.text?.textElements || []).map(run => run.textRun?.content || "").join("").replace(/\n$/, "");
+      rows.set(match[3], text);
+      groups.set(group, rows);
+    }
+  }
+  if (!sections.every(section => groups.has(`${section.key}-0`))) return false;
+  for (const [group, rows] of groups) {
+    const section = sections.find(candidate => group.startsWith(`${candidate.key}-`));
+    const items = section && expected.get(section.key);
+    if (!items || items.length !== rows.size || !items.every(([id, value]) => rows.get(id) === value)) return false;
+  }
+  return true;
+}
 function textBoxRequest(slideId: string, objectId: string, text: string, x: number, y: number, width: number, height: number, fontSize: number, color: { red: number; green: number; blue: number }, bold: boolean) {
   return [
     { createShape: { objectId, shapeType: "TEXT_BOX", elementProperties: { pageObjectId: slideId, size: { width: { magnitude: width, unit: "EMU" }, height: { magnitude: height, unit: "EMU" } }, transform: { scaleX: 1, scaleY: 1, translateX: x, translateY: y, unit: "EMU" } } } },
@@ -65,8 +107,13 @@ function textBoxRequest(slideId: string, objectId: string, text: string, x: numb
   ];
 }
 function sectionRequests(day: ProjectedDay, presentation: Presentation, key: "salads" | "hot_mains" | "sides_extras") {
-  const token = `{{${key.toUpperCase()}}}`; const anchors = sectionAnchors(presentation, token); const entries = groupSiteMenuEntries(day.entries).find(section => section.key === key)?.entries || [];
-  if (!entries.length) return anchors.map(anchor => ({ deleteObject: { objectId: anchor.slide.objectId } }));
+  const token = `{{${key.toUpperCase()}}}`; const anchors = sectionAnchors(presentation, token);
+  const sections = groupSiteMenuEntries(day.entries);
+  const entries = sections.find(section => section.key === key)?.entries || [];
+  if (!entries.length) return anchors.map(({ slide, element }) => {
+    const hasPopulatedSection = sections.some(section => sectionAnchors({ slides: [slide] }, `{{${section.key.toUpperCase()}}}`).length > 0);
+    return { deleteObject: { objectId: hasPopulatedSection ? element.objectId : slide.objectId } };
+  });
   const requests: Array<Record<string, unknown>> = []; const pageWidth = presentation.pageSize?.width?.magnitude || 10_000_000; const pageHeight = presentation.pageSize?.height?.magnitude || 5_625_000;
   anchors.forEach((anchor, anchorIndex) => {
     const y = anchor.element.transform?.translateY || 1_000_000; const sideMargin = Math.max(650_000, Math.min(900_000, pageWidth * .08)); const x = sideMargin; const width = pageWidth - (sideMargin * 2); const tokenHeight = anchor.element.size?.height?.magnitude || 0; const safeHeight = Math.max(1_800_000, pageHeight - y - 950_000); const height = Math.min(Math.max(tokenHeight, safeHeight), pageHeight - y - 650_000);
@@ -79,6 +126,7 @@ function sectionRequests(day: ProjectedDay, presentation: Presentation, key: "sa
   return requests;
 }
 export function buildDeliveredInMenuRequests(day: ProjectedDay, site: Site, presentation: Presentation) {
+  assertMenuSectionAnchors(day, presentation);
   const requests: Array<Record<string, unknown>> = [
     { replaceAllText: { containsText: { text: "{{SITE_NAME}}", matchCase: true }, replaceText: site.label } },
     { replaceAllText: { containsText: { text: "{{SERVICE_DATE}}", matchCase: true }, replaceText: new Date(`${day.date}T00:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }) } },
@@ -109,7 +157,7 @@ export async function createGoogleSiteMenu(day: ProjectedDay, site: Site, genera
   if (deliveredInMenuSiteKey(site)) return createSharedSiteMenu(day, site, generatedBy, deliveryId);
   const templateId = resourceId(process.env.GOOGLE_DELIVERED_IN_TEMPLATE_ID); const folderId = resourceId(process.env.GOOGLE_DELIVERED_IN_OUTPUT_FOLDER_ID || process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID_APP_DELIVERED_IN);
   if (!templateId || !folderId) throw new Error("Delivered-In Google Slides template and output folder are not configured.");
-  const token = await accessToken(); const headers = { Authorization: `Bearer ${token}`, "content-type": "application/json" }; const outputFolderId = await weekFolderId(folderId, day.weekCommencing || "", headers);
+  const token = await accessToken(); const headers = { Authorization: `Bearer ${token}`, "content-type": "application/json" };
   const fileName = siteMenuFileName(site.label, day); const stableDeliveryId = deliveryId ? stableDocumentId(`${site.oplocId}:${deliveryId}`) : undefined;
   let copy: { id: string; webViewLink?: string; appProperties?: Record<string, string> } | undefined;
   if (stableDeliveryId) {
@@ -117,12 +165,24 @@ export async function createGoogleSiteMenu(day: ProjectedDay, site: Site, genera
     const existing = await json<{ files?: Array<{ id: string; webViewLink?: string; appProperties?: Record<string, string> }> }>(await googleFetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&spaces=drive&fields=files(id,webViewLink,appProperties)&pageSize=1`, { headers }, "Delivered-In delivery artifact lookup"));
     copy = existing.files?.[0];
   }
-  if (!copy) copy = await json<{ id: string; webViewLink?: string }>(await googleFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(templateId)}/copy?supportsAllDrives=true&fields=id,webViewLink`, { method: "POST", headers, body: JSON.stringify({ name: fileName, parents: [outputFolderId], ...(stableDeliveryId ? { appProperties: { fikaDeliveryId: stableDeliveryId, fikaMaterializationStatus: "pending" } } : {}) }) }, "Delivered-In Slides template copy"));
+  const resuming = Boolean(copy);
+  if (!copy) {
+    const template = await readPresentation(templateId, headers);
+    assertMenuSectionAnchors(day, template);
+    const outputFolderId = await weekFolderId(folderId, day.weekCommencing || "", headers);
+    copy = await json<{ id: string; webViewLink?: string }>(await googleFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(templateId)}/copy?supportsAllDrives=true&fields=id,webViewLink`, { method: "POST", headers, body: JSON.stringify({ name: fileName, parents: [outputFolderId], ...(stableDeliveryId ? { appProperties: { fikaDeliveryId: stableDeliveryId, fikaMaterializationStatus: "pending" } } : {}) }) }, "Delivered-In Slides template copy"));
+  }
   const release = (day as ProjectedDay & { sourceLineage?: { cpu?: { releaseId?: string; releaseVersion?: string; contentHash?: string } } }).sourceLineage?.cpu;
-  if (copy.appProperties?.fikaMaterializationStatus === "ready") return { artifactId: `delivered-in-menu:${site.oplocId}:${day.sourceDayId}:${stableDeliveryId || day.contentHash}`, oplocId: site.oplocId, sourceDayId: day.sourceDayId, sourcePublicationDayId: day.publicationDayId, sourceVersion: day.version, sourceContentHash: day.contentHash, generatedAt: new Date().toISOString(), generatedBy, driveFileId: copy.id, driveUrl: copy.webViewLink || `https://docs.google.com/presentation/d/${copy.id}/edit`, fileName, ...(deliveryId ? { deliveryId } : {}), ...(release?.releaseId ? { sourceReleaseId: release.releaseId } : {}), ...(release?.releaseVersion ? { sourceReleaseVersion: release.releaseVersion } : {}), ...(release?.contentHash ? { sourcePacketHash: release.contentHash } : {}) };
-  const presentation = await json<Presentation>(await googleFetch(`https://slides.googleapis.com/v1/presentations/${encodeURIComponent(copy.id)}`, { headers }, "Delivered-In Slides template read"));
-  await json(await googleFetch(`https://slides.googleapis.com/v1/presentations/${encodeURIComponent(copy.id)}:batchUpdate`, { method: "POST", headers, body: JSON.stringify({ requests: buildDeliveredInMenuRequests(day, site, presentation) }) }, "Delivered-In Slides generation"));
-  if (stableDeliveryId) await googleFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(copy.id)}?supportsAllDrives=true`, { method: "PATCH", headers, body: JSON.stringify({ appProperties: { fikaDeliveryId: stableDeliveryId, fikaMaterializationStatus: "ready" } }) }, "Delivered-In delivery artifact certification");
+  if (copy.appProperties?.fikaMaterializationStatus === "ready" && copy.appProperties.fikaMenuSections === "checked") return { artifactId: `delivered-in-menu:${site.oplocId}:${day.sourceDayId}:${stableDeliveryId || day.contentHash}`, oplocId: site.oplocId, sourceDayId: day.sourceDayId, sourcePublicationDayId: day.publicationDayId, sourceVersion: day.version, sourceContentHash: day.contentHash, generatedAt: new Date().toISOString(), generatedBy, driveFileId: copy.id, driveUrl: copy.webViewLink || `https://docs.google.com/presentation/d/${copy.id}/edit`, fileName, ...(deliveryId ? { deliveryId } : {}), ...(release?.releaseId ? { sourceReleaseId: release.releaseId } : {}), ...(release?.releaseVersion ? { sourceReleaseVersion: release.releaseVersion } : {}), ...(release?.contentHash ? { sourcePacketHash: release.contentHash } : {}) };
+  const presentation = await readPresentation(copy.id, headers);
+  if (!resuming || !hasRenderedMenu(day, presentation)) {
+    if (copy.appProperties?.fikaMaterializationStatus === "ready") {
+      throw new MenuArtifactError("MENU_OUTPUT_INCOMPLETE", "The saved site menu does not match all published dishes and allergen declarations. Generate a new menu from the corrected template.", 409);
+    }
+    const requests = buildDeliveredInMenuRequests(day, site, presentation);
+    await json(await googleFetch(`https://slides.googleapis.com/v1/presentations/${encodeURIComponent(copy.id)}:batchUpdate`, { method: "POST", headers, body: JSON.stringify({ requests }) }, "Delivered-In Slides generation"));
+  }
+  if (stableDeliveryId) await json(await googleFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(copy.id)}?supportsAllDrives=true`, { method: "PATCH", headers, body: JSON.stringify({ appProperties: { fikaDeliveryId: stableDeliveryId, fikaMaterializationStatus: "ready", fikaMenuSections: "checked" } }) }, "Delivered-In delivery artifact certification"));
   const driveUrl = copy.webViewLink || `https://docs.google.com/presentation/d/${copy.id}/edit`;
   return { artifactId: `delivered-in-menu:${site.oplocId}:${day.sourceDayId}:${stableDeliveryId || day.contentHash}`, oplocId: site.oplocId, sourceDayId: day.sourceDayId, sourcePublicationDayId: day.publicationDayId, sourceVersion: day.version, sourceContentHash: day.contentHash, generatedAt: new Date().toISOString(), generatedBy, driveFileId: copy.id, driveUrl, fileName, ...(deliveryId ? { deliveryId } : {}), ...(release?.releaseId ? { sourceReleaseId: release.releaseId } : {}), ...(release?.releaseVersion ? { sourceReleaseVersion: release.releaseVersion } : {}), ...(release?.contentHash ? { sourcePacketHash: release.contentHash } : {}) };
 }

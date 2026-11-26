@@ -41,7 +41,7 @@ function openOverlap(paths, base) {
 }
 
 function assertClaimAvailable(task, inventory) {
-  if (localEntry(task.directory) || localEntry(sourceTaskFile(task.name)) || ref('refs/heads/' + task.branch)) {
+  if (localEntry(task.directory) || localEntry(sourceTaskFile(task.name))) {
     throw Error('Task name, path or branch already exists; choose a new name');
   }
   if (inventory.entries.some(entry => entry.owner === task.owner && ['awaiting-cleanup', 'retirement-residue'].includes(entry.state))) {
@@ -102,13 +102,15 @@ export function createSourceWorkspace(name, options) {
   const task = { ...taskClaim(name, options.owner, fetchMain(), paths),
     ...(options.infrastructureRecovery ? { bootstrapException: options.infrastructureRecovery } : {}) };
   if (git('ls-remote', '--heads', 'origin', 'refs/heads/' + task.branch)) throw Error('Task name, path or branch already exists; choose a new name');
+  if (ref(`refs/heads/${task.branch}`)) throw Error('Task name, path or branch already exists; choose a new name');
   const observedRegistrations = registrations();
   const claim = withCapacityLock(() => {
     const currentTask = optionalJson(sourceTaskFile(name));
     if (currentTask?.owner === options.owner && currentTask.queuedAt && currentTask.state === 'creating') return { ...currentTask, alreadyPromoted: true };
     const inventory = workspaceInventory({ observedRegistrations });
     assertClaimAvailable(task, inventory);
-    if (task.bootstrapException && (inventory.bootstrapExceptions || stateRecords('source-tasks').some(item => item.bootstrapException && item.state === 'active'))) {
+    const otherRecovery = inventory.entries.some(entry => entry.name !== name && /^infra-recovery-/.test(entry.name || ''));
+    if (task.bootstrapException && (inventory.bootstrapExceptions || otherRecovery)) {
       throw Error('The single infrastructure-recovery slot is already occupied');
     }
     const existing = inventory.queue.find(entry => entry.name === name);
@@ -191,6 +193,7 @@ export function promoteSourceQueue() {
       const paths = (head.paths ?? []).map(safeScope);
       const task = taskClaim(name, head.owner, baseline, paths);
       if (git('ls-remote', '--heads', 'origin', 'refs/heads/' + task.branch)) throw Error('Queued branch already exists remotely');
+      if (ref(`refs/heads/${task.branch}`)) throw Error('Queued branch already exists locally');
       const observedRegistrations = registrations();
       const claim = withCapacityLock(() => {
         const inventory = workspaceInventory({ observedRegistrations });
@@ -224,22 +227,27 @@ export function cancelSourceQueue(name, options) {
 export function recoverSourceReservation(name, options) {
   requireCanonical();
   validateName(name);
+  const file = sourceTaskFile(name), task = optionalJson(file);
+  if (!task || task.state !== 'creating' || task.owner !== options.owner || !options.reason?.trim() ||
+    !samePath(task.directory, path.join(managedRoot(), name)) || task.branch !== `codex/${name}` ||
+    !Number.isSafeInteger(task.pid) || task.pid < 1) throw Error('Recovery requires the interrupted reservation owner and --reason confirming all checkout processes have stopped');
+  if (!exited(task.pid)) throw Error('Reservation process may still be running');
+  const tree = registrations().find(item => samePath(item.worktree, task.directory));
+  let state = 'cancelled';
+  if (tree) {
+    const workspace = sourceWorkspace(name);
+    if (workspace.head !== task.baseline || sourceStatus(workspace.run)) throw Error('Interrupted checkout contains changes. Preserve it for manual recovery');
+    state = 'active';
+  } else if (localEntry(task.directory) || ref(`refs/heads/${task.branch}`)) {
+    throw Error('Interrupted checkout left a directory or branch. Preserve it for manual recovery');
+  }
   return withCapacityLock(() => {
-    const file = sourceTaskFile(name), task = optionalJson(file);
-    if (!task || task.state !== 'creating' || task.owner !== options.owner || !options.reason?.trim() ||
-      !samePath(task.directory, path.join(managedRoot(), name)) || task.branch !== `codex/${name}` ||
-      !Number.isSafeInteger(task.pid) || task.pid < 1) throw Error('Recovery requires the interrupted reservation owner and --reason confirming all checkout processes have stopped');
-    if (!exited(task.pid)) throw Error('Reservation process may still be running');
-    const tree = registrations().find(item => samePath(item.worktree, task.directory));
-    let state = 'cancelled';
-    if (tree) {
-      const workspace = sourceWorkspace(name);
-      if (workspace.head !== task.baseline || sourceStatus(workspace.run)) throw Error('Interrupted checkout contains changes. Preserve it for manual recovery');
-      state = 'active';
-    } else if (localEntry(task.directory) || ref(`refs/heads/${task.branch}`)) {
-      throw Error('Interrupted checkout left a directory or branch. Preserve it for manual recovery');
+    const current = optionalJson(file);
+    if (current?.state !== 'creating' || current.owner !== task.owner || current.pid !== task.pid ||
+        current.baseline !== task.baseline || !samePath(current.directory, task.directory)) {
+      throw Error('Reservation changed while recovery evidence was checked');
     }
-    const recovered = { ...task, state, recoveryReason: options.reason, recoveredAt: new Date().toISOString() };
+    const recovered = { ...current, state, recoveryReason: options.reason, recoveredAt: new Date().toISOString() };
     save(file, recovered);
     return recovered;
   });
@@ -279,14 +287,17 @@ export function sourceWorkspaceStatus() {
   return { observedAt: new Date().toISOString(), entries };
 }
 
-export function runSourceOperation(kind, action, name) {
+export function runSourceOperation(kind, action, name, { capacityLock = withCapacityLock } = {}) {
   if (!name && samePath(root(), canonical())) return action();
-  const operation = withCapacityLock(() => {
-    const workspace = sourceWorkspace(name || path.basename(root()));
-    if (!name && !samePath(workspace.directory, root())) throw Error('Use a governed task checkout');
-    const { task, head } = workspace;
-    if (!task || task.state === 'creating') throw Error('A registered active task owner is required');
+  const observed = sourceWorkspace(name || path.basename(root()));
+  if (!name && !samePath(observed.directory, root())) throw Error('Use a governed task checkout');
+  const operation = capacityLock(() => {
+    const task = optionalJson(sourceTaskFile(observed.name)), head = observed.head;
+    if (!task || task.state === 'creating' || task.owner !== observed.task?.owner || !samePath(task.directory, observed.directory)) {
+      throw Error('Task registration changed while starting the operation');
+    }
     const completion = optionalJson(completionFile(task.name));
+    if (observed.run('rev-parse', 'HEAD') !== observed.head) throw Error('Task checkout changed while starting the operation');
     if (kind !== 'integrate' && completion?.outcome === 'completed' && completion.finalSha === head) {
       throw Error('Task is awaiting cleanup. The owner must explicitly preserve it before restarting work');
     }
@@ -296,10 +307,10 @@ export function runSourceOperation(kind, action, name) {
     const id = randomUUID();
     const file = operationFile(id);
     save(file, { id, kind, name: task.name, owner: task.owner, pid: process.pid, startedAt: new Date().toISOString() });
-    return { file, workspace };
+    return { file, workspace: observed };
   });
   try { return action(operation.workspace); }
-  finally { withCapacityLock(() => unlinkSync(operation.file)); }
+  finally { capacityLock(() => unlinkSync(operation.file)); }
 }
 
 export function recoverSourceOperation(id, options) {
