@@ -245,16 +245,26 @@ test('orphan bootstrap preview recognizes only the three exact merged legacy tas
         'workspace-capacity-10': 700,
         'workspace-retirement-repair-bootstrap': 705,
       })[name],
-      state: 'closed', merged_at: '2026-11-25T23:42:57Z', html_url: `https://github.com/derekfika/fika-os/pull/${name}`,
+      state: 'closed', merged_at: '2026-11-25T23:42:57Z', html_url: `https://github.com/derekfika/fika-os/pull/${({
+        'workspace-build-artifact-retirement': 709,
+        'workspace-capacity-10': 700,
+        'workspace-retirement-repair-bootstrap': 705,
+      })[name]}`,
       head: { ref: `codex/${name}`, sha: heads[name], repo: { full_name: 'derekfika/fika-os' } },
       base: { ref: 'main', repo: { full_name: 'derekfika/fika-os' } }, merge_commit_sha: merge,
     }));
+    const originalCompletions = new Map();
     for (const task of legacy) {
       const record = { ...task, branch: `codex/${task.name}`, directory: path.join(managedRoot(), task.name),
         baseline: baselines[task.name], state: 'active' };
       save(sourceTaskFile(task.name), record);
+      const prNumber = pulls.find(pr => pr.head.ref === record.branch).number;
+      const completion = { name: record.name, owner: record.owner, branch: record.branch, directory: record.directory,
+        finalSha: heads[task.name], outcome: 'completed', retirement: 'retired',
+        mergedPr: { number: prNumber, url: pulls.find(pr => pr.number === prNumber).html_url, mergeSha: merge } };
+      originalCompletions.set(task.name, completion);
+      save(completionFile(task.name), completion);
       assert.equal(existsSync(path.join(managedRoot(), task.name)), false);
-      assert.equal(existsSync(completionFile(task.name)), false);
     }
 
     const eligible = reconcileOrphanedBootstrapRecords({ readPulls: () => pulls, readRemoteHead: branch => {
@@ -268,8 +278,25 @@ test('orphan bootstrap preview recognizes only the three exact merged legacy tas
     for (const { name } of legacy) {
       assert.equal(existsSync(sourceTaskFile(name)), true, `${name} stays registered after preview`);
       assert.equal(existsSync(path.join(stateDir(), 'source-archive', `${name}.json`)), false);
-      assert.equal(existsSync(completionFile(name)), false, 'preview must not synthesize a completion');
+      assert.deepEqual(JSON.parse(readFileSync(completionFile(name), 'utf8')), originalCompletions.get(name),
+        'preview preserves the pre-existing completion evidence');
     }
+
+    const missingCompletion = originalCompletions.get(names[0]);
+    unlinkSync(completionFile(names[0]));
+    const withoutCompletion = reconcileOrphanedBootstrapRecords({ readPulls: () => pulls,
+      readRemoteHead: branch => heads[branch.slice('codex/'.length)], containsMain });
+    assert.ok(withoutCompletion.protected.some(record => record.name === names[0]));
+    assert.ok(!withoutCompletion.eligible.some(record => record.name === names[0]));
+    save(completionFile(names[0]), missingCompletion);
+
+    const wrongCompletion = { ...originalCompletions.get(names[1]), finalSha: 'a'.repeat(40) };
+    save(completionFile(names[1]), wrongCompletion);
+    const changedCompletion = reconcileOrphanedBootstrapRecords({ readPulls: () => pulls,
+      readRemoteHead: branch => heads[branch.slice('codex/'.length)], containsMain });
+    assert.ok(changedCompletion.protected.some(record => record.name === names[1]));
+    assert.ok(!changedCompletion.eligible.some(record => record.name === names[1]));
+    save(completionFile(names[1]), originalCompletions.get(names[1]));
 
     const wrongHead = reconcileOrphanedBootstrapRecords({ readPulls: () => pulls, readRemoteHead: branch =>
       branch === `codex/${names[1]}` ? 'f'.repeat(40) : heads[branch.slice('codex/'.length)], containsMain });
@@ -293,6 +320,16 @@ test('orphan bootstrap preview recognizes only the three exact merged legacy tas
     assert.ok(open.protected.some(record => record.name === names[2]));
     assert.ok(!open.eligible.some(record => record.name === names[2]));
     for (const { name } of legacy) assert.equal(existsSync(sourceTaskFile(name)), true, `${name} remains untouched`);
+
+    const elsewhere = path.join(f.base, 'same-branch-elsewhere');
+    f.git('worktree', 'add', '-b', `codex/${names[2]}`, elsewhere, 'origin/main');
+    const registeredElsewhere = reconcileOrphanedBootstrapRecords({ readPulls: () => pulls,
+      readRemoteHead: branch => heads[branch.slice('codex/'.length)], containsMain });
+    assert.ok(registeredElsewhere.protected.some(record => record.name === names[2]),
+      'a registration of the exact task branch at another path blocks reconciliation');
+    assert.ok(!registeredElsewhere.eligible.some(record => record.name === names[2]));
+    f.git('worktree', 'remove', elsewhere, '--force');
+    f.git('branch', '-D', `codex/${names[2]}`);
 
     assert.throws(() => reconcileOrphanedBootstrapRecords({ execute: true, readPulls: () => pulls,
       readRemoteHead: branch => {
@@ -318,16 +355,30 @@ test('orphan bootstrap preview recognizes only the three exact merged legacy tas
     assert.equal(existsSync(path.join(stateDir(), 'source-archive', `${names[0]}.json`)), false);
     unlinkSync(racingOperation);
 
+    assert.throws(() => reconcileOrphanedBootstrapRecords({ execute: true, readPulls: () => pulls,
+      readRemoteHead: branch => {
+        if (branch === `codex/${names[0]}`) save(completionFile(names[0]), {
+          ...originalCompletions.get(names[0]), mergedPr: { ...originalCompletions.get(names[0]).mergedPr, number: 1 },
+        });
+        return heads[branch.slice('codex/'.length)];
+      }, containsMain }), /changed after GitHub and physical-state verification/);
+    assert.equal(existsSync(sourceTaskFile(names[0])), true, 'changed completion evidence prevents archival');
+    assert.equal(existsSync(path.join(stateDir(), 'source-archive', `${names[0]}.json`)), false);
+    save(completionFile(names[0]), originalCompletions.get(names[0]));
+
     const executed = reconcileOrphanedBootstrapRecords({ execute: true, readPulls: () => pulls,
       readRemoteHead: branch => heads[branch.slice('codex/'.length)], containsMain });
     assert.deepEqual(executed.archived.map(record => record.name).sort(), [...names].sort());
     assert.deepEqual(executed.protected, []);
     for (const { name } of legacy) {
       assert.equal(existsSync(sourceTaskFile(name)), false, `${name} is archived`);
-      assert.equal(existsSync(completionFile(name)), false, 'reconciliation does not fabricate completion');
+      assert.deepEqual(JSON.parse(readFileSync(completionFile(name), 'utf8')), originalCompletions.get(name),
+        'reconciliation keeps the original completion registry evidence intact');
       const archived = JSON.parse(readFileSync(path.join(stateDir(), 'source-archive', `${name}.json`), 'utf8'));
       assert.equal(archived.archiveKind, 'verified-orphaned-bootstrap-task');
       assert.equal(archived.orphanVerification.exactRemoteBranchHead, heads[name]);
+      assert.deepEqual(archived.completionEvidence, originalCompletions.get(name),
+        'archive preserves exact pre-existing completion evidence');
     }
   }); } finally { f.dispose(); }
 });
@@ -345,20 +396,28 @@ test('a task owner records disjoint cooperating writer scopes', () => {
   }); } finally { f.dispose(); }
 });
 
-test('operation markers do not start from a stale observed checkout head', () => {
+test('operation markers revalidate a stale checkout head after the filesystem-only lock', () => {
   const f = fixture();
   try { f.within(() => {
     const task = createSourceWorkspace('operation-head-race', { owner: 'operation-owner' });
+    let lockCalls = 0;
     const capacityLock = action => {
-      writeFileSync(path.join(task.directory, 'concurrent-owner-commit.txt'), 'new head');
-      f.run(task.directory, 'add', 'concurrent-owner-commit.txt');
-      f.run(task.directory, 'commit', '-m', 'Advance task head before operation lock');
-      return action();
+      lockCalls++;
+      const result = action();
+      if (lockCalls === 1) {
+        const markers = path.join(stateDir(), 'source-operations');
+        assert.equal(readdirSync(markers).length, 1, 'operation marker is established before Git revalidation');
+        writeFileSync(path.join(task.directory, 'concurrent-owner-commit.txt'), 'new head');
+        f.run(task.directory, 'add', 'concurrent-owner-commit.txt');
+        f.run(task.directory, 'commit', '-m', 'Advance task head after operation marker');
+      }
+      return result;
     };
     assert.throws(() => runSourceOperation('validate', () => assert.fail('stale operation must not start'), task.name,
       { capacityLock }), /Task checkout changed while starting the operation/);
-    assert.equal(existsSync(path.join(stateDir(), 'source-operations')), false,
-      'stale-head detection happens before operation marker creation');
+    const markers = path.join(stateDir(), 'source-operations');
+    assert.deepEqual(existsSync(markers) ? readdirSync(markers) : [], [],
+      'stale-head detection removes the operation marker before returning');
     assert.equal(runSourceOperation('validate', workspace => workspace.head,
       task.name), f.run(task.directory, 'rev-parse', 'HEAD'));
   }); } finally { f.dispose(); }

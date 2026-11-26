@@ -297,7 +297,6 @@ export function runSourceOperation(kind, action, name, { capacityLock = withCapa
       throw Error('Task registration changed while starting the operation');
     }
     const completion = optionalJson(completionFile(task.name));
-    if (observed.run('rev-parse', 'HEAD') !== observed.head) throw Error('Task checkout changed while starting the operation');
     if (kind !== 'integrate' && completion?.outcome === 'completed' && completion.finalSha === head) {
       throw Error('Task is awaiting cleanup. The owner must explicitly preserve it before restarting work');
     }
@@ -309,7 +308,15 @@ export function runSourceOperation(kind, action, name, { capacityLock = withCapa
     save(file, { id, kind, name: task.name, owner: task.owner, pid: process.pid, startedAt: new Date().toISOString() });
     return { file, workspace: observed };
   });
-  try { return action(operation.workspace); }
+  try {
+    // Reserve the operation under the filesystem-only capacity lock, then recheck
+    // Git after releasing it. The marker prevents another governed operation from
+    // starting while this post-marker stale-head check runs.
+    if (operation.workspace.run('rev-parse', 'HEAD') !== operation.workspace.head) {
+      throw Error('Task checkout changed while starting the operation');
+    }
+    return action(operation.workspace);
+  }
   finally { capacityLock(() => unlinkSync(operation.file)); }
 }
 
