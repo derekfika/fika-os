@@ -2,6 +2,24 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { amendmentPatchDto } from "../lib/amendment-dto";
 
+test("standalone location patches retain each canonical field and never send dashboard routing keys", () => {
+  for (const portalSiteId of ["angel-court", "mnk"] as const) {
+    const draft = {
+      client: { name: "Fixture", email: "fixture@example.test", companyName: "Fixture" },
+      service: { eventDate: "2027-01-20", startTime: "12:00", guestCount: 4, oplocId: "oploc:test", portalSiteId },
+      order: { items: [] } as never, notes: "", deliveryChargeRequired: true,
+    };
+    for (const location of [
+      {}, { floorLevel: "B1" }, { roomOrArea: "Meeting room" }, { deliveryPoint: "Reception" },
+      { floorLevel: "B1", roomOrArea: "Meeting room", deliveryPoint: "Reception" },
+    ]) {
+      const service = { ...draft.service, ...location };
+      const patch = amendmentPatchDto({ ...draft, service });
+      assert.deepEqual(patch.service, { eventDate: service.eventDate, startTime: service.startTime, guestCount: 4, ...location });
+    }
+  }
+});
+
 test("manager amendment DTO contains editable order lines without canonical totals or routing metadata", () => {
   const patch = amendmentPatchDto({
     client: { name: "Alex", email: "alex@example.test", companyName: "Client", clientName: "Derived", clientCompany: "Derived" } as never,
