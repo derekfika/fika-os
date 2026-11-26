@@ -4,4 +4,5 @@ Menu Planning saves recurring breakfast and other supplementary menu schedules w
 
 Recurrence settings use a dedicated settings document, so older slot-settings writers cannot erase them. Existing weeks and publications stay readable. An absent settings document represents an empty series list. Historical occurrences alone do not establish that a series is still active.
 
-Validation passed for the isolated Firestore SDK lifecycle, SQLite API site permissions, alias and mixed-site cases, replay, transaction rollback, and stale edits. The full Menu Planning unit suite passed 592 tests with five emulator-dependent skips. Typecheck passed. Deployment is pending.
+Validation: the full Menu Planning suite passed (592 passed, five emulator-dependent skips); the isolated Firestore SDK lifecycle test passed; typecheck passed. Governed validation is in progress.
+Deployment: none; no staging deployment was performed.
