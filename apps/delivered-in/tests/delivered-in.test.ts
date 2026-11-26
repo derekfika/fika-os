@@ -4,7 +4,8 @@ import { test } from "node:test";
 import { resolveDeliveredInAccess } from "@fika/server-shared/delivered-in-access";
 import { assertAuthorisedOploc, assertPublishedAllocationIntegrity, isRelevantPublishedWeek, operationalDateLondon, projectPublishedWeeks, siteDayTotal, type SourcePublication } from "../lib/projection";
 import { groupSiteMenuEntries, siteMenuSectionForSlot, siteMenuState, type SiteMenuArtifact } from "../lib/site-menu";
-import { assertPrintableCpuEvidence, buildDeliveredInMenuRequests, createGoogleSiteMenu, weekFolderName } from "../lib/google-site-menu";
+import { assertPrintableCpuEvidence, buildDeliveredInMenuRequests, createGoogleSiteMenu, retireGoogleSiteMenu, weekFolderName } from "../lib/google-site-menu";
+import { stableDocumentId } from "@fika/server-shared/stable-document-id";
 import type { ProjectedDay } from "../lib/projection";
 import { titleCase } from "../lib/text";
 import { applyOrderAction, deliveryCutoff, isBeforeOrderCutoff, orderIdFor, productsForDeliveryDate, rotationWeekForDate, type GrabAndGoProduct } from "../lib/grab-and-go";
@@ -195,10 +196,16 @@ test("generic output preflight and retry verify dishes and declarations without 
   t.mock.method(globalThis, "fetch", async (input: string, init?: RequestInit) => {
     const url = new URL(input);
     const request = `${init?.method || "GET"} ${url.pathname}`;
-    requests.push(request);
+    requests.push(url.searchParams.get("q")?.includes("application/vnd.google-apps.folder") ? "GET week folder" : request);
     switch (request) {
       case "GET /v1/presentations/fixture-template": return reply({ slides: [] });
-      case "GET /drive/v3/files": return reply({ files: [{ id: "fixture-copy", appProperties: { fikaMaterializationStatus: status } }] });
+      case "GET /drive/v3/files": {
+        if (url.searchParams.get("q")?.includes("application/vnd.google-apps.folder")) {
+          return reply({ files: [{ id: "fixture-week" }] });
+        }
+        assert.match(url.searchParams.get("q")!, /'fixture-week' in parents/);
+        return reply({ files: [{ id: "fixture-copy", parents: ["fixture-week"], ownedByMe: true, appProperties: { fikaDeliveryId: stableDocumentId(`${haleon}:fixture-delivery`), fikaMaterializationStatus: status } }] });
+      }
       case "GET /v1/presentations/fixture-copy": return reply({ slides: [{ objectId: "slide", pageElements: elements }] });
       case "PATCH /drive/v3/files/fixture-copy": return reply({});
       default: throw Error(`Unexpected Google request: ${request}`);
@@ -208,14 +215,109 @@ test("generic output preflight and retry verify dishes and declarations without 
   await assert.rejects(generate(), { code: "MENU_TEMPLATE_SECTION_MISSING" });
   assert.deepEqual(requests.splice(0), ["GET /v1/presentations/fixture-template"]);
   await assert.rejects(generate("fixture-delivery"), { code: "MENU_TEMPLATE_SECTION_MISSING" });
-  assert.deepEqual(requests.splice(0), ["GET /drive/v3/files", "GET /v1/presentations/fixture-copy"]);
+  assert.deepEqual(requests.splice(0), ["GET week folder", "GET /drive/v3/files", "GET /v1/presentations/fixture-copy"]);
   status = "ready";
   await assert.rejects(generate("fixture-delivery"), { code: "MENU_OUTPUT_INCOMPLETE" });
-  assert.deepEqual(requests.splice(0), ["GET /drive/v3/files", "GET /v1/presentations/fixture-copy"]);
+  assert.deepEqual(requests.splice(0), ["GET week folder", "GET /drive/v3/files", "GET /v1/presentations/fixture-copy"]);
   status = "pending";
   elements.push(shape("fika-delivered-in-salads-0-allergens-0", "(May contain: Milk)\n"));
   assert.equal((await generate("fixture-delivery")).driveFileId, "fixture-copy");
-  assert.deepEqual(requests, ["GET /drive/v3/files", "GET /v1/presentations/fixture-copy", "PATCH /drive/v3/files/fixture-copy"]);
+  assert.deepEqual(requests, ["GET week folder", "GET /drive/v3/files", "GET /v1/presentations/fixture-copy", "PATCH /drive/v3/files/fixture-copy"]);
+});
+
+test("generic menus generate, retry and retire within the selected site owner and folder", async t => {
+  const siteA = "oploc:fixture-a", siteB = "oploc:fixture-b", siteC = "oploc:fixture-c";
+  const settings = {
+    FIKA_RUNTIME_MODE: "local", GOOGLE_OAUTH_CLIENT_FILE: "fixture-client", GOOGLE_OAUTH_TOKEN_FILE: "fixture-token",
+    GOOGLE_DELIVERED_IN_TEMPLATE_ID: "generic-template", GOOGLE_DELIVERED_IN_OUTPUT_FOLDER_ID: "app-root",
+    GOOGLE_DRIVE_OWNER_EMAIL_OPLOC_FIXTURE_A: "site-a@example.test", GOOGLE_DRIVE_ROOT_FOLDER_ID_OPLOC_FIXTURE_A: "root-a",
+    GOOGLE_DRIVE_OWNER_EMAIL_OPLOC_FIXTURE_B: "site-b@example.test", GOOGLE_DRIVE_ROOT_FOLDER_ID_OPLOC_FIXTURE_B: "root-b",
+    GOOGLE_DRIVE_OWNER_EMAIL_APP_DELIVERED_IN: "app@example.test",
+  };
+  for (const [key, value] of Object.entries(settings)) {
+    const prior = process.env[key];
+    process.env[key] = value;
+    t.after(() => { if (prior === undefined) delete process.env[key]; else process.env[key] = prior; });
+  }
+  let credentialReads = 0;
+  t.mock.method(fs, "readFile", async (path: string) => {
+    credentialReads++;
+    if (path === "fixture-client") return JSON.stringify({ installed: { client_id: "fixture", client_secret: "fixture" } });
+    assert.equal(path, "fixture-token"); return JSON.stringify({ access_token: "fixture", refresh_token: "fixture" });
+  });
+  const published = projectAtTestClock([source([day()])], haleon)[0].days[0];
+  const reviewed: ProjectedDay = { ...published, entries: [], cpuReview: { status: "signed", signatures: [] },
+    sourceLineage: { cpu: { sourceStatus: "current", sourceCompleteness: "complete", releaseId: "fixture-release", releaseVersion: "v1", contentHash: "fixture-packet", sourceBundleHash: published.contentHash } },
+  };
+  type FixtureFile = { id: string; parents: string[]; ownedByMe: boolean; mimeType: string; trashed: boolean; appProperties: Record<string, string> };
+  const files = new Map<string, FixtureFile>();
+  const folderType = "application/vnd.google-apps.folder", slidesType = "application/vnd.google-apps.presentation";
+  for (const root of ["root-a", "root-b", "app-root"]) {
+    files.set(root, { id: root, parents: [], ownedByMe: true, mimeType: folderType, trashed: false, appProperties: {} });
+    files.set(root + "-week", { ...files.get(root)!, id: root + "-week", parents: [root] });
+  }
+  let copies = 0, calls = 0;
+  t.mock.method(globalThis, "fetch", async (input: string, init?: RequestInit) => {
+    calls++;
+    const url = new URL(input), method = init?.method || "GET", id = url.pathname.split("/").at(-1)!;
+    assert.equal((init?.headers as Record<string, string>).Authorization, "Bearer fixture");
+    assert.equal(init?.redirect, "error");
+    if (url.hostname === "slides.googleapis.com") {
+      if (method === "GET") return Response.json({ slides: [{ objectId: "slide", pageElements: [] }] });
+      assert.equal(method, "POST"); return Response.json({});
+    }
+    assert.equal(url.hostname, "www.googleapis.com");
+    if (url.pathname === "/drive/v3/files" && method === "GET") {
+      const query = url.searchParams.get("q")!;
+      const parent = query.match(/'([^']+)' in parents/)?.[1];
+      assert.ok(parent);
+      if (query.includes(folderType)) return Response.json({ files: [files.get(parent + "-week")] });
+      const delivery = query.match(/key='fikaDeliveryId' and value='([^']+)'/)?.[1];
+      assert.ok(delivery);
+      return Response.json({ files: [...files.values()].filter(file => file.parents.includes(parent) && file.appProperties.fikaDeliveryId === delivery && !file.trashed) });
+    }
+    if (method === "POST" && url.pathname.endsWith("/generic-template/copy")) {
+      const body = JSON.parse(String(init!.body));
+      const file = { id: "copy-" + ++copies, parents: body.parents, ownedByMe: true, mimeType: slidesType, trashed: false, appProperties: body.appProperties };
+      files.set(file.id, file); return Response.json({ id: file.id });
+    }
+    const file = files.get(id);
+    if (!file) return Response.json({}, { status: 404 });
+    if (method === "PATCH") Object.assign(file, JSON.parse(String(init!.body)));
+    else assert.equal(method, "GET");
+    return Response.json(file);
+  });
+  const generate = (oplocId: string) => createGoogleSiteMenu(reviewed, { oplocId, label: oplocId }, "fixture", undefined, "same-event");
+  delete process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID_OPLOC_FIXTURE_A;
+  await assert.rejects(generate(siteA), { code: "MENU_SITE_DRIVE_NOT_CONFIGURED" });
+  await assert.rejects(retireGoogleSiteMenu("legacy", siteA), { code: "MENU_SITE_DRIVE_NOT_CONFIGURED" });
+  assert.equal(credentialReads, 0); assert.equal(calls, 0);
+  process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID_OPLOC_FIXTURE_A = "root-a";
+  const [a, b, c] = [await generate(siteA), await generate(siteB), await generate(siteC)];
+  for (const [artifact, parent] of [[a, "root-a-week"], [b, "root-b-week"], [c, "app-root-week"]] as const) {
+    const file = files.get(artifact.driveFileId!)!;
+    assert.deepEqual(file.parents, [parent]); assert.equal(file.appProperties.fikaMenuFolder, parent);
+    assert.ok(file.appProperties.fikaMenuRoute);
+    assert.equal((await generate(artifact.oplocId)).driveFileId, file.id);
+  }
+  assert.equal(copies, 3);
+  await retireGoogleSiteMenu(a.driveFileId, siteB);
+  assert.equal(files.get(a.driveFileId!)!.trashed, false);
+  process.env.GOOGLE_DRIVE_OWNER_EMAIL_OPLOC_FIXTURE_A = "changed@example.test";
+  await assert.rejects(generate(siteA), { code: "MENU_DELIVERY_OWNERSHIP_UNVERIFIED" });
+  await retireGoogleSiteMenu(a.driveFileId, siteA);
+  assert.equal(files.get(a.driveFileId!)!.trashed, false);
+  process.env.GOOGLE_DRIVE_OWNER_EMAIL_OPLOC_FIXTURE_A = "site-a@example.test";
+  const historical = { ...files.get(c.driveFileId!)!, id: "historical", appProperties: {} };
+  files.set(historical.id, historical);
+  await retireGoogleSiteMenu(historical.id, siteA);
+  assert.equal(historical.trashed, false);
+  const moved = files.get(b.driveFileId!)!;
+  moved.parents = ["root-a-week"];
+  await retireGoogleSiteMenu(moved.id, siteB);
+  assert.equal(moved.trashed, false);
+  await retireGoogleSiteMenu(a.driveFileId, siteA);
+  assert.equal(files.get(a.driveFileId!)!.trashed, true);
 });
 
 test("both menu template paths reject missing CPU evidence before reaching Google", async () => {

@@ -201,10 +201,13 @@ test("hosted migration is dry-run by default and chunks writes", async () => {
 
 test("Delivered-In Google generation reuses DWD in hosted mode and local OAuth only locally", async () => {
   const google = await readFile(new URL("../lib/google-site-menu.ts", import.meta.url), "utf8");
+  const siteOwner = await readFile(new URL("../lib/site-menu-drive-config.ts", import.meta.url), "utf8");
   const owner = await readFile(new URL("../../../packages/server-shared/src/drive-owner.ts", import.meta.url), "utf8");
-  assert.match(google, /resolveDriveOwner\(\{ type: "app-workspace", appId: "delivered-in" \}\)/);
-  assert.match(google, /driveAccessToken\(owner\)/);
-  assert.match(owner, /appId: "cpu-production" \| "delivered-in"/);
+  assert.match(google, /resolveDriveOwner\(config\.owner\)/);
+  assert.match(google, /driveAccessToken\(route\.owner\)/);
+  assert.match(siteOwner, /const owner: DriveOwner = \{ type: 'oploc-workspace', oplocId \}/);
+  assert.match(siteOwner, /owner: \{ type: 'app-workspace', appId: 'delivered-in' \} as DriveOwner/);
+  assert.match(owner, /type DriveOwner = \{ type: "oploc-workspace"; oplocId: string \} \| \{ type: "app-workspace"; appId: "cpu-production" \| "delivered-in" \}/);
   assert.doesNotMatch(google, /process\.env\.GOOGLE_OAUTH_CLIENT_FILE/);
   assert.match(google, /fikaDeliveryId/);
   assert.match(google, /fikaMaterializationStatus/);
