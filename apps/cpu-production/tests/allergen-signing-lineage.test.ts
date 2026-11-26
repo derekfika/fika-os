@@ -316,7 +316,8 @@ test("master signing queues durable post-commit work after the authoritative com
 test("post-commit worker is bounded, retryable, and reports safe timing metrics", async () => {
   const worker = await readFile(new URL("../lib/cpu-post-commit-worker.ts", import.meta.url), "utf8");
   const route = await readFile(new URL("../app/api/internal/cpu-post-commit/route.ts", import.meta.url), "utf8");
-  assert.match(worker, /job\.orderIds\.includes/);
+  assert.match(worker, /cpuPostCommitRosterMatchesJob\(serviceDateOrders, job\.orderIds\)/);
+  assert.match(worker, /requested\.length === current\.length && requested\.every/);
   assert.match(worker, /latestCpuChangeSequence/);
   assert.match(worker, /buildCpuPropagationEvents/);
   assert.match(worker, /CPU_POST_COMMIT_CONCURRENCY = 4/);
