@@ -5,6 +5,7 @@ import { loadWholeDay } from "./whole-day-production";
 import { europeLondonDate } from "../../lib/operational-date";
 import { collectionTime, referenceAlias } from "./run-sheet-presentation";
 import { isAdHocProductionOrder } from "../../lib/production-presentation";
+import type { ProductionScope } from "../../lib/production-scope";
 
 export const MAX_RUN_SHEET_PRINT_DAYS = 31;
 
@@ -150,13 +151,14 @@ export async function loadRunSheetPrintDays(
   days: readonly string[],
   fetcher: typeof fetch = fetch,
   onProgress?: (completed: number, total: number, day: string) => void,
+  scope: ProductionScope = "all",
 ): Promise<Map<string, ProductionOrder[]>> {
   if (!days.length || days.length > MAX_RUN_SHEET_PRINT_DAYS || days.some((day) => !isOperationalDate(day))) {
     throw Error(`Choose a valid date range of 1–${MAX_RUN_SHEET_PRINT_DAYS} days.`);
   }
   const ordersByDay = new Map<string, ProductionOrder[]>();
   for (const [index, day] of days.entries()) {
-    const orders = await loadWholeDay(day, fetcher);
+    const orders = await loadWholeDay(day, fetcher, scope);
     ordersByDay.set(day, orders);
     onProgress?.(index + 1, days.length, day);
   }

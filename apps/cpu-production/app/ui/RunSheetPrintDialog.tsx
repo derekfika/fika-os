@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { europeLondonDate } from "../../lib/operational-date";
 import { isOperationalDate } from "../../lib/production-totals-range";
 import type { ProductionOrder } from "../../lib/production-types";
+import type { ProductionScope } from "../../lib/production-scope";
 import { aggregateProductionTotals } from "../../lib/production-day";
 import {
   loadRunSheetPrintDays,
@@ -29,12 +30,15 @@ export function RunSheetPrintDialog({
   productionDate,
   selectedSiteIds,
   printType = "run-sheet",
+  productionScope,
 }: {
   productionDate: string;
   selectedSiteIds: readonly string[];
   printType?: "run-sheet" | "totals";
+  productionScope?: ProductionScope;
 }) {
   const isTotals = printType === "totals";
+  const selectedScope: ProductionScope = isTotals ? productionScope ?? "all" : "all";
   const today = europeLondonDate();
   const initialDate = isOperationalDate(productionDate) ? productionDate : today;
   const [open, setOpen] = useState(false);
@@ -107,7 +111,7 @@ export function RunSheetPrintDialog({
     const fetcher: typeof fetch = (input, init) => fetch(input, { ...init, signal: controller.signal });
     void loadRunSheetPrintDays(days, fetcher, (completed, total, day) => {
       if (!controller.signal.aborted) setProgress({ completed, total, day });
-    }).then((loadedOrders) => {
+    }, selectedScope).then((loadedOrders) => {
       if (controller.signal.aborted) return;
       const options = runSheetPrintSiteOptions(loadedOrders, days);
       const services = runSheetPrintServiceOptions(loadedOrders, days);
@@ -125,7 +129,7 @@ export function RunSheetPrintDialog({
       if (!controller.signal.aborted) setLoading(false);
     });
     return () => controller.abort();
-  }, [open, days, siteIdsKey, screenSiteIds]);
+  }, [open, days, siteIdsKey, screenSiteIds, selectedScope]);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -192,7 +196,7 @@ export function RunSheetPrintDialog({
     try {
       const freshOrders = await loadRunSheetPrintDays(days, fetcher, (completed, total, day) => {
         if (!controller.signal.aborted) setProgress({ completed, total, day });
-      });
+      }, selectedScope);
       if (controller.signal.aborted) return;
       const freshSites = runSheetPrintSiteOptions(freshOrders, days);
       const freshKeys = new Set(freshSites.map((site) => site.key));

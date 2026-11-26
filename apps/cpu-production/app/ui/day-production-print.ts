@@ -373,8 +373,12 @@ export function paginateProductionTotals(doc: Document = document) {
     frame.append(heading, table);
     return { frame, tbody };
   };
+  const categories = Array.from(source.children).filter((child): child is HTMLElement =>
+    child.classList.contains("totals-category") && child.querySelector("tbody tr") !== null,
+  );
+  const paxSummary = Array.from(source.children).find((child): child is HTMLElement => child.classList.contains("totals-pax-summary"));
   let content = newPage();
-  for (const original of Array.from(source.children) as HTMLElement[]) {
+  for (const original of categories) {
     let current = categoryFrame(original);
     content.append(current.frame);
     const rows = Array.from(original.querySelectorAll("tbody tr"));
@@ -393,7 +397,20 @@ export function paginateProductionTotals(doc: Document = document) {
       }
     }
   }
-  if (!source.children.length) throw Error("No production totals match the selected work.");
+  if (paxSummary) {
+    const summary = paxSummary.cloneNode(true) as HTMLElement;
+    content.append(summary);
+    if (content.scrollHeight > content.clientHeight + 0.5) {
+      summary.remove();
+      content = newPage();
+      content.append(paxSummary.cloneNode(true));
+      if (content.scrollHeight > content.clientHeight + 0.5) {
+        content.lastElementChild?.remove();
+        throw Error("The PAX summary is too large for readable A4 output.");
+      }
+    }
+  }
+  if (!categories.length && !paxSummary) throw Error("No production totals match the selected work.");
   pages.forEach((page, index) => {
     const number = page.querySelector(".page-number");
     if (number) number.textContent = `Page ${index + 1} of ${pages.length}`;

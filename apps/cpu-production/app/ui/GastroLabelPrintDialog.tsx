@@ -26,7 +26,7 @@ type Props = {
 };
 
 const dishManifest = (orders: readonly ProductionOrder[], date: string, sites: readonly string[]) =>
-  JSON.stringify(gastroLabelDishes(orders, date, sites).map(({ id, name, sortOrder, menuName }) => ({ id, name, sortOrder, menuName })));
+  JSON.stringify(gastroLabelDishes(orders, date, sites).map(({ id, name, sortOrder, menuName, isCoreSalad }) => ({ id, name, sortOrder, menuName, isCoreSalad })));
 
 export function GastroLabelPrintDialog({ productionDate, selectedSiteIds }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -262,9 +262,9 @@ export function GastroLabelPrintDialog({ productionDate, selectedSiteIds }: Prop
               </div>
               <div className={styles.dishList}>
               {dishes.map((dish) => (
-                <div className={styles.dishRow} key={dish.id}>
+                <div className={`${styles.dishRow}${dish.isCoreSalad ? ` ${styles.coreSaladRow}` : ""}`} key={dish.id}>
                   <label className={styles.dishSelection}><input aria-label={`Select ${dish.name} for bulk quantity edits`} type="checkbox" checked={selectedDishIdSet.has(dish.id)} onChange={(event) => toggleDishSelection(dish.id, event.currentTarget.checked)} disabled={loading || printing} /><span className={styles.visuallyHidden}>Select {dish.name} for bulk quantity edits</span></label>
-                  <span className={styles.dishName}>{dish.name}{quantities[dish.id] > 0 && fittedNames[dish.id] && !fittedNames[dish.id].fits ? <small className={styles.fitWarning}>Cannot fit at the minimum readable size of {GASTRO_LABEL_FONT.minimumPt} pt. This dish’s labels are blocked.</small> : null}</span>
+                  <span className={styles.dishName}>{dish.name}{dish.isCoreSalad ? <span className={styles.coreSaladLabel}>Core Salad</span> : null}{quantities[dish.id] > 0 && fittedNames[dish.id] && !fittedNames[dish.id].fits ? <small className={styles.fitWarning}>Cannot fit at the minimum readable size of {GASTRO_LABEL_FONT.minimumPt} pt. This dish’s labels are blocked.</small> : null}</span>
                   <span className={styles.countField}><span>Labels</span><input aria-label={`Number of ${dish.name} labels`} type="number" min="0" step="1" inputMode="numeric" value={quantities[dish.id] ?? 0} onChange={(event) => setQuantity(dish.id, event.currentTarget.value)} disabled={loading || printing} /></span>
                   <label className={styles.fontField}>Name size<select aria-label={`Dish name font size for ${dish.name}`} value={fontOverrides[dish.id] ?? "auto"} onChange={(event) => setFontOverrides((current) => ({ ...current, [dish.id]: event.currentTarget.value === "auto" ? "auto" : Number(event.currentTarget.value) }))} disabled={loading || printing}>
                     <option value="auto">Auto fit</option>

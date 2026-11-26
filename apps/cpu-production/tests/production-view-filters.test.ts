@@ -188,6 +188,7 @@ const page = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
 const calendarRoute = readFileSync(new URL("../app/calendar/page.tsx", import.meta.url), "utf8");
 const control = readFileSync(new URL("../app/ui/ProductionSiteFilter.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../app/ui/ProductionSiteFilter.module.css", import.meta.url), "utf8");
+const totalsCss = readFileSync(new URL("../app/totals.css", import.meta.url), "utf8");
 
 test("every view shares the one site selection and summary, and the old single select is gone", () => {
   assert.match(page, /<ProductionSiteFilter options=\{siteOptions\} selected=\{sites\} onChange=\{setSites\}/);
@@ -205,7 +206,17 @@ test("filtering never mutates orders or touches printing, eligibility or handoff
     const source = readFileSync(new URL(file, import.meta.url), "utf8");
     assert.doesNotMatch(source, /fetch\(|localStorage|sessionStorage|method:\s*"(POST|PUT|PATCH|DELETE)"/);
   }
-  assert.match(page, /<RunSheetPrintDialog productionDate=\{range\?\.from \|\| productionDate\} selectedSiteIds=\{selectedSiteIds\} printType="totals" \/>/, "totals printing uses the shared Run Sheet options workflow");
+  assert.match(page, /<RunSheetPrintDialog productionDate=\{range\?\.from \|\| productionDate\} selectedSiteIds=\{selectedSiteIds\} printType="totals" productionScope=\{productionScope\} \/>/, "totals printing uses the shared Run Sheet options workflow and selected production scope");
+});
+
+test("Totals screen presents filtered canonical PAX with explicit incomplete and unrecorded states", () => {
+  assert.match(page, /summarizeTotalsPax\(orders\)/);
+  assert.match(page, /className="cpu-totals-pax-summary"/);
+  assert.match(page, /<th scope="col">Site<\/th><th scope="col">PAX<\/th>/);
+  assert.match(page, /paxSummary\.incomplete/);
+  assert.match(page, /"Unrecorded"/);
+  assert.match(page, /same person may be counted more than once/);
+  assert.match(totalsCss, /\.cpu-totals-pax-table/);
 });
 
 test("the site control is a labelled, keyboard operable group with counts and a reset", () => {

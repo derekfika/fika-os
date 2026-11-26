@@ -31,6 +31,7 @@ import { cpuProjectionHasAmbiguousWorkstreamMapping, cpuProjectionNeedsMenuMetad
 import { calendarDateInputPatch, calendarWeekChangePatch } from "../lib/cpu-week-date-sync";
 import { addOperationalDays, filterProductionTotalsOrders, filterProductionTotalsOrdersToDates, formatProductionTotalsDateRange, formatProductionTotalsSelection, operationalWeekRange, productionTotalsWeekDates, resolveProductionTotalsRange } from "../lib/production-totals-range";
 import { loadProductionTotalsRange } from "../lib/cpu-totals-loader";
+import { summarizeTotalsPax } from "./ui/totals-pax";
 import { readApiResponse } from "./lib/api-response";
 import { fetchCpuApi } from "./lib/session-recovery";
 import CpuSessionRecovery from "./ui/CpuSessionRecovery";
@@ -657,7 +658,7 @@ export default function CpuProduction() {
         {view === "day" && <ProductionDayView orders={visible} date={dayDate} open={openOrder} onChangeDate={(nextDate) => { setDate(nextDate); setDayDate(nextDate); setWeekCommencing(weekCommencingFor(nextDate)); }} reviewAllergens={(selectedDate) => { window.location.href = `/allergens?date=${encodeURIComponent(selectedDate)}`; }} />}
         {view === "queue" && <Queue orders={visible} open={openOrder} />}
         {view === "run-sheet" && <KitchenRunSheet orders={visible} productionDate={date} selectedSiteIds={sites} siteFilterLabel={sites.length ? sites.map(id => siteLabels.current.get(id) || "selected site").join(", ") : "All sites"} />}
-        {view === "totals" && <Totals allSitesOrderCount={sites.length ? distinct(totalsAllSitesOrders) : undefined} filters={[sites.length ? `${sites.length} selected site${sites.length === 1 ? "" : "s"}` : "All sites", origin === "all" ? "All origins" : origin, productionScope === "all" ? "All production scopes" : productionScope].join(" · ")} orders={totalsSelectedOrders} range={totalsRange} productionDate={date} selectedSiteIds={sites} selectedPeriod={totalsCustomRange ? "Custom date range" : formatProductionTotalsSelection(weekCommencing, totalsSelectedDays)} hasSelection={totalsCustomRange || selectedTotalsDates.length > 0} rangeError={totalsRangeResolution.error} loadError={error} loading={totalsLoading} />}
+        {view === "totals" && <Totals productionScope={productionScope} allSitesOrderCount={sites.length ? distinct(totalsAllSitesOrders) : undefined} filters={[sites.length ? `${sites.length} selected site${sites.length === 1 ? "" : "s"}` : "All sites", origin === "all" ? "All origins" : origin, productionScope === "all" ? "All production scopes" : productionScope].join(" · ")} orders={totalsSelectedOrders} range={totalsRange} productionDate={date} selectedSiteIds={sites} selectedPeriod={totalsCustomRange ? "Custom date range" : formatProductionTotalsSelection(weekCommencing, totalsSelectedDays)} hasSelection={totalsCustomRange || selectedTotalsDates.length > 0} rangeError={totalsRangeResolution.error} loadError={error} loading={totalsLoading} />}
         </section>
         {view !== "totals" && <OperationsRail orders={visible} date={date || todayKey} open={openOrder} onCancelBooking={acknowledgeCancelledBooking} />}
         </div>
@@ -796,6 +797,7 @@ function Queue({
 }
 
 function Totals({
+  productionScope,
   allSitesOrderCount,
   filters,
   orders,
@@ -808,6 +810,7 @@ function Totals({
   loadError,
   loading,
 }: {
+  productionScope: ProductionScope;
   allSitesOrderCount?: number;
   filters: string;
   orders: ProductionOrder[];
@@ -821,11 +824,12 @@ function Totals({
   loading: boolean;
 }) {
   const categoryTotals = useMemo(() => aggregateProductionTotals(orders), [orders]);
+  const paxSummary = useMemo(() => summarizeTotalsPax(orders), [orders]);
   return (
     <section className="cpu-totals">
       <header>
         <small>Read-only production planning · customer ordered quantities</small>
-        <RunSheetPrintDialog productionDate={range?.from || productionDate} selectedSiteIds={selectedSiteIds} printType="totals" />
+        <RunSheetPrintDialog productionDate={range?.from || productionDate} selectedSiteIds={selectedSiteIds} printType="totals" productionScope={productionScope} />
         <h2>{selectedPeriod === "No days selected" ? "Select production days" : selectedPeriod}</h2>
         {range && <p className="cpu-totals-range-label">{formatProductionTotalsDateRange(range)}</p>}
         {range && !loading && !rangeError && !loadError && <p>{orders.length} production order{orders.length === 1 ? "" : "s"} included{allSitesOrderCount !== undefined ? ` for the selected sites (all sites: ${allSitesOrderCount} order${allSitesOrderCount === 1 ? "" : "s"})` : ""} · units remain grouped separately</p>}
@@ -838,6 +842,18 @@ function Totals({
           <h3>No production items in this range.</h3>
           <p>Current CPU production projections contain no ordered quantities for the selected dates and filters.</p>
         </div>
+      )}
+      {!loading && !rangeError && !loadError && hasSelection && paxSummary.serviceCount > 0 && (
+        <section className="cpu-totals-pax-summary" aria-labelledby="cpu-totals-pax-heading">
+          <h3 id="cpu-totals-pax-heading">PAX summary</h3>
+          {paxSummary.incomplete && <p className="cpu-totals-pax-warning" role="status">PAX is unrecorded for {paxSummary.unrecordedServices} selected service{paxSummary.unrecordedServices === 1 ? "" : "s"}; the recorded total is incomplete.</p>}
+          <table className="cpu-totals-pax-table">
+            <thead><tr><th scope="col">Site</th><th scope="col">PAX</th></tr></thead>
+            <tbody>{paxSummary.sites.map(site => <tr key={site.key}><th scope="row">{site.label}</th><td>{site.recordedServices === 0 ? "Unrecorded" : site.unrecordedServices ? `${site.recordedPax.toLocaleString("en-GB")} recorded · incomplete` : site.recordedPax.toLocaleString("en-GB")}</td></tr>)}</tbody>
+            <tfoot><tr><th scope="row">{paxSummary.incomplete ? "Total recorded PAX · incomplete" : "Total recorded PAX"}</th><td>{paxSummary.totalPax === undefined ? "Unrecorded" : paxSummary.totalPax.toLocaleString("en-GB")}</td></tr></tfoot>
+          </table>
+          <p className="cpu-totals-pax-note">Across selected dates and services. When multiple independent services contribute, the same person may be counted more than once.</p>
+        </section>
       )}
     </section>
   );
