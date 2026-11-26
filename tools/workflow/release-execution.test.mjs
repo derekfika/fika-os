@@ -249,6 +249,117 @@ test('optional staging accepts the same merged source contract and rejects absen
   assert.equal(f.submitted[0][3],'fika-os-dev');
 }));
 
+function stagingMergeFixture(base, proposed) {
+  const tree = git('rev-parse', `${proposed}^{tree}`);
+  const commit = (treeSha, parents, label) => git('commit-tree', treeSha, ...parents.flatMap(sha => ['-p',sha]), '-m',label);
+  const head = commit(tree,[base],'Reviewed task');
+  const merge = commit(tree,[base,head],'Protected main merge');
+  const pr = { number:900, state:'closed', merged_at:'2026-11-26T10:00:00Z', merge_commit_sha:merge,
+    base:{ref:'main',repo:{full_name:REPO}}, head:{sha:head,repo:{full_name:REPO}} };
+  return { tree, head, merge, pr, commit };
+}
+
+function stagingHeadGithub(io, candidate) {
+  const original = io.github;
+  const evidence = { pulls:[candidate.pr], nextPulls:[], check:{name:MAIN_CHECK, head_sha:candidate.head, app:{slug:'github-actions'}, conclusion:'success'} };
+  io.github = endpoint => {
+    if (endpoint.endsWith('/pulls?per_page=100')) return evidence.pulls;
+    if (endpoint.includes('/pulls?per_page=100&page=')) return evidence.nextPulls;
+    if (endpoint.includes('/check-runs?')) return {check_runs:[evidence.check]};
+    return original(endpoint);
+  };
+  return evidence;
+}
+
+test('an explicit staging head pins the reviewed commit through preview, intent, proven retry and serving', () => fixture(async ({baseline,shared,unmerged}) => {
+  const t = target('hub','staging'), f = releaseIO(t,baseline), candidate = stagingMergeFixture(shared,unmerged);
+  const { head, merge, pr } = candidate;
+  git('push','origin',`${merge}:refs/heads/main`);
+  const evidence = stagingHeadGithub(f.io,candidate);
+  await assert.rejects(deploy(t.app,t.environment,{},f.io),/has not passed/);
+  const preview = await deploy(t.app,t.environment,{sha:head},f.io);
+  assert.equal(preview.plan.sourceSha,head);
+  assert.equal(preview.plan.validation.sha,head);
+  assert.deepEqual(preview.plan.provenance,{number:pr.number,url:undefined,head,mergeSha:merge});
+  assert.equal(releaseRecord(t.branch),undefined);
+
+  const submit = f.io.submit;
+  f.io.submit = () => { throw Error('Simulated failure before submission'); };
+  await assert.rejects(deploy(t.app,t.environment,{sha:head,execute:true},f.io),/use --resume/);
+  const intent = releaseRecord(t.branch);
+  assert.equal(intent.record.sourceSha,head);
+  assert.equal(intent.record.provenance.mergeSha,merge);
+  const file = path.join(stateDir(),'release-hub-staging.json'), journal = jsonFile(file);
+  save(file,{...journal,plan:{...journal.plan,provenance:{...journal.plan.provenance,mergeSha:head}}});
+  await assert.rejects(deploy(t.app,t.environment,{resume:true},f.io),/provenance differs from the original intent/);
+  const earlier = '2026-10-31T12:00:00Z';
+  save(file,{...journal,createdAt:earlier,submissionStartedAt:earlier,submissionFinishedAt:earlier,
+    submissionAttempts:[{...journal.submissionAttempts[0],startedAt:earlier,finishedAt:earlier}]});
+  f.io.audit = () => ({readable:true,events:[]});
+  f.io.submit = submit;
+  const resume = {resume:true,execute:true,'timeout-ms':'0'};
+  evidence.pulls = [{...pr,number:901}];
+  await assert.rejects(deploy(t.app,t.environment,resume,f.io),/provenance changed/);
+  assert.equal(f.submitted.length,0);
+  assert.equal(releaseRecord(t.branch).commit,intent.commit);
+  evidence.pulls = [pr];
+  const result = await deploy(t.app,t.environment,{resume:true,execute:true},f.io);
+  assert.equal(result.record.sourceSha,head);
+  assert.equal(result.record.validation.sha,head);
+  assert.equal(result.record.provenance.mergeSha,merge);
+  assert.deepEqual(f.submitted.map(args => args[args.indexOf('--git-commit')+1]),[head]);
+}));
+
+test('staging rejects unrelated or ambiguous PRs, unsafe merge topology, and CI for another commit', () => fixture(async ({baseline,shared,unmerged}) => {
+  const t = target('hub','staging'), f = releaseIO(t,baseline);
+  const candidate = stagingMergeFixture(shared,unmerged), { tree, head, merge, pr, commit } = candidate;
+  const changedTree = commit(git('rev-parse',`${baseline}^{tree}`),[shared,head],'Different integrated source');
+  const wrongParent = commit(tree,[head,shared],'Wrong parent order');
+  const staleBase = commit(tree,[merge,head],'Base advanced independently');
+  const octopus = commit(tree,[merge,changedTree,head],'More than two parents');
+  const latest = commit(tree,[octopus,wrongParent,staleBase],'Fixture history');
+  git('push','origin',`${latest}:refs/heads/main`);
+  const evidence = stagingHeadGithub(f.io,candidate);
+  const options = {sha:head,execute:true};
+  for (const [pulls,error] of [
+    [[],/exactly one/], [[pr,{...pr,number:901}],/exactly one/],
+    [[{...pr,state:'open',merged_at:null}],/exactly one/],
+    [[{...pr,base:{...pr.base,ref:'elsewhere'}}],/exactly one/],
+    [[{...pr,base:{ref:'main',repo:{full_name:'fork/repo'}}}],/exactly one/],
+    [[{...pr,head:{sha:head,repo:{full_name:'fork/repo'}}}],/exactly one/],
+    [[{...pr,head:{...pr.head,sha:shared}}],/exactly one/],
+    [[{...pr,merge_commit_sha:unmerged}],/not integrated/],
+    [[{...pr,merge_commit_sha:changedTree}],/tree differs/],
+    [[{...pr,merge_commit_sha:wrongParent}],/second parent/],
+    [[{...pr,merge_commit_sha:staleBase}],/include the main base/],
+    [[{...pr,merge_commit_sha:octopus}],/two-parent merge/],
+  ]) {
+    evidence.pulls = pulls;
+    await assert.rejects(deploy(t.app,t.environment,options,f.io),error);
+  }
+  const otherPulls = Array.from({length:100}, (_,i) => ({...pr,number:1000+i,head:{...pr.head,sha:shared}}));
+  evidence.pulls = [pr,...otherPulls.slice(1)];
+  evidence.nextPulls = [{...pr,number:901}];
+  await assert.rejects(deploy(t.app,t.environment,options,f.io),/exactly one/);
+  evidence.pulls = otherPulls;
+  evidence.nextPulls = otherPulls;
+  await assert.rejects(deploy(t.app,t.environment,options,f.io),/complete list/);
+  evidence.pulls = [pr];
+  for (const patch of [{head_sha:merge},{conclusion:'failure'},{conclusion:null},{app:{slug:'other-app'}}]) {
+    const original = evidence.check;
+    evidence.check = {...original,...patch};
+    await assert.rejects(deploy(t.app,t.environment,options,f.io),/has not passed/);
+    evidence.check = original;
+  }
+  const prod = target('hub','prod'), production = releaseIO(prod,baseline);
+  stagingHeadGithub(production.io,candidate);
+  await assert.rejects(deploy(prod.app,prod.environment,options,production.io),/result of a merged PR/);
+  assert.equal(f.submitted.length,0);
+  assert.equal(production.submitted.length,0);
+  assert.equal(releaseRecord(t.branch),undefined);
+  assert.equal(releaseRecord(prod.branch),undefined);
+}));
+
 test('production fails before writing intent for missing credentials or uncertain Firebase state', () => fixture(async ({baseline}) => {
   const t = target('hub','prod');
   const f = releaseIO(t,baseline);

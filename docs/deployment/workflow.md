@@ -45,7 +45,9 @@ fika deploy hospitality --prod --execute
 fika rollback hospitality --prod --execute
 ```
 
-For either environment, the CLI defaults to fetched `origin/main`. Use `--sha` to pin an earlier eligible merge. The exact SHA must be the result of a protected PR merged into main and have a successful GitHub Actions `Workflow / merge-gate` check. Local execution requires a GitHub repository writer and Firebase/GCP credentials for the mapped target. Use `--reason` to add an optional operator note.
+For either environment, the CLI defaults to fetched `origin/main`. Use `--sha` to pin an earlier eligible merge. The selected commit must have its own successful GitHub Actions `Workflow / merge-gate` check. Local execution requires a GitHub repository writer and Firebase/GCP credentials for the mapped target. Use `--reason` to add an optional operator note.
+
+For a forward staging deployment, an operator can pin the validated head of a merged PR with `--staging --sha <full-pr-head-sha>`. The CLI verifies that exactly one merged PR from this repository targeted its protected main branch. The recorded merge commit must be reachable from fetched main, with the selected head as its second parent and the main base already included in that head. The full repository trees of the head and merge must match. The plan and ledger record the PR number and merge SHA alongside the selected source. The rollout, CI check and serving verification all use the exact head SHA. A production forward deployment requires the exact protected merge commit and successful CI on that commit.
 
 The production serving-to-candidate diff is informational. Staging and manual UAT are optional for all change categories, including security, shared contracts and backend changes. A security hotfix follows the same PR, CI, merge and deploy steps. Forward production releases preserve deployed source lineage. Use the explicit rollback command to select an earlier verified release.
 
