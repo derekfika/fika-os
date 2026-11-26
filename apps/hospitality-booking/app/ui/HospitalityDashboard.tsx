@@ -15,6 +15,7 @@ import type { BookingAdditionalChargeInput, CanonicalBooking, ProductionOrder, D
 import { dailyRunSheetHtml } from "../../lib/run-sheet";
 import { bookingRequestedItems } from "../../lib/booking-presentation";
 import { bookingLocation } from "../../lib/booking-location";
+import { MUNICH_RE_LOCATIONS, munichReLocationDisplay, munichReLocationFields, munichReLocationIdFor } from "../../lib/munich-re-locations";
 import { quoteHtml } from "../../lib/quote-document";
 import { fetchQuoteRequest } from "../../lib/quote-request";
 import { amendmentPatchDto } from "../../lib/amendment-dto";
@@ -2873,6 +2874,10 @@ export function BookingAmendmentPanel({
   const sameBookingSite = booking.service.portalSiteId === siteKey && booking.service.oplocId === oplocId;
   const separateLocations = Boolean(oplocId) && sameBookingSite && (siteKey === "angel-court" || siteKey === "mnk");
   const rcoaLocation = sameBookingSite && siteKey === "rcoa";
+  const munichReLocation = Boolean(oplocId) && sameBookingSite && catalogueOplocId === oplocId && siteKey === "munich-re";
+  const { floorLevel, roomOrArea, deliveryPoint } = amendment.service;
+  const recordedLocation = [floorLevel, roomOrArea, deliveryPoint].filter(Boolean).join(" · ");
+  const munichReChoice = !floorLevel && !(roomOrArea && deliveryPoint) ? munichReLocationIdFor(amendment.service) : "";
   useEffect(() => {
     const controller = new AbortController();
     setCutoffWarning("Checking current catalogue constraints…");
@@ -3006,13 +3011,24 @@ export function BookingAmendmentPanel({
             />
           </label>
           {amendment.adminOplocId && <label>End time<input type="time" value={amendment.service.endTime || ""} onChange={event => changeService("endTime", event.target.value)} /></label>}
-          {(separateLocations || (amendment.adminOplocId && !rcoaLocation)) && <label>Floor<input value={amendment.service.floorLevel || ""} onChange={event => changeService("floorLevel", event.target.value)} /></label>}
+          {(separateLocations || (amendment.adminOplocId && !rcoaLocation && !munichReLocation)) && <label>Floor<input value={amendment.service.floorLevel || ""} onChange={event => changeService("floorLevel", event.target.value)} /></label>}
           {separateLocations && <label>Room / area<input value={amendment.service.roomOrArea || ""} onChange={event => changeService("roomOrArea", event.target.value)} /></label>}
-          {(separateLocations || amendment.adminOplocId) && <label>Delivery point<input value={amendment.service.deliveryPoint || ""} onChange={event => changeService("deliveryPoint", event.target.value)} /></label>}
+          {(separateLocations || (amendment.adminOplocId && !munichReLocation)) && <label>Delivery point<input value={amendment.service.deliveryPoint || ""} onChange={event => changeService("deliveryPoint", event.target.value)} /></label>}
           {amendment.adminOplocId && ([["onsiteContactName", "On-site contact"], ["onsiteContactPhone", "On-site telephone"]] as const).map(([key, label]) =>
             <label key={key}>{label}<input value={amendment.service[key] || ""} onChange={event => changeService(key, event.target.value)} /></label>)}
           {rcoaLocation && <RcoaLocationFields floor={amendment.service.floorLevel || ""} location={amendment.service.roomOrArea || ""} onFloorChange={value => { const next = rcoaFloorChange(value, amendment.service.roomOrArea || ""); onChange({ ...amendment, service: { ...amendment.service, floorLevel: next.floor, roomOrArea: next.location } }); }} onLocationChange={value => changeService("roomOrArea", value)} />}
-          {!separateLocations && !rcoaLocation && <label>Floor, room or delivery point<input value={amendment.service.roomOrArea || amendment.service.floorLevel || amendment.service.deliveryPoint || ""} onChange={event => changeService("roomOrArea", event.target.value)} /></label>}
+          {munichReLocation && <label>Meeting room or collection point
+            <select value={munichReChoice} onChange={event => {
+              const location = munichReLocationFields(event.target.value);
+              if (!location.roomOrArea && !location.deliveryPoint) return;
+              onChange({ ...amendment, service: { ...amendment.service, floorLevel: "", ...location } });
+            }}>
+              <option value="" disabled>{!munichReChoice && recordedLocation ? `Recorded location · ${recordedLocation}` : "Choose a room or collection point"}</option>
+              <optgroup label="Meeting rooms">{MUNICH_RE_LOCATIONS.filter(location => location.kind === "meeting-room").map(location => <option key={location.id} value={location.id}>{munichReLocationDisplay(location)}</option>)}</optgroup>
+              <optgroup label="Collection points">{MUNICH_RE_LOCATIONS.filter(location => location.kind === "collection-point").map(location => <option key={location.id} value={location.id}>{munichReLocationDisplay(location)}</option>)}</optgroup>
+            </select>
+          </label>}
+          {!separateLocations && !rcoaLocation && !munichReLocation && <label>Floor, room or delivery point<input value={amendment.service.roomOrArea || amendment.service.floorLevel || amendment.service.deliveryPoint || ""} onChange={event => changeService("roomOrArea", event.target.value)} /></label>}
         </div>
       </section>
       <section className="booking-amendment-panel__section">

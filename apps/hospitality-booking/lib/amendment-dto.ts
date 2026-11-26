@@ -12,6 +12,9 @@ export type AmendmentDraft = {
 /** Build the strict Integration Hub amendment shape from editable dashboard data. */
 export function amendmentPatchDto(draft: AmendmentDraft) {
   const { client, service, order } = draft;
+  // Hub merges supplied fields. A Munich RE selection explicitly clears the
+  // previous location fields when switching between a room and a collection point.
+  const includeLocation = (value?: string) => Boolean(value) || (service.portalSiteId === "munich-re" && value === "");
   return {
     client: {
       name: client.name,
@@ -33,9 +36,9 @@ export function amendmentPatchDto(draft: AmendmentDraft) {
       startTime: service.startTime,
       ...(service.endTime ? { endTime: service.endTime } : {}),
       guestCount: service.guestCount,
-      ...(service.floorLevel ? { floorLevel: service.floorLevel } : {}),
-      ...(service.roomOrArea ? { roomOrArea: service.roomOrArea } : {}),
-      ...(service.deliveryPoint ? { deliveryPoint: service.deliveryPoint } : {}),
+      ...(includeLocation(service.floorLevel) ? { floorLevel: service.floorLevel } : {}),
+      ...(includeLocation(service.roomOrArea) ? { roomOrArea: service.roomOrArea } : {}),
+      ...(includeLocation(service.deliveryPoint) ? { deliveryPoint: service.deliveryPoint } : {}),
       ...(service.onsiteContactName ? { onsiteContactName: service.onsiteContactName } : {}),
       ...(service.onsiteContactPhone ? { onsiteContactPhone: service.onsiteContactPhone } : {}),
       ...(draft.adminOplocId ? {
