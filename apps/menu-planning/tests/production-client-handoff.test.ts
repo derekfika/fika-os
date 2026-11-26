@@ -53,3 +53,11 @@ test("pending CPU projection remains a retryable delivery failure", async () => 
     await assert.rejects(() => forwardProductionMaterialisation(input), /CPU projection handoff is pending/);
   });
 });
+
+for (const [description, cpuHandoff] of Object.entries({ missing: undefined, null: null, unexpected: "queued" })) {
+  test(`CPU confirmation is ${description}: the handoff stays retryable after Logistics confirms`, async () => {
+    await withHubResponse({ cpuHandoff, logisticsHandoff: "delivered" }, async () => {
+      await assert.rejects(() => forwardProductionMaterialisation(input), /CPU projection handoff is pending or unconfirmed/);
+    });
+  });
+}
