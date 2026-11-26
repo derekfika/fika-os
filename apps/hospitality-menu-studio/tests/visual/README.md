@@ -36,3 +36,9 @@ On the replacement shell use `--shell-interactions` with screen 03 to check loca
 Review shows the real UI’s unavailable publication authority for the local actor. The fixture carries fictional commercial display values and no signed safety or publication records. Treat any change that needs genuine readiness, publication, activation or booking evidence as a separate authorised test.
 
 On the replacement Catalogue use "--catalogue-interactions" with screen 06 to verify local sorting and filters, contextual details and edit, contained scrolling, and one on-demand read for the legacy links disclosure.
+
+Run the editor interaction scenarios from the Studio app directory. The harness validates and intercepts all fictional save requests in Chromium and forwards none to the server.
+
+```powershell
+node --import tsx tests/visual/editor-interactions.mjs --base http://127.0.0.1:13424 --expect-sha <full-source-sha> --output <absolute-archive-json-path> --playwright <absolute-path-to-playwright-package>
+```

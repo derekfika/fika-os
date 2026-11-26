@@ -72,3 +72,77 @@
   .reviewGrid { grid-template-columns: minmax(0,1fr); }
   .readiness li { grid-template-columns: 1fr; gap: var(--space-1); }
 }
+
+/* Picker: a single centred, scrollable selection surface. */
+.dishDialog { width: min(100% - 2rem, 720px); max-height: calc(100dvh - 32px); }
+.pickerList { gap: 0; border: 1px solid var(--fika-border-default); border-radius: var(--radius-sm); }
+.pickerHeading { display: flex; justify-content: space-between; padding: var(--space-3); font-size: var(--text-sm); }
+.pickerRow { align-items: center; min-height: 44px; padding: var(--space-2) var(--space-3); border: 0; border-top: 1px solid var(--fika-border-default); border-radius: 0; }
+.pickerRow[data-selected="true"] { background: var(--fika-status-info-surface); }
+.pickerRow > span:first-of-type { flex: 1; }
+.pickerRow .pickerCategory { display: inline-flex; flex: 0 0 auto; padding: var(--space-1) var(--space-2); border-radius: var(--radius-pill); background: var(--fika-status-info-surface); color: var(--fika-action-secondary); font-size: var(--text-xs); font-weight: 700; }
+@media (max-width: 600px) { .pickerCategory { max-width: 35%; overflow-wrap: anywhere; } }
+
+.weekStrip button { display: grid; justify-items: start; flex: 1 0 115px; gap: var(--space-1); }
+.weekStrip button small { font-size: var(--text-xs); font-weight: 400; }
+.dishList { gap: 0; border: 1px solid var(--fika-border-default); border-radius: var(--radius-sm); overflow: hidden; }
+.dishList li { min-height: 48px; border: 0; border-radius: 0; border-bottom: 1px solid var(--fika-border-default); }
+.dishList li:last-child { border-bottom: 0; }
+.dishActions button { min-width: 36px; min-height: 36px; border-color: transparent; }
+@media (max-width: 760px) { .weekStrip button { flex-basis: 105px; } }
+
+.scheduleSettings { display: grid; gap: var(--space-3); }
+.rotationSettings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); align-items: end; }
+.rotationSettings :is(input,select), .discardDialog select, .dishActions select { width: 100%; min-height: var(--fika-control-height); padding: var(--space-2); border: 1px solid var(--fika-border-default); border-radius: var(--radius-sm); background: var(--fika-surface-card); color: var(--fika-text-primary); font: inherit; }
+.rotationSettings p { margin: 0; align-self: center; color: var(--fika-text-secondary); }
+.copyTargets { display: grid; gap: var(--space-2); max-height: 35vh; overflow: auto; margin-block: var(--space-3); }
+.copyTargets label { display: flex; gap: var(--space-2); align-items: center; min-height: 36px; }
+@media (max-width: 760px) { .rotationSettings { grid-template-columns: 1fr; } .dishActions select { max-width: 140px; } }
+
+.editorFields { display: grid; min-width: 0; gap: var(--space-4); padding: 0; margin: 0; border: 0; }
+
+.pickerWeeks { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-3) 0 0; padding: var(--space-2); border: 1px solid var(--fika-border-default); border-radius: var(--radius-sm); }
+.pickerWeeks label { display: inline-flex; align-items: center; gap: var(--space-1); min-height: 36px; }
+
+.safetyNote { flex: 0 0 auto; color: var(--fika-text-secondary); font-size: var(--text-xs); }
+@media (max-width: 760px) { .safetyNote { display: none; } }
+
+/* Keep the authoring controls compact without shrinking their targets. */
+.editorFields { gap: var(--space-3); }
+.editorFields > header { margin-bottom: 0; gap: var(--space-1); }
+.editorFields > header h1 { font-size: var(--text-xl); }
+.editorFields > header p { margin-top: var(--space-1); }
+.scheduleSettings { gap: var(--space-2); }
+.rotationSettings { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); }
+.rotationSettings :is(input,select) { min-height: 40px; }
+.weekStrip button { min-height: 52px; padding: var(--space-1) var(--space-3); }
+.dishList li { padding: var(--space-1) var(--space-2); min-height: 48px; }
+.dishList li > div:first-child { gap: 0; flex: 1 1 0; }
+.dishList small { font-size: var(--text-xs); line-height: 1.2; }
+.dishActions { min-width: 0; gap: 0; }
+.dishActions select { width: 120px; min-height: 40px; font-size: var(--text-xs); }
+.dishActions button { min-width: 36px; width: 36px; min-height: 40px; padding: 0; }
+.safetyNote { margin-inline: var(--space-1); }
+.groupHeading { grid-template-columns: minmax(0, 1fr) minmax(130px, .55fr) repeat(3, auto); }
+.group { gap: var(--space-2); }
+.pickerTools input { width: 100%; min-height: var(--fika-control-height); padding: var(--space-2) var(--space-3); border: 1px solid var(--fika-border-default); border-radius: var(--radius-sm); background: var(--fika-surface-card); color: var(--fika-text-primary); font: inherit; }
+.dialogHeader h2 { font-size: var(--text-xl); }
+.categoryFilters > span { flex: 0 0 auto; }
+.categoryFilters button { white-space: nowrap; }
+@media (max-width: 1200px) { .safetyNote { display: none; } .dishList li { flex-wrap: wrap; } .dishActions { flex-wrap: wrap; } }
+@media (max-width: 760px) { .rotationSettings { grid-template-columns: 1fr; } .dishActions select { width: 120px; } }
+
+.editorStatus { margin: 0; color: var(--fika-text-secondary); font-size: var(--text-xs); }
+
+.productHeading { display: grid; gap: var(--space-1); }
+.productHeading nav { color: var(--fika-text-secondary); font-size: var(--text-sm); }
+.productHeading nav span + span { margin-left: var(--space-1); }
+.productHeading > div { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); }
+.productHeading h1 { margin: 0; font-size: var(--text-xl); line-height: 1.2; }
+.productHeading p { margin: 0; color: var(--fika-text-secondary); font-size: var(--text-sm); }
+.groupAdd input { width: 100%; min-height: var(--fika-control-height); padding: var(--space-2) var(--space-3); border: 1px solid var(--fika-border-default); border-radius: var(--radius-sm); background: var(--fika-surface-card); color: var(--fika-text-primary); font: inherit; }
+
+.groupDisclosure { margin-top: var(--space-2); }
+.groupDisclosure summary { min-height: 40px; display: flex; align-items: center; color: var(--fika-action-secondary); font-weight: 700; cursor: pointer; }
+.dragHandle { flex: 0 0 auto; color: var(--fika-text-secondary); cursor: grab; }
+.dishList li > div:first-of-type { display: grid; gap: 0; flex: 1 1 0; min-width: 0; }
