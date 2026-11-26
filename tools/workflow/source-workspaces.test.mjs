@@ -9,8 +9,8 @@ import { fixture } from './lifecycle-fixture.mjs';
 import { createWorkspace, workspaceRecords } from './workspaces.mjs';
 import { integrateSourceWorkspace, assignSourceWriter, createInfrastructureRecoveryWorkspace, createSourceWorkspace, completeSourceWorkspace, recoverSourceReservation, runSourceOperation } from './source-workspaces.mjs';
 import { completionFile, managedRoot, sourceTaskFile, workspaceInventory } from './workspace-capacity.mjs';
-import { cleanupSourceWorkspaces, integrationEvidence, pruneStaleSourceRegistrations } from './workspace-retirement.mjs';
-import { installSourceDependencies, recordGenerated, validationOutputCandidates, verifiedTypeScriptBuildInfo } from './workspace-cache.mjs';
+import { cleanupSourceWorkspaces, integrationEvidence, pruneStaleSourceRegistrations, reconcileOrphanedBootstrapRecords } from './workspace-retirement.mjs';
+import { installSourceDependencies, recordGenerated, validationOutputCandidates, verifiedPythonCache, verifiedTypeScriptBuildInfo } from './workspace-cache.mjs';
 import { sourceWorkspaceHealth } from './workspace-health.mjs';
 import { migrateSourceHistory } from './source-migration.mjs';
 import { governedReleaseOperation } from './workspace-state.mjs';
@@ -174,6 +174,161 @@ test('infrastructure recovery has one owner-recorded exception slot and rejects 
   }); } finally { f.dispose(); }
 });
 
+test('recovery admission ignores physically absent stale exceptions but protects nonallowlisted metadata', () => {
+  const f = fixture();
+  try { f.within(() => {
+    const name = 'workspace-build-artifact-retirement', owner = `codex-${name}`;
+    const directory = path.join(managedRoot(), name), branch = `codex/${name}`;
+    const finalSha = f.git('rev-parse', 'origin/main');
+    save(sourceTaskFile(name), { name, owner, branch, directory, baseline: finalSha, state: 'active',
+      bootstrapException: { authorization: 'old-owner-directive', capacityExempt: true } });
+    save(completionFile(name), { name, owner, branch, directory, finalSha, outcome: 'completed', retirement: 'retired' });
+    const recovery = createInfrastructureRecoveryWorkspace('infra-recovery-next-fix', {
+      owner: 'recovery-owner', reason: 'Repair a confirmed defect in workspace retirement admission.', scope: 'tools/workflow',
+    });
+    assert.equal(recovery.state, 'active');
+    assert.equal(workspaceInventory().bootstrapExceptions, 1);
+    const result = reconcileOrphanedBootstrapRecords({ execute: true, readPulls: () => [], containsMain: () => true });
+    assert.deepEqual(result.archived, []);
+    assert.ok(result.protected.some(record => record.name === name));
+    assert.equal(existsSync(sourceTaskFile(name)), true);
+    assert.equal(existsSync(completionFile(name)), true);
+    assert.equal(existsSync(path.join(stateDir(), 'source-archive', `${name}.json`)), false);
+    const held = reconcileOrphanedBootstrapRecords({ execute: true, readPulls: () => [], containsMain: () => true });
+    assert.ok(held.protected.some(record => record.name === recovery.name));
+  }); } finally { f.dispose(); }
+});
+
+test('orphan bootstrap preview recognizes only the three exact merged legacy task heads', () => {
+  const f = fixture();
+  try { f.within(() => {
+    const names = [
+      'workspace-build-artifact-retirement',
+      'workspace-capacity-10',
+      'workspace-retirement-repair-bootstrap',
+    ];
+    const head = f.git('rev-parse', 'origin/main');
+    const merge = head;
+    const heads = {
+      'workspace-build-artifact-retirement': 'bdc955f624109faaea9cca8749aeec81bec2aca1',
+      'workspace-capacity-10': '5250e37a081bacc1910810092dd79f6641f97178',
+      'workspace-retirement-repair-bootstrap': 'c8f1de7246eff0f6bfed514a8f9320c1349cb57b',
+    };
+    const baselines = {
+      'workspace-build-artifact-retirement': 'e349482b12ea68445665b84f47fa43f9380a1590',
+      'workspace-capacity-10': 'a54308b9bda948a23efbe61d3abbc3055f10975e',
+      'workspace-retirement-repair-bootstrap': 'a3d7173674a818c90a36807ef7344f73999bc673',
+    };
+    const containsMain = sha => sha === merge || Object.values(baselines).includes(sha);
+    const legacy = [
+      { name: names[0], owner: 'codex-workspace-build-artifact-retirement',
+        bootstrapException: { authorization: 'explicit-owner-directive', issue: 687,
+          scope: 'workspace-retirement-repair', capacityExempt: true, authorizedAt: '2026-11-25', permanentSlots: 10 } },
+      { name: names[1], owner: 'codex-workspace-capacity-sol',
+        bootstrapException: { authorization: 'explicit owner directive in current thread', authorizedAt: '2026-11-25',
+          purpose: 'Implement #687 capacity expansion only', oldLimit: 5, temporaryAdmission: 6, permanentLimit: 10,
+          preserveExisting: true, retireAfter: 'capacity PR merged and local ten-slot enforcement verified' },
+        bootstrapVerifiedAt: '2026-11-25T19:23:27.774Z' },
+      { name: names[2], owner: 'codex-workspace-retirement-repair-bootstrap',
+        bootstrapException: { schema: 'fika.workspace-bootstrap-exception.v1', authorizedBy: 'owner directive',
+          authorizedAt: '2026-11-25', issue: 687, oneTime: true, outsideGovernedLimit: 10,
+          reason: 'Permanent retirement repair is queued behind verified retirement residue.',
+          protections: ['unique source', 'uncommitted changes', 'user attachments', 'active leases', 'unmerged work',
+            'protected PR and CI gates'] } },
+    ];
+    const pulls = legacy.map(({ name }) => ({
+      number: ({
+        'workspace-build-artifact-retirement': 709,
+        'workspace-capacity-10': 700,
+        'workspace-retirement-repair-bootstrap': 705,
+      })[name],
+      state: 'closed', merged_at: '2026-11-25T23:42:57Z', html_url: `https://github.com/derekfika/fika-os/pull/${name}`,
+      head: { ref: `codex/${name}`, sha: heads[name], repo: { full_name: 'derekfika/fika-os' } },
+      base: { ref: 'main', repo: { full_name: 'derekfika/fika-os' } }, merge_commit_sha: merge,
+    }));
+    for (const task of legacy) {
+      const record = { ...task, branch: `codex/${task.name}`, directory: path.join(managedRoot(), task.name),
+        baseline: baselines[task.name], state: 'active' };
+      save(sourceTaskFile(task.name), record);
+      assert.equal(existsSync(path.join(managedRoot(), task.name)), false);
+      assert.equal(existsSync(completionFile(task.name)), false);
+    }
+
+    const eligible = reconcileOrphanedBootstrapRecords({ readPulls: () => pulls, readRemoteHead: branch => {
+      const task = legacy.find(candidate => branch === `codex/${candidate.name}`);
+      assert.ok(task);
+      return heads[task.name];
+    }, containsMain });
+    assert.deepEqual(eligible.eligible.map(record => record.name).sort(), [...names].sort(), JSON.stringify(eligible));
+    assert.deepEqual(eligible.protected, []);
+    assert.deepEqual(eligible.archived, []);
+    for (const { name } of legacy) {
+      assert.equal(existsSync(sourceTaskFile(name)), true, `${name} stays registered after preview`);
+      assert.equal(existsSync(path.join(stateDir(), 'source-archive', `${name}.json`)), false);
+      assert.equal(existsSync(completionFile(name)), false, 'preview must not synthesize a completion');
+    }
+
+    const wrongHead = reconcileOrphanedBootstrapRecords({ readPulls: () => pulls, readRemoteHead: branch =>
+      branch === `codex/${names[1]}` ? 'f'.repeat(40) : heads[branch.slice('codex/'.length)], containsMain });
+    assert.ok(wrongHead.protected.some(record => record.name === names[1]));
+    assert.ok(!wrongHead.eligible.some(record => record.name === names[1]));
+
+    const alteredMetadata = { ...legacy[1], bootstrapException: { ...legacy[1].bootstrapException } };
+    delete alteredMetadata.bootstrapException.temporaryAdmission;
+    save(sourceTaskFile(names[1]), { ...alteredMetadata, branch: `codex/${names[1]}`,
+      directory: path.join(managedRoot(), names[1]), baseline: baselines[names[1]], state: 'active' });
+    const invalidMetadata = reconcileOrphanedBootstrapRecords({ readPulls: () => pulls,
+      readRemoteHead: branch => heads[branch.slice('codex/'.length)], containsMain });
+    assert.ok(invalidMetadata.protected.some(record => record.name === names[1]));
+    assert.ok(!invalidMetadata.eligible.some(record => record.name === names[1]));
+    save(sourceTaskFile(names[1]), { ...legacy[1], branch: `codex/${names[1]}`,
+      directory: path.join(managedRoot(), names[1]), baseline: baselines[names[1]], state: 'active' });
+
+    const openPulls = pulls.map(pr => pr.head.ref === `codex/${names[2]}` ? { ...pr, state: 'open', merged_at: null } : pr);
+    const open = reconcileOrphanedBootstrapRecords({ readPulls: () => openPulls,
+      readRemoteHead: branch => heads[branch.slice('codex/'.length)], containsMain });
+    assert.ok(open.protected.some(record => record.name === names[2]));
+    assert.ok(!open.eligible.some(record => record.name === names[2]));
+    for (const { name } of legacy) assert.equal(existsSync(sourceTaskFile(name)), true, `${name} remains untouched`);
+
+    assert.throws(() => reconcileOrphanedBootstrapRecords({ execute: true, readPulls: () => pulls,
+      readRemoteHead: branch => {
+        if (branch === `codex/${names[0]}`) {
+          const file = sourceTaskFile(names[0]), record = JSON.parse(readFileSync(file, 'utf8'));
+          record.bootstrapException.capacityExempt = false;
+          save(file, record);
+        }
+        return heads[branch.slice('codex/'.length)];
+      }, containsMain }), /changed after GitHub and physical-state verification/);
+    assert.equal(existsSync(sourceTaskFile(names[0])), true, 'changed authorization metadata remains registered');
+    assert.equal(existsSync(path.join(stateDir(), 'source-archive', `${names[0]}.json`)), false);
+    save(sourceTaskFile(names[0]), { ...legacy[0], branch: `codex/${names[0]}`,
+      directory: path.join(managedRoot(), names[0]), baseline: baselines[names[0]], state: 'active' });
+
+    const racingOperation = path.join(stateDir(), 'source-operations', 'orphan-race.json');
+    assert.throws(() => reconcileOrphanedBootstrapRecords({ execute: true, readPulls: () => pulls,
+      readRemoteHead: branch => {
+        if (branch === `codex/${names[0]}`) save(racingOperation, { name: names[0], source: { directory: path.join(managedRoot(), names[0]) } });
+        return heads[branch.slice('codex/'.length)];
+      }, containsMain }), /changed after GitHub and physical-state verification/);
+    assert.equal(existsSync(sourceTaskFile(names[0])), true, 'new operation prevents archival');
+    assert.equal(existsSync(path.join(stateDir(), 'source-archive', `${names[0]}.json`)), false);
+    unlinkSync(racingOperation);
+
+    const executed = reconcileOrphanedBootstrapRecords({ execute: true, readPulls: () => pulls,
+      readRemoteHead: branch => heads[branch.slice('codex/'.length)], containsMain });
+    assert.deepEqual(executed.archived.map(record => record.name).sort(), [...names].sort());
+    assert.deepEqual(executed.protected, []);
+    for (const { name } of legacy) {
+      assert.equal(existsSync(sourceTaskFile(name)), false, `${name} is archived`);
+      assert.equal(existsSync(completionFile(name)), false, 'reconciliation does not fabricate completion');
+      const archived = JSON.parse(readFileSync(path.join(stateDir(), 'source-archive', `${name}.json`), 'utf8'));
+      assert.equal(archived.archiveKind, 'verified-orphaned-bootstrap-task');
+      assert.equal(archived.orphanVerification.exactRemoteBranchHead, heads[name]);
+    }
+  }); } finally { f.dispose(); }
+});
+
 test('a task owner records disjoint cooperating writer scopes', () => {
   const f = fixture();
   try { f.within(() => {
@@ -184,6 +339,25 @@ test('a task owner records disjoint cooperating writer scopes', () => {
       ['apps/hospitality-booking']);
     assert.throws(() => assignSourceWriter(task.name, { owner: task.owner, writer: 'agent-three', scope: 'apps/menu-planning/app' }), /scopes overlap/);
     assert.throws(() => assignSourceWriter(task.name, { owner: 'other-owner', writer: 'agent-three', scope: 'tools/workflow' }), /accountable task owner/);
+  }); } finally { f.dispose(); }
+});
+
+test('operation markers do not start from a stale observed checkout head', () => {
+  const f = fixture();
+  try { f.within(() => {
+    const task = createSourceWorkspace('operation-head-race', { owner: 'operation-owner' });
+    const capacityLock = action => {
+      writeFileSync(path.join(task.directory, 'concurrent-owner-commit.txt'), 'new head');
+      f.run(task.directory, 'add', 'concurrent-owner-commit.txt');
+      f.run(task.directory, 'commit', '-m', 'Advance task head before operation lock');
+      return action();
+    };
+    assert.throws(() => runSourceOperation('validate', () => assert.fail('stale operation must not start'), task.name,
+      { capacityLock }), /Task checkout changed while starting the operation/);
+    assert.equal(existsSync(path.join(stateDir(), 'source-operations')), false,
+      'stale-head detection happens before operation marker creation');
+    assert.equal(runSourceOperation('validate', workspace => workspace.head,
+      task.name), f.run(task.directory, 'rev-parse', 'HEAD'));
   }); } finally { f.dispose(); }
 });
 
@@ -526,6 +700,95 @@ test('retirement removes a structurally valid compiler cache matching the tracke
     assert.equal(completed.retirement, 'retired', JSON.stringify(completed));
     assert.equal(existsSync(task.directory), false);
   }); } finally { f.dispose(); }
+});
+
+test('retirement revalidates only the two print-agent Python caches after checkout removal', () => {
+  for (const changed of [false, true]) {
+    const f = fixture();
+    try { f.within(() => {
+      f.git('config', 'core.autocrlf', 'false');
+      const packagePath = 'apps/cpu-production/tools/xchange-print-agent';
+      const packageDir = path.join(f.repo, packagePath);
+      mkdirSync(packageDir, { recursive: true });
+      writeFileSync(path.join(packageDir, '.gitignore'), '__pycache__/\n');
+      writeFileSync(path.join(packageDir, 'agent.py'), 'def render(value):\n    return value.strip()\n');
+      writeFileSync(path.join(packageDir, 'test_agent.py'), 'def test_render():\n    assert True\n');
+      f.git('add', '.');
+      f.git('commit', '-m', 'Track print agent sources for cache retirement fixture');
+      f.git('push', 'origin', 'main');
+
+      const task = createSourceWorkspace(changed ? 'retirement-python-cache-changed' : 'retirement-python-cache', { owner: 'python-cache-fixture' });
+      const sourceFiles = ['agent.py', 'test_agent.py'].map(file => path.join(task.directory, packagePath, file));
+      const cacheDirectory = path.join(task.directory, packagePath, '__pycache__');
+      mkdirSync(cacheDirectory, { recursive: true });
+      execFileSync('python', ['-B', '-c', `import importlib._bootstrap_external as e, pathlib, sys
+for source_name in sys.argv[1:]:
+ p=pathlib.Path(source_name); s=p.read_bytes(); stamp=int(p.stat().st_mtime)
+ c=compile(s, str(p), 'exec', dont_inherit=True, optimize=0)
+ (p.parent/'__pycache__'/f'{p.stem}.cpython-314.pyc').write_bytes(e._code_to_timestamp_pyc(c, stamp, len(s)))`, ...sourceFiles],
+      { cwd: task.directory, windowsHide: true, stdio: 'pipe' });
+      const cacheFiles = ['agent.cpython-314.pyc', 'test_agent.cpython-314.pyc'];
+      const savedCaches = new Map(cacheFiles.map(file => [file, readFileSync(path.join(cacheDirectory, file))]));
+      const taskChange = path.join(task.directory, 'retirement-fixture.txt');
+      writeFileSync(taskChange, 'source head for exact PR evidence');
+      f.run(task.directory, 'add', 'retirement-fixture.txt');
+      f.run(task.directory, 'commit', '-m', 'Add exact PR source for Python cache retirement fixture');
+      f.run(task.directory, 'push', 'origin', task.branch);
+      const head = f.run(task.directory, 'rev-parse', 'HEAD');
+      const firstCompletion = completeSourceWorkspace(task.name, { owner: task.owner });
+      assert.equal(firstCompletion.retirement, 'retained');
+
+      f.git('merge', '--no-ff', '--no-edit', head);
+      f.git('push', 'origin', 'main');
+      const merge = f.git('rev-parse', 'HEAD');
+      const repo = { full_name: 'derekfika/fika-os' };
+      const pr = { number: 93, state: 'closed', merged_at: 'observed', merge_commit_sha: merge,
+        head: { sha: head, ref: task.branch, repo }, base: { ref: 'main', repo } };
+      const remaining = new Map(savedCaches);
+      if (changed) {
+        const modified = Buffer.from(remaining.get(cacheFiles[0]));
+        modified[modified.length - 1] ^= 1;
+        remaining.set(cacheFiles[0], modified);
+      }
+      let removalCount = 0;
+      const cleanup = cleanupSourceWorkspaces({ execute: true, name: task.name, readPulls: () => [pr],
+        removeWorktree: directory => {
+          removalCount++;
+          f.git('worktree', 'remove', '--force', directory);
+          mkdirSync(cacheDirectory, { recursive: true });
+          for (const [file, bytes] of remaining) writeFileSync(path.join(cacheDirectory, file), bytes);
+          assert.equal(existsSync(sourceFiles[0]), false, 'the registered checkout source has disappeared');
+          assert.equal(existsSync(path.join(f.repo, packagePath, 'agent.py')), true, 'canonical source remains for verification');
+          assert.deepEqual(readdirSync(cacheDirectory).sort(), [...cacheFiles].sort(), 'only the exact two cache files remain');
+          if (!changed) {
+            const persistedTask = JSON.parse(readFileSync(sourceTaskFile(task.name), 'utf8'));
+            const persistedCompletion = JSON.parse(readFileSync(completionFile(task.name), 'utf8'));
+            assert.equal(persistedTask.directory, task.directory);
+            assert.equal(persistedCompletion.finalSha, head);
+            assert.deepEqual(persistedCompletion.retirementGenerated,
+              cacheFiles.map(file => `${packagePath}/__pycache__/${file}`).sort());
+            assert.equal(verifiedPythonCache(persistedTask, `${packagePath}/__pycache__`, persistedCompletion.finalSha), true,
+              'canonical fallback verifies with the exact persisted task and completion after source removal');
+          }
+        } });
+
+      if (changed) {
+        assert.equal(cleanup.retired.length, 0);
+        assert.match(cleanup.protected[0].reason, /Unverified Python cache residue/);
+        assert.equal(removalCount, 1);
+        for (const [file, bytes] of remaining) assert.deepEqual(readFileSync(path.join(cacheDirectory, file)), bytes,
+          'a changed cache remains untouched');
+        assert.equal(existsSync(task.directory), true);
+        assert.equal(existsSync(path.join(f.repo, packagePath, 'agent.py')), true);
+      } else {
+        assert.equal(cleanup.retired.length, 1, JSON.stringify(cleanup));
+        assert.equal(removalCount, 1);
+        assert.equal(existsSync(task.directory), false, 'verified residue and empty directories are removed');
+        assert.equal(existsSync(path.join(f.repo, packagePath, 'agent.py')), true, 'canonical tracked sources remain');
+        assert.equal(workspaceInventory().occupied, 0);
+      }
+    }); } finally { f.dispose(); }
+  }
 });
 
 test('retirement resumes after native Git leaves a dangling own-target dependency junction', () => {

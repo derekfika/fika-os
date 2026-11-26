@@ -8,8 +8,8 @@ import { workspaceRecords, cleanupPlan, applyCleanup } from './workspaces.mjs';
 import { cancelSourceQueue, checkSourceWorkspace, completeSourceWorkspace, createSourceWorkspace, devSourceWorkspace,
   assignSourceWriter, createInfrastructureRecoveryWorkspace, integrateSourceWorkspace, promoteSourceQueue, recoverSourceOperation, recoverSourceReservation, runSourceOperation,
   sourceWriters } from './source-workspaces.mjs';
-import { requireCanonical, stateRecords, withCapacityLock, workspaceInventory } from './workspace-capacity.mjs';
-import { cleanupSourceWorkspaces, pruneStaleSourceRegistrations } from './workspace-retirement.mjs';
+import { requireCanonical, stateRecords, workspaceInventory } from './workspace-capacity.mjs';
+import { cleanupSourceWorkspaces, pruneStaleSourceRegistrations, reconcileOrphanedBootstrapRecords } from './workspace-retirement.mjs';
 import { sourceWorkspaceHealth } from './workspace-health.mjs';
 import { installSourceDependencies, validationOutputCandidates, recordGenerated } from './workspace-cache.mjs';
 import { migrateSourceHistory } from './source-migration.mjs';
@@ -112,8 +112,10 @@ async function main() {
     }
     else if (arg === 'cleanup' || arg === 'prune') {
       requireCanonical();
-      result = arg === 'prune' ? withCapacityLock(() => pruneStaleSourceRegistrations(options)) : cleanupSourceWorkspaces({ ...options, name, inspect: true });
+      result = arg === 'prune' ? pruneStaleSourceRegistrations(options) : cleanupSourceWorkspaces({ ...options, name, inspect: true });
       if (options.execute) result.promotion = promoteSourceQueue();
+    } else if (arg === 'reconcile-orphaned') {
+      result = reconcileOrphanedBootstrapRecords(options);
     } else if (arg === 'startup') {
       requireCanonical();
       let cleanup;
@@ -133,7 +135,7 @@ async function main() {
     else if (arg === 'recover-validation') result = recoverValidationOperation(name,options);
     else if (arg === 'recover-dev') result = await recoverDevOperation(name,options);
     else if (arg === 'recover-deploy') result = recoverDeployOperation(name, options);
-    else throw Error('workspace create|create-recovery|assign-writer|writers|check|complete|cancel|recover|install <name>; startup|cleanup|prune|health|storage-audit|status|list|history|migrate|install-fences; recover-operation|recover-validation|recover-dev|recover-deploy <operation-id>. Legacy lease mutations are retired.');
+    else throw Error('workspace create|create-recovery|reconcile-orphaned|assign-writer|writers|check|complete|cancel|recover|install <name>; startup|cleanup|prune|health|storage-audit|status|list|history|migrate|install-fences; recover-operation|recover-validation|recover-dev|recover-deploy <operation-id>. Legacy lease mutations are retired.');
   } else if (verb === 'integrate') {
     if (!options.workspace) throw Error('Integration requires --workspace');
     result = runSourceOperation('integrate', () => integrateSourceWorkspace(options.workspace, options.pr), options.workspace);

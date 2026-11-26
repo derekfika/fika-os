@@ -1,11 +1,12 @@
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmdirSync, unlinkSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmdirSync, unlinkSync } from 'node:fs';
+import { isDeepStrictEqual } from 'node:util';
 import { ancestor, command, common, git, ref, save, stateDir } from './runtime.mjs';
 import { REPO, exactSha } from './policy.mjs';
 import { canonical, completionFile, localEntry, managedRoot, optionalJson, pathKey, registrations, samePath, sourceTaskFile, split,
-  stateRecords, workspaceName } from './workspace-capacity.mjs';
-import { generatedEntries, generatedRetirementPlan, verifiedTypeScriptBuildInfo } from './workspace-cache.mjs';
+  requireCanonical, stateRecords, withCapacityLock, workspaceName } from './workspace-capacity.mjs';
+import { generatedEntries, generatedRetirementPlan, pythonCacheRetirementFiles, verifiedPythonCache, verifiedTypeScriptBuildInfo } from './workspace-cache.mjs';
 import { dependencyLinkPlan, readArchivedRetirement, removeRetirementResidue, retirementResidue } from './workspace-residue.mjs';
 
 export const githubOrigin = () => new RegExp(`github\\.com[:/]${REPO}(?:\\.git)?$`, 'i').test(git('remote', 'get-url', 'origin'));
@@ -27,6 +28,108 @@ export function integrationEvidence(pulls, branch, head, { github = githubOrigin
   // Local test repositories have no PR service. A real GitHub checkout always needs exact PR evidence.
   if (!github && contains(head)) return { mergeSha: head };
   return null;
+}
+
+const LEGACY_BOOTSTRAP_ORPHANS = new Map([
+  ['workspace-build-artifact-retirement', { owner: 'codex-workspace-build-artifact-retirement', baseline: 'e349482b12ea68445665b84f47fa43f9380a1590', head: 'bdc955f624109faaea9cca8749aeec81bec2aca1', pr: 709,
+    authorized: e => isDeepStrictEqual(e, { authorization: 'explicit-owner-directive', issue: 687, scope: 'workspace-retirement-repair',
+      capacityExempt: true, authorizedAt: '2026-11-25', permanentSlots: 10 }) }],
+  ['workspace-capacity-10', { owner: 'codex-workspace-capacity-sol', baseline: 'a54308b9bda948a23efbe61d3abbc3055f10975e', head: '5250e37a081bacc1910810092dd79f6641f97178', pr: 700,
+    authorized: e => isDeepStrictEqual(e, { authorization: 'explicit owner directive in current thread', authorizedAt: '2026-11-25',
+      purpose: 'Implement #687 capacity expansion only', oldLimit: 5, temporaryAdmission: 6, permanentLimit: 10,
+      preserveExisting: true, retireAfter: 'capacity PR merged and local ten-slot enforcement verified' }) }],
+  ['workspace-retirement-repair-bootstrap', { owner: 'codex-workspace-retirement-repair-bootstrap', baseline: 'a3d7173674a818c90a36807ef7344f73999bc673', head: 'c8f1de7246eff0f6bfed514a8f9320c1349cb57b', pr: 705,
+    authorized: e => isDeepStrictEqual(e, { schema: 'fika.workspace-bootstrap-exception.v1', authorizedBy: 'owner directive',
+      authorizedAt: '2026-11-25', issue: 687, oneTime: true, outsideGovernedLimit: 10,
+      reason: 'Permanent retirement repair is queued behind verified retirement residue.',
+      protections: ['unique source', 'uncommitted changes', 'user attachments', 'active leases', 'unmerged work', 'protected PR and CI gates'] }) }],
+]);
+
+/** Archive only stale bootstrap task records whose checkout, process, lease and merged
+ * source lineage are independently verified. Git and GitHub inspection stay outside
+ * the shared capacity lock; the lock-time compare-and-save is filesystem-only. */
+export function reconcileOrphanedBootstrapRecords({ execute = false, readPulls = pullInventory,
+  readRemoteHead = branch => {
+    const lines = git('ls-remote', 'origin', `refs/heads/${branch}`).split(/\r?\n/).filter(Boolean);
+    if (lines.length !== 1 || !/^[a-f0-9]{40}\s+refs\/heads\//.test(lines[0])) return null;
+    return lines[0].split(/\s+/)[0];
+  },
+  containsMain = sha => ancestor(sha, 'origin/main'), processAlive = pid => {
+    try { process.kill(pid, 0); return true; } catch (error) { if (error.code === 'ESRCH') return false; throw error; }
+  } } = {}) {
+  requireCanonical();
+  const tasks = stateRecords('source-tasks').filter(task => task.bootstrapException && task.state === 'active');
+  if (!tasks.length) return { eligible: [], protected: [], archived: [] };
+  const trees = registrations();
+  const leases = stateRecords('workspaces');
+  const operations = [...stateRecords('workspace-operations'), ...stateRecords('source-operations')];
+  const archiveNames = new Set(stateRecords('source-archive').map(record => record.name));
+  const completions = new Map(stateRecords('source-completions').map(record => [record.name, record]));
+  const main = new Set(git('rev-list', 'origin/main').split(/\r?\n/));
+  const eligible = [], protectedRecords = [], archived = [];
+  for (const task of tasks) {
+    const protect = reason => protectedRecords.push({ name: task.name, reason });
+    const completion = completions.get(task.name);
+    const legacy = LEGACY_BOOTSTRAP_ORPHANS.get(task.name);
+    const directory = path.join(managedRoot(), task.name);
+    if (!workspaceName(task.name) || task.branch !== `codex/${task.name}` || !samePath(task.directory, directory) ||
+        !task.owner?.trim()) { protect('Task name, owner, branch or managed path does not match'); continue; }
+    if (localEntry(task.directory) || trees.some(tree => samePath(tree.worktree, task.directory))) {
+      protect('Physical checkout or Git worktree registration still exists'); continue;
+    }
+    if (Number.isSafeInteger(task.pid) && task.pid > 0 && processAlive(task.pid)) { protect('Recorded owner process is still running'); continue; }
+    if (leases.some(lease => lease.name === task.name && lease.owner === task.owner &&
+        samePath(lease.directory, task.directory) && !['finished', 'retired'].includes(lease.state))) {
+      protect('A nonterminal task lease still owns this checkout'); continue;
+    }
+    if (operations.some(operation => operation.name === task.name ||
+        (operation.source?.directory && samePath(operation.source.directory, task.directory)))) {
+      protect('An active or interrupted operation still references the task'); continue;
+    }
+    const isExactLegacyOrphan = legacy && task.owner === legacy.owner && task.baseline === legacy.baseline &&
+      task.branch === `codex/${task.name}` && legacy.authorized(task.bootstrapException) &&
+      containsMain(task.baseline) && !completion;
+    if (!isExactLegacyOrphan) { protect('No exact allowlisted legacy bootstrap orphan evidence'); continue; }
+    if (archiveNames.has(task.name)) { protect('An archive record already exists; inspect it before reconciliation'); continue; }
+    const expectedHead = legacy.head;
+    const remoteHead = readRemoteHead(task.branch);
+    const taskPulls = readPulls(task.branch);
+    const proof = remoteHead === expectedHead
+      ? integrationEvidence(taskPulls, task.branch, expectedHead, { github: githubOrigin(), contains: sha => main.has(sha) })
+      : null;
+    if (!proof || proof.number !== legacy.pr) {
+      protect('Exact merged PR head and main merge ancestry could not be recovered'); continue;
+    }
+    const record = { ...task, searchable: true, archiveKind: 'verified-orphaned-bootstrap-task', orphanVerification: {
+        physicalCheckoutAbsent: true, gitRegistrationAbsent: true, ownerProcessAbsent: true,
+        activeLeaseAbsent: true, operationMarkerAbsent: true, exactMergedPr: proof,
+        ...(isExactLegacyOrphan ? { exactRemoteBranchHead: expectedHead, authorizedLegacyBootstrapIssue: 687 } : { finalShaOnOriginMain: true }),
+      } };
+    eligible.push(record);
+    if (!execute) continue;
+    const archivedRecord = { ...record, archivedAt: new Date().toISOString() };
+    withCapacityLock(() => {
+      const currentTask = optionalJson(sourceTaskFile(task.name));
+      const currentCompletion = optionalJson(completionFile(task.name));
+      const archivePath = path.join(stateDir(), 'source-archive', `${task.name}.json`);
+      const currentLeases = stateRecords('workspaces');
+      const currentOperations = [...stateRecords('workspace-operations'), ...stateRecords('source-operations')];
+      const gainedLease = currentLeases.some(lease => lease.name === task.name && lease.owner === task.owner &&
+        samePath(lease.directory, task.directory) && !['finished', 'retired'].includes(lease.state));
+      const gainedOperation = currentOperations.some(operation => operation.name === task.name ||
+        (operation.source?.directory && samePath(operation.source.directory, task.directory)));
+      if (!currentTask || !isDeepStrictEqual(currentTask, task) || !samePath(currentTask.directory, task.directory) ||
+          currentCompletion || gainedLease || gainedOperation ||
+          existsSync(archivePath) || localEntry(task.directory)) {
+        throw Error(`Orphan record ${task.name} changed after GitHub and physical-state verification`);
+      }
+      save(archivePath, archivedRecord);
+      unlinkSync(sourceTaskFile(task.name));
+      if (completion) unlinkSync(completionFile(task.name));
+    });
+    archived.push(archivedRecord);
+  }
+  return { eligible, protected: protectedRecords, archived };
 }
 
 export function sourceStatus(run) {
@@ -104,7 +207,26 @@ function unregisteredRetirement(task, completion, proof) {
   if (completion.retirementGenerated !== undefined && !Array.isArray(completion.retirementGenerated)) {
     throw Error('Saved generated-cache retirement plan is malformed');
   }
+  const pythonFiles = completion.retirementGenerated?.filter(relative =>
+    relative.startsWith('apps/cpu-production/tools/xchange-print-agent/__pycache__/')) || [];
+  if (pythonFiles.length) {
+    const directory = 'apps/cpu-production/tools/xchange-print-agent/__pycache__';
+    const expected = pythonCacheRetirementFiles(directory).sort();
+    if (pythonFiles.length !== expected.length || [...pythonFiles].sort().some((file, index) => file !== expected[index]) ||
+        !verifiedPythonCache(task, directory, completion.finalSha)) throw Error('Unverified Python cache residue');
+    if (!verifiedPythonCache(task, directory, completion.finalSha)) throw Error('Python cache residue changed during retirement');
+    const verifiedBytes = expected.map(relative => {
+      const file = path.join(task.directory, relative);
+      const entry = localEntry(file);
+      if (!entry?.isFile() || entry.isSymbolicLink() || !samePath(realpathSync(file), file)) throw Error(`Python cache residue changed: ${relative}`);
+      return { file, bytes: readFileSync(file) };
+    });
+    for (const { file, bytes } of verifiedBytes) if (!readFileSync(file).equals(bytes)) throw Error('Python cache residue changed during retirement');
+    for (const { file } of verifiedBytes) unlinkSync(file);
+    for (const relative of expected) removeEmptyGeneratedParents(task.directory, relative);
+  }
   for (const relative of completion.retirementGenerated || []) {
+    if (pythonFiles.includes(relative)) continue;
     if (!/^(?:apps\/[^/]+)\/tsconfig\.tsbuildinfo$/.test(relative)) throw Error(`Unverified generated cache residue: ${relative}`);
     const file = path.join(task.directory, relative);
     if (!localEntry(file)) continue;
