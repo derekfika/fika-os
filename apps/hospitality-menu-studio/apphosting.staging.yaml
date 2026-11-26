@@ -1,4 +1,7 @@
 env:
+  - variable: FIKA_DATA_SOURCE_TRACE
+    value: "1"
+    availability: [RUNTIME]
   - variable: FIKA_RUNTIME_MODE
     value: staging
     availability: [RUNTIME]

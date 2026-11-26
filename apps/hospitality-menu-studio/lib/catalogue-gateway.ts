@@ -1,8 +1,9 @@
 import { z } from "zod";
 import { resolveHospitalityOffering, deliveryWeekday, type CataloguePackage } from "@fika/server-shared/hospitality-effective-offering";
 import { categoryAllowedForService, effectiveServiceLayout, SERVICE_IDS } from "@fika/server-shared/hospitality-service-layout";
-import { authoriseStudio, assertStudioRequestHost, requireSameOrigin, studioSessionCookie } from "./auth";
-import { readStudioCatalogue } from "./catalogue";
+import { authoriseStudioRequest, assertStudioRequestHost, requireSameOrigin, studioSessionCookie } from "./auth";
+import { compressedCatalogueLimit, publicCataloguePath, readStudioCatalogue, verifiedPublicCatalogueBytes } from "./catalogue";
+import { studioUpstream, studioUpstreamHeaders } from "./data-trace";
 import { StudioProblem } from "./problem";
 import { dateSchema } from "./schema";
 import type { studioRuntime } from "./runtime";
@@ -153,13 +154,13 @@ export function catalogueGateway(
   runtime: StudioRuntime,
   requestHub: typeof fetch = fetch,
 ) {
-  async function decide(request: Request, cookie: string | undefined, action: "read" | "write" | "availability") {
+  async function decide(request: Request, cookie: string | undefined, action: "read" | "write" | "availability" | "version") {
     try {
       const write = action === "write";
       assertStudioRequestHost(runtime, request.headers.get("host"));
       if (write) requireSameOrigin(request, runtime);
       if (runtime.fixture) throw unavailable();
-      const actor = await authoriseStudio(cookie, runtime, requestHub);
+      const actor = await authoriseStudioRequest(request, cookie, runtime, requestHub);
       if (write && !actor.canManage) throw forbidden();
       const session = studioSessionCookie(runtime, cookie!);
 
@@ -176,24 +177,36 @@ export function catalogueGateway(
       const body = write ? await commandBody(request) : undefined;
       let response: Response;
       try {
-        response = await requestHub(runtime.hub + path, {
+        const version = action === "version";
+        response = await studioUpstream(write ? "hub.catalogue.admin-command" : version ? "hub.catalogue.admin-version" : "hub.catalogue.admin-read", () => requestHub(runtime.hub + path + (version ? "/version" : ""), {
           method: write ? "POST" : "GET",
           headers: {
             cookie: session,
             accept: "application/json",
+            ...studioUpstreamHeaders(),
+            ...(!write && !version ? { "X-Fika-Catalogue-Versioned": "1" } : {}),
             ...(write ? { "content-type": "application/json", origin: runtime.hub } : {}),
           },
           body,
           cache: "no-store",
           redirect: "error",
           signal: AbortSignal.timeout(write ? 55_000 : 12_000),
-        });
+        }));
       } catch {
         throw write ? outcomeUnknown() : unavailable();
       }
+      if (action === "version" && response.status === 404) return new Response(null, { status: 404, headers });
       if (!response.ok) throw await hubProblem(response, write);
       const value: unknown = await response.json().catch(() => undefined);
-      return Response.json(write ? mutationResult(value) : adminPayload(value, actor.canManage), { headers });
+      if (action === "version") {
+        const head = asObject(value);
+        if (head?.schemaVersion !== 1 || typeof head.version !== "string" || !head.version.length || head.version.length > 200 || typeof head.canManage !== "boolean") throw unavailable();
+        return Response.json({ ...head, canManage: actor.canManage && head.canManage }, { headers });
+      }
+      const version = response.headers.get("X-Fika-Catalogue-Version");
+      return Response.json(write ? mutationResult(value) : adminPayload(value, actor.canManage), {
+        headers: { ...headers, ...(version && { "X-Fika-Catalogue-Version": version }) },
+      });
     } catch (error) {
       const failure = error instanceof StudioProblem ? error : unavailable();
       return Response.json({ error: { code: failure.code, message: failure.message } }, { status: failure.status, headers });
@@ -204,5 +217,46 @@ export function catalogueGateway(
     GET: (request: Request, cookie?: string) => decide(request, cookie, "read"),
     POST: (request: Request, cookie?: string) => decide(request, cookie, "write"),
     availability: (request: Request, cookie?: string) => decide(request, cookie, "availability"),
+    version: (request: Request, cookie?: string) => decide(request, cookie, "version"),
   };
+}
+
+/** Forward only Hub's authenticated public-safe projection, preserving raw gzip bytes. */
+export async function publicCatalogueResponse(
+  request: Request, cookie: string | undefined, runtime: StudioRuntime, hash?: string, requestHub: typeof fetch = fetch,
+) {
+  try {
+    assertStudioRequestHost(runtime, request.headers.get("host"));
+    if (runtime.fixture) throw unavailable();
+    await authoriseStudioRequest(request, cookie, runtime, requestHub);
+    if (new URL(request.url).search || (hash !== undefined && !/^[0-9a-f]{64}$/.test(hash))) {
+      throw problem(422, "CATALOGUE_QUERY_INVALID", "Choose a valid catalogue package.");
+    }
+    const read = (suffix = "") => studioUpstream(suffix ? "hub.catalogue.public-package" : "hub.catalogue.public-manifest", () =>
+      requestHub(runtime.hub + publicCataloguePath + suffix, {
+        headers: { cookie: studioSessionCookie(runtime, cookie!), ...studioUpstreamHeaders() },
+        cache: "no-store", redirect: "error", signal: AbortSignal.timeout(12_000),
+      }));
+    const verified = hash && verifiedPublicCatalogueBytes(runtime.hub, hash);
+    if (verified) {
+      // A server or another browser may have warmed these bytes. Hub still
+      // verifies this caller's independent catalogue permission on every use.
+      const response = await read();
+      if (!response.ok) throw await hubProblem(response, false);
+      const manifest = asObject(await response.json());
+      if (manifest?.dataset === "hospitality-booking/catalogue" && manifest.contentHash === hash) {
+        return new Response(verified, { headers: { ...headers, "Content-Type": "application/octet-stream" } });
+      }
+    }
+    const response = await read(hash ? "/" + hash : "");
+    if (!response.ok) throw await hubProblem(response, false);
+    if (!hash) return Response.json(await response.json(), { headers });
+    if (Number(response.headers.get("content-length")) > compressedCatalogueLimit) throw unavailable();
+    const bytes = await response.arrayBuffer();
+    if (bytes.byteLength > compressedCatalogueLimit) throw unavailable();
+    return new Response(bytes, { headers: { ...headers, "Content-Type": "application/octet-stream" } });
+  } catch (error) {
+    const failure = error instanceof StudioProblem ? error : unavailable();
+    return Response.json({ error: { code: failure.code, message: failure.message } }, { status: failure.status, headers });
+  }
 }

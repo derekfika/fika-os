@@ -26,6 +26,7 @@ import { existingCandidatesForNewItem, normaliseName, sourceIdentities } from ".
 import { currentPrice, reviewGroupId, routingStateOf, ukBusinessDate } from "./hospitality-catalogue-read-model";
 import { isActiveOplocRecord } from "./hospitality-catalogue-oploc";
 import { COMPANY_LAYOUT_ID, completeRules, layoutCollection, layoutDocId, layoutRevisions, type StoredServiceLayout } from "./hospitality-service-layout";
+import { markCatalogueAdminChange } from "./hospitality-catalogue-version";
 import { effectiveServiceLayout, isServiceId, normaliseCategories, sameServiceRule, type ServiceRule } from "@fika/server-shared/hospitality-service-layout";
 import { isRedundantException, type PackageException, type PricePeriod } from "./hospitality-effective-offering";
 import { ROUTING_CHOICES, ROUTING_CHOICE_LABELS, ROUTING_CHOICE_WORKSTREAMS, storedServiceLayoutView, type RoutingChoice } from "./hospitality-catalogue-types";
@@ -86,10 +87,16 @@ export type CatalogueCommand =
 
 export type CatalogueCommandResult = { itemIds: string[]; reload: boolean; message: string };
 
-type Ctx = { tx: Transaction; actor: Actor; now: string };
+type Ctx = { tx: Transaction; actor: Actor; now: string; markedCatalogueChange?: true };
 const readDoc = (ctx: Ctx, ref: DocumentReference) => ctx.tx.get(ref);
 const readQuery = (ctx: Ctx, query: Query) => ctx.tx.get(query);
 const asRecord = (snapshot: DocumentSnapshot) => (snapshot.exists ? (snapshot.data() as CanonicalRecord) : undefined);
+
+function markChange(ctx: Ctx) {
+  if (ctx.markedCatalogueChange) return;
+  markCatalogueAdminChange(ctx.tx, db);
+  ctx.markedCatalogueChange = true;
+}
 
 function base(actor: Actor, now: string) {
   return { schemaVersion: "0.1.0" as const, version: 1, createdAt: now, createdBy: actor.uid, updatedAt: now, updatedBy: actor.uid, active: true, externalIdentities: [], provenanceIds: [], ownership: { providerOwned: {}, fikaOwned: {} } };
@@ -103,12 +110,14 @@ function stage(ctx: Ctx, entityType: Entity, record: Record<string, unknown>, pr
   const canonicalId = text(record.canonicalId);
   const next: CanonicalRecord = { canonicalId, entityType, record, dataHash: sha256(JSON.stringify(record)), lifecycleStatus: prior?.lifecycleStatus || "published", publicationStatus: prior?.publicationStatus || "published", publishedAt: prior?.publishedAt || ctx.now };
   ctx.tx.set(canonical().doc(stableDocumentId(canonicalId)), next);
+  markChange(ctx);
   ctx.tx.set(revisions().doc(stableDocumentId(`${canonicalId}:${record.version}`)), { canonicalId, entityType, version: record.version, previous: prior || null, current: next, actorId: ctx.actor.uid, recordedAt: ctx.now, reason });
   return next;
 }
 const bump = (ctx: Ctx, record: Record<string, unknown>) => ({ ...record, version: Number(record.version || 0) + 1, updatedAt: ctx.now, updatedBy: ctx.actor.uid });
 
 function auditEvent(ctx: Ctx, action: string, entityReference: string, reason: string, details: Record<string, unknown>) {
+  markChange(ctx);
   ctx.tx.set(audit().doc(crypto.randomUUID()), { action, entityReference, actorId: ctx.actor.uid, actorName: ctx.actor.name, timestamp: ctx.now, reason, details: JSON.parse(JSON.stringify(details)) });
 }
 
@@ -841,6 +850,7 @@ async function bulkOne(ctx: Ctx, itemId: string, spec: BulkSpec, activeIds: stri
     if (changed) stage(ctx, "Hospitality Menu Item", bump(ctx, record), item, "Hospitality Catalogue bulk update (item version touched).");
   }
   if (!changed) return { itemId, status: "unchanged", message: "Already matches; nothing to change." };
+  markChange(ctx);
   ctx.tx.create(receiptRef, { action: "Hospitality Catalogue bulk update", entityReference: itemId, actorId: ctx.actor.uid, actorName: ctx.actor.name, timestamp: ctx.now, reason: `Bulk operation ${spec.operationId}: “${name}”.`, details: JSON.parse(JSON.stringify({ bulkOperationId: spec.operationId, itemId, before, after, ...(categoryVisibilityReview ? { categoryVisibilityReview } : {}), oplocIds: [...new Set(touchedSites.map(entry => entry.slice(1)))] })) });
   return { itemId, status: "applied", message: "Applied." };
 }

@@ -4,6 +4,7 @@ import { parseCanonical } from "./schemas";
 import { sha256 } from "./profiler";
 import type { CanonicalRecord } from "./types";
 import { canonicalisationHash, groupSnapshot, verifyMergeInvariants, type CatalogueSnapshot, type MergeGroup, type RoutingDoc } from "./hospitality-catalogue-canonicalisation";
+import { markCatalogueAdminChange } from "./hospitality-catalogue-version";
 
 /** Firestore retries recheck every reviewed guard before any write. */
 export async function applyCanonicalisationGroup(db: Firestore, group: MergeGroup) {
@@ -102,6 +103,7 @@ export async function applyCanonicalisationGroup(db: Firestore, group: MergeGrou
     const problems = verifyMergeInvariants(current, after);
     if (problems.length) throw new Error(`Group ${group.id} violates invariants: ${problems.join("; ")}`);
     for (const { ref, data } of staged.values()) transaction.set(ref, data);
+    if (staged.size) markCatalogueAdminChange(transaction, db);
     transaction.create(receiptRef, { action: "Hospitality Menu Items canonicalised", entityReference: group.id, actorId: actor, timestamp: now, reason: "Approved catalogue canonicalisation: site copies merged into one canonical Menu Item.", operations: group.operations.length, reviewedStateHash: canonicalisationHash(group.expectedState), postStateHash: canonicalisationHash(groupSnapshot(after, group.memberIds)) });
     return "applied" as const;
   });

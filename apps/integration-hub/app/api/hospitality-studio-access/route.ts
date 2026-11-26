@@ -7,6 +7,7 @@ import { assertRecentVerifiedFirebaseIdentity, cookieOptions, createFikaSessionC
 import { auth, db } from "@/lib/firebase-admin";
 import { sessionCookieConfig } from "@/lib/runtime-config";
 import { csrfCookieName, validCsrf } from "@/lib/csrf";
+import { hospitalityTraceRequestId } from "@/lib/hospitality-catalogue-trace";
 
 export const dynamic = "force-dynamic";
 const headers = { "Cache-Control": "private, no-store" };
@@ -14,7 +15,7 @@ const exchange = z.strictObject({ idToken: z.string().min(1), csrfToken: z.strin
 
 function studioSession(request: NextRequest, action: string, run: () => Promise<Response>) {
   return withDataTrace({
-    app: "integration-hub", action, path: "/api/hospitality-studio-access",
+    app: "integration-hub", action, path: "/api/hospitality-studio-access", requestId: hospitalityTraceRequestId(request),
   }, async () => {
     try {
       const runtime = sessionCookieConfig();

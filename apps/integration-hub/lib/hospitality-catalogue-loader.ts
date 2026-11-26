@@ -21,7 +21,10 @@ import { isActiveOplocRecord } from "./hospitality-catalogue-oploc";
 import { REVIEW_DECISIONS_COLLECTION } from "./hospitality-catalogue-admin";
 import type { CataloguePayload, CatalogueRow } from "./hospitality-catalogue-types";
 
-const canonical = () => db.collection("integrationHubCanonical");
+const canonicalDataset = "integrationHubCanonical";
+const routingDataset = "integrationHubHospitalityMenuProductionRouting";
+const mergeDataset = "integrationHubHospitalityMenuItemMerges";
+const canonical = () => db.collection(canonicalDataset);
 const text = (value: unknown) => (typeof value === "string" ? value : "");
 
 function oplocViews(records: CanonicalRecord[]): CataloguePayload["oplocs"] {
@@ -33,11 +36,13 @@ function oplocViews(records: CanonicalRecord[]): CataloguePayload["oplocs"] {
 export async function loadCataloguePayload(actor: Actor): Promise<CataloguePayload> {
   const [records, routing, merges, decisions] = await Promise.all([
     listCanonicalRecordsByTypes(["Hospitality Menu Item", "Hospitality Menu Offering", "Hospitality Menu Price", "OPLOC"], 1000) as Promise<CanonicalRecord[]>,
-    db.collection("integrationHubHospitalityMenuProductionRouting").limit(2001).get(),
-    db.collection("integrationHubHospitalityMenuItemMerges").limit(2001).get(),
+    db.collection(routingDataset).limit(2001).get(),
+    db.collection(mergeDataset).limit(2001).get(),
     db.collection(REVIEW_DECISIONS_COLLECTION).limit(2001).get(),
   ]);
-  recordDataAccess({ app: "integration-hub", operation: "hospitality-catalogue.load", source: "FIRESTORE", dataset: "integrationHubHospitalityMenuProductionRouting", documents: routing.size + merges.size + decisions.size, firestoreReadKind: "query" });
+  traceQuery("admin.routing", routingDataset, routing.size);
+  traceQuery("admin.merges", mergeDataset, merges.size);
+  traceQuery("admin.review-decisions", REVIEW_DECISIONS_COLLECTION, decisions.size);
   const of = (type: string) => records.filter(record => record.entityType === type);
   return buildCataloguePayload({
     items: of("Hospitality Menu Item"), offerings: of("Hospitality Menu Offering"), prices: of("Hospitality Menu Price"),
@@ -49,21 +54,25 @@ export async function loadCataloguePayload(actor: Actor): Promise<CataloguePaylo
 /** Targeted post-mutation refresh: only the touched Items. Duplicate-candidate flags need the full load, so the client re-derives those. */
 export async function loadCatalogueRows(itemIds: string[]): Promise<CatalogueRow[]> {
   const ids = [...new Set(itemIds)];
-  const oplocRecords = (await canonical().where("entityType", "==", "OPLOC").get()).docs.map(doc => doc.data() as CanonicalRecord); // availability is the default at every active OPLOC (~24 documents)
+  const oplocRecords = await listCanonicalRecordsByTypes(["OPLOC"], 1000) as CanonicalRecord[];
   const loaded = await Promise.all(ids.map(async id => {
     const [item, relations, route] = await Promise.all([
       canonical().doc(stableDocumentId(id)).get(),
       canonical().where("record.hospitalityMenuItemId", "==", id).get(),
-      db.collection("integrationHubHospitalityMenuProductionRouting").doc(stableDocumentId(id)).get(),
+      db.collection(routingDataset).doc(stableDocumentId(id)).get(),
     ]);
+    recordDataAccess({ operation: "admin.refresh-item", source: "FIRESTORE", dataset: canonicalDataset + "/Hospitality Menu Item", documents: Number(item.exists), firestoreReadKind: "document" });
+    recordDataAccess({ operation: "admin.refresh-routing", source: "FIRESTORE", dataset: routingDataset, documents: Number(route.exists), firestoreReadKind: "document" });
+    traceQuery("admin.refresh-relations", canonicalDataset, relations.size);
     const related = relations.docs.map(doc => doc.data() as CanonicalRecord);
     const offerings = related.filter(record => record.entityType === "Hospitality Menu Offering");
     const prices = related.filter(record => record.entityType === "Hospitality Menu Price");
     for (let index = 0; index < offerings.length; index += 30) {
       const chunk = offerings.slice(index, index + 30).map(offering => offering.canonicalId);
-      prices.push(...(await canonical().where("record.hospitalityMenuOfferingId", "in", chunk).get()).docs.map(doc => doc.data() as CanonicalRecord));
+      const snapshot = await canonical().where("record.hospitalityMenuOfferingId", "in", chunk).get();
+      traceQuery("admin.refresh-offering-prices", canonicalDataset + "/Hospitality Menu Price", snapshot.size);
+      prices.push(...snapshot.docs.map(doc => doc.data() as CanonicalRecord));
     }
-    recordDataAccess({ app: "integration-hub", operation: "hospitality-catalogue.refresh-item", source: "FIRESTORE", dataset: "integrationHubCanonical", documents: 2 + relations.size + prices.length, firestoreReadKind: "query" });
     return { item: item.exists ? item.data() as CanonicalRecord : undefined, offerings, prices, route: route.exists ? route.data() as RoutingDoc : undefined };
   }));
   const present = loaded.filter(entry => entry.item);
@@ -71,4 +80,8 @@ export async function loadCatalogueRows(itemIds: string[]): Promise<CatalogueRow
     items: present.map(entry => entry.item!), offerings: present.flatMap(entry => entry.offerings), prices: present.flatMap(entry => entry.prices),
     routing: present.flatMap(entry => (entry.route ? [entry.route] : [])), oplocs: oplocViews(oplocRecords).map(oploc => ({ oplocId: oploc.oplocId, active: oploc.active })),
   }).rows;
+}
+
+function traceQuery(operation: string, dataset: string, documents: number) {
+  recordDataAccess({ operation: "hospitality-catalogue." + operation, source: "FIRESTORE", dataset, documents, firestoreReadKind: "query" });
 }

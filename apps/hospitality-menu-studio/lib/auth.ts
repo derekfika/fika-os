@@ -1,9 +1,12 @@
 import { z } from "zod";
+import { createHash } from "node:crypto";
 
 import type { StudioActor } from "./contract";
 import { StudioProblem } from "./problem";
 import { studioRuntime } from "./runtime";
 import { readStudioPublicationPilot } from "./hub-publication";
+import { studioUpstream, studioUpstreamHeaders } from "./data-trace";
+import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 
 const authResponse = z.object({
   permissions: z.object({ View: z.boolean(), Manage: z.boolean(), Publish: z.boolean() }),
@@ -13,6 +16,7 @@ const previewAccess = z.strictObject({
   permissions: z.strictObject({ View: z.literal(true), Manage: z.boolean().optional() }),
   principal: z.strictObject({ id: z.string().min(1), displayName: z.string().optional() }),
 });
+const admissionFlights = new WeakMap<typeof fetch, Map<string, Promise<StudioActor>>>();
 
 export async function authoriseStudio(
   cookie: string | undefined,
@@ -27,12 +31,12 @@ export async function authoriseStudio(
   const path = runtime.mode === "staging" ? "/api/hospitality-studio-access" : "/api/hospitality-rotations?mode=access";
   let response: Response;
   try {
-    response = await requestHub(runtime.hub + path, {
-      headers: { cookie: studioSessionCookie(runtime, cookie), accept: "application/json" },
+    response = await studioUpstream("hub.studio-admission", () => requestHub(runtime.hub + path, {
+      headers: { cookie: studioSessionCookie(runtime, cookie), accept: "application/json", ...studioUpstreamHeaders() },
       cache: "no-store",
       redirect: "error",
       signal: AbortSignal.timeout(5000),
-    });
+    }));
   } catch {
     throw new StudioProblem(503, "AUTHORITY_UNAVAILABLE", "The Hub could not verify Studio access.");
   }
@@ -61,6 +65,40 @@ export async function authoriseStudio(
     canManage: runtime.writes && permissions.Manage,
     canPublish: runtime.writes && permissions.Publish,
   };
+}
+
+export function studioReadScope(actor: StudioActor, cookie: string | undefined, runtime: ReturnType<typeof studioRuntime>) {
+  const pilot = actor.publicationPilot;
+  return createHash("sha256").update(JSON.stringify([
+    runtime.mode, runtime.projectId, runtime.databaseId, runtime.hub, cookie ?? null, actor.id,
+    actor.canManage, actor.canPublish, pilot ? [pilot.publish, pilot.activateSeasonal, pilot.activateCollection,
+      pilot.activateProduct, pilot.oplocId, pilot.menuId, pilot.firstDate, pilot.lastDate] : null,
+  ])).digest("hex");
+}
+
+export async function authoriseStudioRequest(
+  request: Request, cookie: string | undefined, runtime = studioRuntime(), requestHub: typeof fetch = fetch,
+) {
+  const expected = request.headers.get("x-fika-studio-scope");
+  let admission: Promise<StudioActor>;
+  if (request.method === "GET" && expected && cookie) {
+    const key = createHash("sha256").update(JSON.stringify([runtime.mode, runtime.hub, runtime.name, runtime.writes, cookie, expected])).digest("hex");
+    let flights = admissionFlights.get(requestHub);
+    if (!flights) { flights = new Map(); admissionFlights.set(requestHub, flights); }
+    const pending = flights.get(key);
+    if (pending) {
+      recordDataAccess({ operation: "hub.studio-admission", source: "MEMORY", documents: 0, cacheResult: "IN_FLIGHT_JOIN" });
+      admission = pending;
+    } else {
+      admission = authoriseStudio(cookie, runtime, requestHub).finally(() => flights.delete(key));
+      flights.set(key, admission);
+    }
+  } else admission = authoriseStudio(cookie, runtime, requestHub);
+  const actor = await admission;
+  if (expected !== null && studioReadScope(actor, cookie, runtime) !== expected) {
+    throw new StudioProblem(403, "STUDIO_SCOPE_CHANGED", "Your Studio session or access changed. Reopen Studio to continue.");
+  }
+  return actor;
 }
 
 export function studioSessionCookie(runtime: ReturnType<typeof studioRuntime>, cookie: string) {
