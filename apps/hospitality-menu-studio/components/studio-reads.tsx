@@ -49,6 +49,10 @@ export class StudioReads {
   constructor(private readonly scope: string, private readonly request: typeof fetch = fetch,
     private readonly catalogueDeps = browserCatalogueDeps) {}
 
+  draftRecoveryScope() {
+    return this.scope;
+  }
+
   fetch: typeof fetch = async (input, init) => {
     if (this.controller.signal.aborted) throw new Error("Reopen Studio to verify your session.");
     const headers = new Headers(init?.headers);

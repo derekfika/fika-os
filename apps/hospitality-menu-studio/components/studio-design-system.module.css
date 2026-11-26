@@ -109,3 +109,10 @@
   .shellHome .main { max-width: none; padding: var(--space-6) var(--space-5); }
   .shellHome .navigation { padding: var(--space-6) var(--space-4); }
 }
+
+.headerPortal, .headerActionFallback { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
+.headerPortal:empty { display: none; }
+.headerPortal .disabledReason { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media (max-width: 760px) {
+  .headerPortal { flex: 1 0 100%; order: 3; justify-content: end; }
+}

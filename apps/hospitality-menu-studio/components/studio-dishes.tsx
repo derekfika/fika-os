@@ -261,9 +261,6 @@ export function DishEditor({
   checkerOrigin?: string;
 }) {
   const formId = useId();
-  const assortmentSummary = useRef<HTMLElement>(null);
-  const expectedTotal = useRef<HTMLInputElement>(null);
-  const assortment = dish.assortment;
   return (
     <>
       <PageHeading
@@ -384,38 +381,7 @@ export function DishEditor({
           </div>
         </section>
       </div>
-      <details className={`${styles.disclosure} ${dishStyles.assortmentDisclosure}`}>
-        <summary ref={assortmentSummary}>
-          Fixed assortment <span className={`${dishStyles.usage} ${dishStyles.assortmentStatus}`}>
-            {assortment ? (assortmentIsComplete(dish) ? "· Totals match" : "· Needs attention") : "· Optional"}
-          </span>
-        </summary>
-        {assortment ? (
-          <AssortmentFields
-            dish={dish}
-            canManage={canManage}
-            update={update}
-            expectedTotalRef={expectedTotal}
-            onRemove={() => assortmentSummary.current?.focus()}
-          />
-        ) : (
-          <>
-            <p>Use an assortment when one box contains a fixed mix of items.</p>
-            <Button
-              disabled={!canManage}
-              onClick={() => {
-                update((item) => item.assortment ? item : {
-                  ...item,
-                  assortment: { expectedTotal: 0, unit: "", components: [] },
-                });
-                requestAnimationFrame(() => expectedTotal.current?.focus());
-              }}
-            >
-              <Icon name="plus" /> Add assortment
-            </Button>
-          </>
-        )}
-      </details>
+      <DishAssortment dish={dish} canManage={canManage} update={update} />
       {safetyAvailable ? (
         <DishSafety key={`${dish.id}:${dish.version}:${save.state}`} dish={dish} saved={save.state === "saved"}
           canManage={canManage} checkerOrigin={checkerOrigin} />
@@ -426,6 +392,46 @@ export function DishEditor({
         </div>
       )}
     </>
+  );
+}
+
+export function DishAssortment({ dish, canManage, update }: Pick<DishForm, "dish" | "canManage" | "update">) {
+  const assortmentSummary = useRef<HTMLElement>(null);
+  const expectedTotal = useRef<HTMLInputElement>(null);
+  const assortment = dish.assortment;
+  return (
+    <details className={`${styles.disclosure} ${dishStyles.assortmentDisclosure}`}>
+      <summary ref={assortmentSummary}>
+        Fixed assortment <span className={`${dishStyles.usage} ${dishStyles.assortmentStatus}`}>
+          {assortment ? (assortmentIsComplete(dish) ? "· Totals match" : "· Needs attention") : "· Optional"}
+        </span>
+      </summary>
+      {assortment ? (
+        <AssortmentFields
+          dish={dish}
+          canManage={canManage}
+          update={update}
+          expectedTotalRef={expectedTotal}
+          onRemove={() => assortmentSummary.current?.focus()}
+        />
+      ) : (
+        <>
+          <p>Use an assortment when one box contains a fixed mix of items.</p>
+          <Button
+            disabled={!canManage}
+            onClick={() => {
+              update((item) => item.assortment ? item : {
+                ...item,
+                assortment: { expectedTotal: 0, unit: "", components: [] },
+              });
+              requestAnimationFrame(() => expectedTotal.current?.focus());
+            }}
+          >
+            <Icon name="plus" /> Add assortment
+          </Button>
+        </>
+      )}
+    </details>
   );
 }
 

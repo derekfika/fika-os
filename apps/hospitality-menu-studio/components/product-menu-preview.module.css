@@ -11,3 +11,18 @@
 .row > span > span, .note { color: var(--fika-text-secondary); font-size: var(--text-xs); }
 .row input { width: 5rem; min-height: var(--fika-control-height); border: 1px solid var(--fika-border-default); border-radius: var(--radius-sm); padding: var(--space-2); background: var(--fika-surface-card); color: var(--fika-text-primary); font: inherit; }
 .preview :where(button,input,select):focus-visible { outline: 3px solid var(--fika-focus-ring); outline-offset: 2px; }
+
+.context { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.context :is(select,input) { width: 100%; min-height: var(--fika-control-height); padding: var(--space-2); border: 1px solid var(--fika-border-default); border-radius: var(--radius-sm); background: var(--fika-surface-card); color: var(--fika-text-primary); font: inherit; }
+.viewportModes { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.viewportModes button { min-height: 40px; padding: var(--space-2) var(--space-3); border: 1px solid var(--fika-border-default); border-radius: var(--radius-sm); background: var(--fika-surface-card); color: var(--fika-text-primary); font: inherit; cursor: pointer; }
+.viewportModes button[aria-pressed="true"] { background: var(--fika-action-primary); border-color: var(--fika-action-primary); color: var(--fika-surface-card); }
+.viewport { display: grid; gap: var(--space-3); width: 100%; max-width: 100%; margin-inline: auto; padding: var(--space-4); border: 1px solid var(--fika-border-default); border-radius: var(--radius-md); background: var(--fika-surface-card); }
+.viewport.tablet { max-width: 400px; }
+.viewport.mobile { max-width: 280px; }
+@media (max-width: 400px) { .context { grid-template-columns: 1fr; } }
+
+.group > .row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); min-width: 0; }
+.group > .row > span { flex: 1 1 0; }
+.group > .row input { flex: 0 0 5rem; width: 5rem; }
+@media (max-width: 400px) { .group > .row input { flex-basis: 4rem; width: 4rem; } }

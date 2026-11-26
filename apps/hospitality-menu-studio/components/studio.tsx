@@ -758,6 +758,8 @@ export default function Studio({
         canManage={actor.canManage}
         canPublish={actor.canPublish}
         publicationPilot={actor.publicationPilot}
+        safetyAvailable={safetyAvailable}
+        checkerOrigin={checkerOrigin}
         embedded
         requestedProductId={requestedBuilderProductId}
         requestedDestination={requestedBuilderDestination}

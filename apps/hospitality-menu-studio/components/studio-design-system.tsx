@@ -1,7 +1,8 @@
 "use client";
 
 import Image from "next/image";
-import { cloneElement, forwardRef, isValidElement, useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type ReactElement, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { cloneElement, createContext, useContext, forwardRef, isValidElement, useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type ReactElement, type ReactNode } from "react";
 import styles from "./studio-design-system.module.css";
 
 export type StudioDestination = "builder" | "library" | "catalogue";
@@ -197,6 +198,13 @@ export function StudioPageHeader({ breadcrumbs = [], title, description, context
   );
 }
 
+const StudioHeaderTarget = createContext<HTMLDivElement | null>(null);
+
+export function StudioHeaderActions({ children }: { children: ReactNode }) {
+  const target = useContext(StudioHeaderTarget);
+  return target ? createPortal(children, target) : <div className={styles.headerActionFallback}>{children}</div>;
+}
+
 export function StudioShell({
   actorName,
   active,
@@ -226,6 +234,7 @@ export function StudioShell({
   homeLayout?: boolean;
   children: ReactNode;
 }) {
+  const [headerTarget, setHeaderTarget] = useState<HTMLDivElement | null>(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const mobileToggleRef = useRef<HTMLButtonElement>(null);
   const closeNavigation = () => {
@@ -246,6 +255,7 @@ export function StudioShell({
     { id: "catalogue", label: "Catalogue", icon: "catalogue" },
   ];
   return (
+    <StudioHeaderTarget.Provider value={headerTarget}>
     <div className={`${styles.shell} ${homeLayout ? styles.shellHome : ""}`}>
       <a className={styles.skip} href="#studio-main">Skip to content</a>
       <header className={styles.header}>
@@ -255,6 +265,7 @@ export function StudioShell({
         {environmentLabel && <span className={styles.environment}>{environmentLabel}</span>}
         <div className={styles.headerStatus}>{saveState}</div>
         {headerActions && <div className={styles.headerActions}>{headerActions}</div>}
+        <div className={styles.headerPortal} ref={setHeaderTarget} />
         <span className={styles.actor}>{actorName}</span>
         <button ref={mobileToggleRef} className={styles.mobileToggle} type="button" aria-expanded={mobileNavOpen}
           aria-controls="studio-navigation" onClick={() => setMobileNavOpen((open) => !open)}>
@@ -299,5 +310,6 @@ export function StudioShell({
         <main id="studio-main" className={`${styles.main} ${styles[`main_${contentWidth}`]}`} tabIndex={-1}>{children}</main>
       </div>
     </div>
+    </StudioHeaderTarget.Provider>
   );
 }
