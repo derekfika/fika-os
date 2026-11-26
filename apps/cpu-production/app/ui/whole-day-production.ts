@@ -1,16 +1,18 @@
 import type { ProductionOrder } from "../../lib/production-types";
 import type { CpuDayProjection } from "../../lib/cpu-projection";
 import { cpuProjectionNeedsMenuMetadata, cpuProjectionToOrders } from "../../lib/cpu-dashboard-adapter";
+import type { ProductionScope } from "../../lib/production-scope";
 import { isCpuWithdrawn } from "../../lib/production-presentation";
 /** Deliberate print-time, fresh whole-day read. Never uses viewport/filtered/week cache data. */
 export async function loadWholeDay(
   day: string,
   fetcher: typeof fetch = fetch,
+  scope: ProductionScope = "all",
 ): Promise<ProductionOrder[]> {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day))
     throw Error("Select a production date before printing.");
   const response = await fetcher(
-    `/api/production?projection=1&serviceDate=${encodeURIComponent(day)}&scope=all`,
+    `/api/production?projection=1&serviceDate=${encodeURIComponent(day)}&scope=${encodeURIComponent(scope)}`,
     { cache: "no-store", redirect: "error" },
   );
   if (!response.ok)

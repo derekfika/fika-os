@@ -205,6 +205,61 @@
   border-bottom: 0;
 }
 
+.cpu-totals-pax-summary {
+  padding-top: 14px;
+  border-top: 1px solid var(--fika-border-default);
+}
+
+.cpu-totals-pax-summary h3 {
+  margin: 0 0 8px;
+  color: var(--fika-text-primary);
+  font-size: 1rem;
+}
+
+.cpu-totals-pax-summary p {
+  margin: 6px 0;
+  color: var(--fika-text-secondary);
+  font-size: .82rem;
+}
+
+.cpu-totals-pax-summary .cpu-totals-pax-warning {
+  color: var(--fika-status-warning);
+  font-weight: 600;
+}
+
+.cpu-totals-pax-table {
+  width: min(100%, 560px);
+  border-collapse: collapse;
+  color: var(--fika-text-primary);
+  font-size: .86rem;
+}
+
+.cpu-totals-pax-table th,
+.cpu-totals-pax-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--fika-border-default);
+  text-align: left;
+}
+
+.cpu-totals-pax-table thead th {
+  color: var(--fika-text-secondary);
+  font-size: .74rem;
+  font-weight: 700;
+}
+
+.cpu-totals-pax-table td:last-child {
+  width: 180px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.cpu-totals-pax-table tfoot th,
+.cpu-totals-pax-table tfoot td {
+  border-top: 2px solid var(--fika-border-default);
+  border-bottom: 0;
+  font-weight: 700;
+}
+
 .cpu-totals-state {
   margin: 0;
   padding: 14px 0;

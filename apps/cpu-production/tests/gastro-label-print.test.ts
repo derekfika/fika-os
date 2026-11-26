@@ -143,6 +143,41 @@ test("dish rows deduplicate canonical menu identities and keep stable menu order
   assert.deepEqual(gastroLabelDishes([first, second], day, ["oploc:other"]).map((dish) => dish.id), ["salad"]);
 });
 
+test("Gastro Labels preserve the explicit Core Salad flag while keeping it out of printed label content", async () => {
+  const core = order("order:core", {
+    sourceMenuId: "menu:shared",
+    lines: [line("core-placement", "Mixed leaves", 4, "dish:shared", { isCoreSalad: true })],
+  });
+  const ordinary = order("order:ordinary", {
+    sourceMenuId: "menu:shared",
+    destinationOplocId: "oploc:other",
+    lines: [line("ordinary-placement", "Mixed leaves", 2, "dish:shared")],
+  });
+  const namedCore = order("order:named-core", {
+    sourceMenuId: "menu:shared",
+    lines: [line("named-core", "Core Salad", 1, "dish:named-core")],
+  });
+  const dishes = gastroLabelDishes([ordinary, core, namedCore], day);
+  assert.deepEqual(dishes.map(({ name, isCoreSalad }) => [name, isCoreSalad]), [
+    ["Core Salad", undefined],
+    ["Mixed leaves", true],
+  ]);
+
+  const html = gastroLabelsPrintHtml(
+    gastroLabelRowsWithQuantity(dishes, { [dishes[1].id]: 1 }, day),
+    1,
+    Object.fromEntries(dishes.map(dish => [dish.id, { fontSizePt: 20, lineCount: 1, fits: true }])),
+  );
+  assert.doesNotMatch(html, /aria-label="Core Salad"|>CORE SALAD</);
+
+  const dialog = await import("node:fs/promises").then(fs => fs.readFile(new URL("../app/ui/GastroLabelPrintDialog.tsx", import.meta.url), "utf8"));
+  const css = await import("node:fs/promises").then(fs => fs.readFile(new URL("../app/ui/GastroLabelPrintDialog.module.css", import.meta.url), "utf8"));
+  assert.match(dialog, /dish\.isCoreSalad \? <span className=\{styles\.coreSaladLabel\}>Core Salad/);
+  assert.match(dialog, /styles\.coreSaladRow/);
+  assert.match(css, /\.coreSaladRow \{ background: var\(--fika-status-success-surface\); \}/);
+  assert.match(css, /\.coreSaladLabel[\s\S]*?var\(--fika-status-success\)/);
+});
+
 test("withdrawn, cancelled, superseded, stale-date, non-Delivered-In and unproven source rows fail closed", () => {
   const current = order("order:current", { lines: [line("dish", "Eligible dish", 1)] });
   const cancelled = order("order:cancelled", { status: "cancelled", lines: [line("cancel", "Cancelled dish", 1)] } as Partial<ProductionOrder>);

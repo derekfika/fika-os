@@ -22,6 +22,7 @@ export type GastroLabelDish = {
   name: string;
   sortOrder: number;
   menuName?: string;
+  isCoreSalad?: true;
 };
 
 export type GastroLabelQuantity = GastroLabelDish & { quantity: number; date: string };
@@ -65,10 +66,22 @@ export function gastroLabelDishes(
       const id = order.sourceMenuId ? `${order.sourceMenuId}:${itemId}` : itemId;
       const menuName = order.menuName?.trim();
       const current = dishes.get(id);
-      const candidate = { id, name: line.itemName.trim(), sortOrder: line.sortOrder, ...(menuName ? { menuName } : {}) };
-      if (!current || candidate.sortOrder < current.sortOrder ||
-        (candidate.sortOrder === current.sortOrder && candidate.name.localeCompare(current.name) < 0)) {
-        dishes.set(id, candidate);
+      const candidate = {
+        id,
+        name: line.itemName.trim(),
+        sortOrder: line.sortOrder,
+        ...(menuName ? { menuName } : {}),
+        ...(line.isCoreSalad === true ? { isCoreSalad: true as const } : {}),
+      };
+      const candidateIsEarlier = !current || candidate.sortOrder < current.sortOrder ||
+        (candidate.sortOrder === current.sortOrder && candidate.name.localeCompare(current.name) < 0);
+      if (candidateIsEarlier) {
+        dishes.set(id, {
+          ...candidate,
+          ...(current?.isCoreSalad || candidate.isCoreSalad ? { isCoreSalad: true } : {}),
+        });
+      } else if (current && candidate.isCoreSalad && !current.isCoreSalad) {
+        dishes.set(id, { ...current, isCoreSalad: true });
       }
     }
   }

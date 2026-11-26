@@ -211,6 +211,20 @@ test("daily and selected multi-day totals print reuse verified aggregation and n
   assert.deepEqual(aggregateProductionTotals([a]), daily);
 });
 
+test("Totals A4 prints a two-column PAX summary and labels an incomplete recorded total", () => {
+  const recorded = { ...order("pax-recorded"), sourceMenuId: "menu:breakfast", serviceType: "Breakfast", destinationOplocId: "oploc:recorded", destinationLabel: "Recorded site", guestCount: 42 };
+  const unrecorded = { ...order("pax-missing"), destinationOplocId: "oploc:missing", destinationLabel: "Missing site", guestCount: undefined };
+  const orders = [recorded, unrecorded];
+  const html = totalsPrintHtml(aggregateProductionTotals(orders), "Friday", "Selected sites", "compact", orders);
+  assert.match(html, /class="totals-pax-summary"/);
+  assert.match(html, /<th scope="col">Site<\/th><th scope="col">PAX<\/th>/);
+  assert.match(html, /Recorded site<\/th><td>42<\/td>/);
+  assert.match(html, /Missing site<\/th><td>Unrecorded<\/td>/);
+  assert.match(html, /Total recorded PAX · incomplete/);
+  assert.match(html, /same person may be counted more than once/);
+  assert.doesNotMatch(totalsPrintHtml([], "Friday", "Selected sites"), /data-totals-pax-summary/);
+});
+
 test("totals print follows canonical order and marks Core Salad without changing aggregated quantities", () => {
   const core = { ...line("core", 5), itemName: "Mixed leaves", slot: "SALAD 1", canonicalSlotId: "SALAD 1", isCoreSalad: true } as ProductionLine;
   const dessert = { ...line("dessert", 5), itemName: "Pear crumble", slot: "DESSERT 1", canonicalSlotId: "DESSERT 1", canonicalOrderIndex: 25 } as ProductionLine;

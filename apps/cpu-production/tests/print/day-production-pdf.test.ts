@@ -7,8 +7,11 @@ import {
   collectionPrintHtml,
   dayProductionPrintHtml,
   paginateDayProduction,
+  paginateProductionTotals,
   runSheetProductionPrintHtml,
 } from "../../app/ui/day-production-print";
+import { aggregateProductionTotals } from "../../lib/production-day";
+import { totalsPrintHtml } from "../../app/ui/kitchen-print";
 import { CANONICAL_MENU_SLOTS } from "../../../shared/menu-section-order";
 import type { ProductionOrder } from "../../lib/production-types";
 const day = "2026-10-23";
@@ -82,6 +85,43 @@ test("Chromium compact and full A4 keep PAX next to Order ref on every continuat
       assert.ok((await page.pdf(pdfOptions)).byteLength > 1000);
       await page.close();
     }
+  } finally {
+    await browser.close();
+  }
+});
+
+test("Chromium A4 Totals appends the PAX table without clipping or a blank continuation", async () => {
+  const source = { ...collection("totals-pax", 3), origin: "menu_planning" as const, destinationOplocId: "oploc:asana", guestCount: 42 };
+  const html = totalsPrintHtml(aggregateProductionTotals([source]), "Friday 23 October", "Asana · Delivered-In", "compact", [source]);
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1100, height: 900 } });
+    await page.route("https://totals.test/**", route => route.fulfill({ contentType: "text/html", body: html }));
+    await page.goto("https://totals.test/");
+    await page.addStyleTag({ content: tokens });
+    await page.addScriptTag({ content: "const __name = (fn) => fn; (" + paginateProductionTotals.toString() + ")()" });
+    const screen = await page.evaluate(() => {
+      const pages = [...document.querySelectorAll("#totals-pages > .totals-page")];
+      const pax = [...document.querySelectorAll("#totals-pages .totals-pax-summary")];
+      const content = pax[0]?.parentElement;
+      return {
+        pageCount: pages.length,
+        contents: pages.map(page => page.querySelector(".page-cards")?.children.length || 0),
+        paxPageIsLast: pax[0]?.closest(".totals-page") === pages.at(-1),
+        paxCount: pax.length,
+        total: pax[0]?.querySelector("tfoot")?.innerText,
+        clipped: !!content && pax[0].getBoundingClientRect().bottom > content.getBoundingClientRect().bottom + 0.5,
+      };
+    });
+    assert.equal(screen.pageCount, 1);
+    assert.ok(screen.contents.every(count => count > 0));
+    assert.equal(screen.paxPageIsLast, true);
+    assert.equal(screen.paxCount, 1);
+    assert.match(screen.total || "", /42/);
+    assert.equal(screen.clipped, false);
+    await page.emulateMedia({ media: "print" });
+    assert.ok((await page.pdf(pdfOptions)).byteLength > 1000);
+    await page.close();
   } finally {
     await browser.close();
   }
