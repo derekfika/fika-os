@@ -1,6 +1,6 @@
 import { backendPath, cloud, command } from './runtime.mjs';
-import { APPS, STUDIO_STAGING, digest, target } from './policy.mjs';
-import { releaseBackend, readStudioReleaseDomain } from './release-prestate.mjs';
+import { APPS, REPO, STUDIO_STAGING, digest, target } from './policy.mjs';
+import { releaseBackend, readStudioReleaseDomain, verifyStudioTraffic } from './release-prestate.mjs';
 import studioIam from './studio-staging-iam.json' with { type: 'json' };
 
 export const studioStaging = Object.freeze({
@@ -90,21 +90,15 @@ export function studioStagingIamStatus(describeResource = describe) {
   });
 }
 
-function emptyTraffic(state) {
-  return state === undefined || (state !== null && typeof state === 'object' && !Array.isArray(state) &&
-    (state.splits === undefined || (Array.isArray(state.splits) && state.splits.length === 0)));
-}
-
-function emptyHistory(page, key) {
+function history(page, key) {
   if (!page || typeof page !== 'object' || Array.isArray(page) ||
       Object.keys(page).some(field => field !== key && field !== 'nextPageToken') ||
       (page[key] !== undefined && !Array.isArray(page[key])) ||
       (page.nextPageToken !== undefined && typeof page.nextPageToken !== 'string')) {
     throw Error('App Hosting history could not be verified');
   }
-  if (page[key]?.length) return false;
   if (page.nextPageToken) throw Error('App Hosting history page is incomplete');
-  return true;
+  return page[key] || [];
 }
 
 async function managedArtifactScope(describeResource) {
@@ -148,13 +142,21 @@ export async function studioStagingPreflight({ read = cloud, describeResource = 
     studioStagingIamStatus(describeResource),
   ]);
 
+  let firstRelease = false;
+  let observedTraffic;
   const [rolloutPolicy, customDomain, buildHistory] = backendExists ? await Promise.all([
     observe(async () => {
       const traffic = await read(`${base}/traffic`);
-      return traffic.name === `${base}/traffic` && traffic.rolloutPolicy?.disabled === true &&
-        traffic.rolloutPolicy.codebaseBranch === studioStaging.sourceBranch &&
-        (traffic.reconciling === undefined || traffic.reconciling === false) &&
-        emptyTraffic(traffic.current) && emptyTraffic(traffic.target);
+      observedTraffic = traffic;
+      if (traffic.name !== `${base}/traffic`) return false;
+      try { verifyStudioTraffic(studioStaging, traffic); }
+      catch { return false; }
+      if (traffic.reconciling) return false;
+      const current = traffic.current?.splits || [];
+      const target = traffic.target?.splits || [];
+      if (current.length === 0) return target.length === 0;
+      if (current.length !== 1 || current[0].percent !== 100) return false;
+      return target.length === 0 || (target.length === 1 && target[0].build === current[0].build && target[0].percent === 100);
     }),
     observe(async () => {
       try { return Boolean(await readStudioReleaseDomain(studioStaging, read)); }
@@ -164,10 +166,20 @@ export async function studioStagingPreflight({ read = cloud, describeResource = 
       }
     }),
     observe(async () => {
-      const [builds, rollouts] = await Promise.all([read(`${base}/builds?pageSize=1`), read(`${base}/rollouts?pageSize=1`)]);
-      const noBuilds = emptyHistory(builds, 'builds');
-      const noRollouts = emptyHistory(rollouts, 'rollouts');
-      return noBuilds && noRollouts;
+      const [buildPage, rolloutPage, traffic] = await Promise.all([
+        read(`${base}/builds?pageSize=1`), read(`${base}/rollouts?pageSize=1`),
+      ]);
+      const builds = history(buildPage, 'builds'), rollouts = history(rolloutPage, 'rollouts');
+      const current = observedTraffic?.current?.splits || [];
+      if (current.length === 0) {
+        firstRelease = builds.length === 0 && rollouts.length === 0 && !(buildPage.nextPageToken || rolloutPage.nextPageToken);
+        return firstRelease;
+      }
+      if (builds.length !== 1 || rollouts.length !== 1 || current.length !== 1 || current[0].percent !== 100) return false;
+      const build = builds[0], rollout = rollouts[0], sha = build.source?.codebase?.hash;
+      return build.state === 'READY' && !build.reconciling && /^[a-f0-9]{40}$/.test(sha || '') &&
+        build.source.codebase.commit === sha && build.source.codebase.uri === `https://github.com/${REPO}/commit/${sha}` &&
+        rollout.state === 'SUCCEEDED' && !rollout.reconciling && rollout.build === build.name && current[0].build === build.name;
     }),
   ]) : ['UNVERIFIED', 'UNVERIFIED', 'UNVERIFIED'];
 
@@ -181,7 +193,7 @@ export async function studioStagingPreflight({ read = cloud, describeResource = 
       'Effective IAM for named Studio Firestore access and denial of default Firestore, Cloud Storage, production resources, secrets and unrelated service accounts',
       'Owner approval of the exact IAM manifest and shared mutable tags, and effective verification of the approved build permissions',
       'Workspace and outbound side-effect isolation',
-      'Owner approval of the exact merged first-release plan',
+      ...(firstRelease ? ['Owner approval of the exact merged first-release plan'] : []),
     ],
   };
 }

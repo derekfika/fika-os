@@ -1,0 +1,6 @@
+# 2026-11-26 — Governance simplification and release preflight
+
+Workspace admission now avoids running Git registration discovery under the SQLite capacity lock, materializes task worktrees outside that lock, and archives verified retired completions away from routine startup scans. Default workspace health is inventory-only; recursive NTFS accounting is an explicit bounded deep-health/storage-audit operation. Workspace guidance and tooling assign one checkout per coherent task, one accountable Git owner and recorded disjoint cooperating writer scopes. A single logged recovery checkout is available for narrowly scoped lifecycle repairs. Studio preflight recognizes an existing serving build and successful rollout as a subsequent release, while retaining verified empty-history first-release gates and the existing security checks.
+
+Validation: `node --test tools/workflow/studio-staging.test.mjs` passed (12 tests). The concurrent ten-slot claim, eleventh-task FIFO promotion, verified retirement, one recovery-slot, and disjoint writer-scope regressions passed (5 selected lifecycle tests). `npm run fika -- changelog check --base origin/main` and `git diff --check` passed. Full workflow suite not run.
+Deployment: none. Current Google operator authentication is unavailable; the exact staging IAM manifest approval remains outstanding.

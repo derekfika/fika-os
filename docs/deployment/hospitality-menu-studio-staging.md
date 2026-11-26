@@ -10,7 +10,7 @@
 | Named Firestore | `projects/fika-os-dev/databases/hospitality-menu-studio` |
 | Browser and admission authority | `https://menu-studio-staging.fikacatering.com/` and `https://staging-os.fikacatering.com/` |
 
-Read-only checks on 18 November 2026 confirmed the dedicated account and delete-protected database exist. The backend points at the expected repository and root, has automatic rollouts disabled, and has zero builds, rollouts and current or target traffic. Its environment is unset and the default shared compute account is attached. App Hosting reports the existing domain's ownership, routing and certificate active. DNS work is complete for those observed states. Reread the same backend before first release, and capture fresh Firebase records only if its domain status requires a change.
+The 18 November 2026 record describes the original provisioning baseline only; it is not current serving evidence. The governed release journal records successful Studio staging rollout `build-2026-11-25-002` from source `a3d7173674a818c90a36807ef7344f73999bc673`, with an unauthenticated custom-domain smoke receiving the expected missing-session 401. Therefore another release is subsequent, and must use live identity, stable serving traffic and exact build/rollout source provenance. Empty traffic or empty build history is required only when backend and complete release history prove this is the initial provisioning. Reread all current Firebase records before release; the earlier environment/account and active-domain observations are not a substitute for fresh evidence.
 
 ## 1. Integrate and serve the Hub admission route
 
@@ -39,9 +39,9 @@ Follow the [permission plan](hospitality-menu-studio-isolation.md) for the exact
 
 With owner approval, set the existing backend environment to `staging` and attach its dedicated account. Update only `environment` and `serviceAccount`, using the current backend ETag. Leave overrides empty, preserve the Git connection, and keep automatic rollouts disabled. Verify the returned backend, branch, traffic, builds and rollouts. [App Hosting backend update](https://firebase.google.com/docs/reference/apphosting/rest/v1beta/projects.locations.backends/patch)
 
-## 3. Approve one Studio first release and verify the pilot
+## 3. Apply the correct first or subsequent release path and verify the pilot
 
-From a clean governed checkout, after effective policy and Hub admission evidence are available:
+From a clean governed checkout, after effective policy and Hub admission evidence are available, `studio-preflight` classifies an existing serving backend as a subsequent release and reserves first-release approvals for an independently verified empty target:
 
 ```powershell
 npm run fika -- studio-preflight --staging

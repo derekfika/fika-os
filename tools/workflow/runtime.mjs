@@ -19,8 +19,21 @@ export function command(program, args, options = {}) {
 }
 export const git = (...args) => command('git', args);
 export const root = () => git('rev-parse', '--show-toplevel');
-export const common = () => git('rev-parse', '--path-format=absolute', '--git-common-dir');
-export const stateDir = () => { const dir = path.join(common(), 'fika-workflow'); mkdirSync(dir, { recursive: true }); return dir; };
+const commonDirectories = new Map();
+const repositoryKey = () => path.resolve(repositoryContext.getStore()?.cwd || process.cwd());
+export const common = () => {
+  const key = repositoryKey();
+  if (!commonDirectories.has(key)) commonDirectories.set(key, git('rev-parse', '--path-format=absolute', '--git-common-dir'));
+  return commonDirectories.get(key);
+};
+const workflowStateDirectories = new Map();
+export const stateDir = () => {
+  const key = repositoryKey();
+  if (!workflowStateDirectories.has(key)) workflowStateDirectories.set(key, path.join(common(), 'fika-workflow'));
+  const directory = workflowStateDirectories.get(key);
+  mkdirSync(directory, { recursive: true });
+  return directory;
+};
 export function ancestor(a, b) { return spawnSync('git', ['merge-base', '--is-ancestor', a, b], { windowsHide: true, ...(repositoryContext.getStore() || {}) }).status === 0; }
 export function ref(name) { const r = spawnSync('git', ['rev-parse', '--verify', name], { encoding: 'utf8', windowsHide: true, ...(repositoryContext.getStore() || {}) }); return r.status === 0 ? r.stdout.trim() : undefined; }
 export function jsonFile(file) { return JSON.parse(readFileSync(file, 'utf8').replace(/^\uFEFF/, '')); }

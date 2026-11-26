@@ -22,6 +22,19 @@ export const samePath = (a, b) => pathKey(a) === pathKey(b);
 export const canonical = () => path.resolve(common(), '..');
 function authorizedBootstrap(task, management) {
   const exception = task?.bootstrapException;
+  const ownerBootstrap = exception?.authorization === 'explicit-owner-directive' &&
+    exception.capacityExempt === true && exception.authorizedAt &&
+    exception.scope === 'workspace-governance-and-studio-preflight' &&
+    task?.name === 'governance-simplification' && task?.owner === 'codex-governance-simplification' &&
+    task?.branch === 'codex/governance-simplification';
+  if (ownerBootstrap && task?.state === 'active' && samePath(task.directory, path.join(management, task.name))) return true;
+  const infrastructureRecovery = exception?.authorization === 'owner-authorized-infrastructure-recovery' &&
+    exception.capacityExempt === true && exception.taskName === task?.name && exception.owner === task?.owner &&
+    /^infra-recovery-[a-z0-9-]{3,40}$/.test(task?.name || '') && exception.reason?.trim().length >= 20 &&
+    Array.isArray(exception.scope) && exception.scope.length > 0 && exception.scope.every(item =>
+      ['tools/workflow', 'AGENTS.md', 'overnight.md', 'docs/deployment/workspace-management.md',
+        'docs/deployment/workflow.md', 'docs/deployment/hospitality-menu-studio-staging.md'].includes(item));
+  if (infrastructureRecovery && ['creating', 'active'].includes(task?.state) && samePath(task.directory, path.join(management, task.name))) return true;
   return task?.name === bootstrapName && task?.owner === bootstrapOwner && task?.branch === `codex/${bootstrapName}` &&
     task?.state === 'active' && samePath(task.directory, path.join(management, bootstrapName)) &&
     exception?.authorization === 'explicit-owner-directive' && exception.issue === bootstrapIssue &&
@@ -79,7 +92,7 @@ export function withCapacityLock(action) {
   } finally { db.close(); }
 }
 
-export function workspaceInventory() {
+export function workspaceInventory({ observedRegistrations } = {}) {
   const management = managedRoot();
   const primary = canonical();
   const known = stateRecords('source-tasks');
@@ -89,7 +102,7 @@ export function workspaceInventory() {
   const historyByPath = new Map(historical.filter(task => typeof task.directory === 'string').map(task => [pathKey(task.directory), task]));
   const occupied = new Map();
   const staleRegistrations = [];
-  for (const tree of registrations()) {
+  for (const tree of observedRegistrations || registrations()) {
     if (samePath(tree.worktree, primary)) continue;
     if (tree.prunable && !tree.locked && !localEntry(tree.worktree)) {
       staleRegistrations.push(tree);
@@ -133,6 +146,13 @@ export function workspaceInventory() {
   for (const task of known.filter(item => item.state === 'creating')) {
     const key = pathKey(task.directory);
     if (!occupied.has(key)) occupied.set(key, { name: task.name, owner: task.owner, directory: task.directory, state: 'interrupted-reservation' });
+  }
+  for (const task of known) {
+    const completion = completions.get(task.name);
+    if (!completion || !['removing', 'removed'].includes(completion.retirement) || localEntry(task.directory)) continue;
+    const key = pathKey(task.directory);
+    if (!occupied.has(key)) occupied.set(key, { name: task.name, owner: task.owner, directory: task.directory,
+      state: 'retirement-in-progress', retirement: completion.retirement });
   }
   const entries = [...occupied.values()];
   const bootstrap = entries.filter(entry => {
