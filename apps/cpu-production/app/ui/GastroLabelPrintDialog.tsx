@@ -33,6 +33,7 @@ export function GastroLabelPrintDialog({ productionDate, selectedSiteIds }: Prop
   const triggerRef = useRef<HTMLButtonElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
   const loadVersion = useRef(0);
+  const pendingPrint = useRef<Window | null>(null);
   const titleId = useId();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -47,6 +48,14 @@ export function GastroLabelPrintDialog({ productionDate, selectedSiteIds }: Prop
   const [fittedNames, setFittedNames] = useState<Record<string, GastroLabelFit>>({});
   const [startPosition, setStartPosition] = useState(1);
   const [previewScale, setPreviewScale] = useState(0.55);
+
+  const cancelPendingPrint = () => {
+    const target = pendingPrint.current;
+    pendingPrint.current = null;
+    target?.close();
+  };
+
+  useEffect(() => cancelPendingPrint, []);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -120,6 +129,7 @@ export function GastroLabelPrintDialog({ productionDate, selectedSiteIds }: Prop
 
   const close = () => {
     loadVersion.current += 1;
+    cancelPendingPrint();
     setLoading(false);
     setPrinting(false);
     setOpen(false);
@@ -150,7 +160,7 @@ export function GastroLabelPrintDialog({ productionDate, selectedSiteIds }: Prop
   const allDishesSelected = dishes.length > 0 && selectedDishIds.length === dishes.length;
 
   const print = async () => {
-    if (printing || loading || !totalLabels || countError || fontError || !dishes.length) return;
+    if (pendingPrint.current || printing || loading || !totalLabels || countError || fontError || !dishes.length) return;
     // Open synchronously from the user's click so browser popup rules do not
     // discard the requested preview while the authoritative freshness read runs.
     const target = window.open("about:blank", "_blank");
@@ -158,13 +168,15 @@ export function GastroLabelPrintDialog({ productionDate, selectedSiteIds }: Prop
       setError("The PDF preview was blocked by the browser. Allow pop-ups for this CPU site, then try again.");
       return;
     }
-    target.document.title = "Preparing Gastro Labels";
-    target.document.body.textContent = "Checking the latest production before creating the label PDF…";
+    pendingPrint.current = target;
     setPrinting(true);
     setError("");
     setAnnouncement("Refreshing the selected service date before opening the PDF.");
     try {
+      target.document.title = "Preparing Gastro Labels";
+      target.document.body.textContent = "Checking the latest production before creating the label PDF…";
       const freshOrders = await loadWholeDay(productionDate);
+      if (pendingPrint.current !== target || target.closed) return;
       const freshManifest = dishManifest(freshOrders, productionDate, selectedSiteIds);
       const currentManifest = JSON.stringify(dishes.map(({ id, name, sortOrder, menuName }) => ({ id, name, sortOrder, menuName })));
       if (freshManifest !== currentManifest) {
@@ -186,11 +198,15 @@ export function GastroLabelPrintDialog({ productionDate, selectedSiteIds }: Prop
       target.print();
       setAnnouncement(`PDF print preview opened for ${totalLabels} labels across ${pages.length} A4 sheet${pages.length === 1 ? "" : "s"}. No CPU quantities were changed.`);
     } catch (cause) {
+      if (pendingPrint.current !== target || target.closed) return;
       target.close();
       setError(cause instanceof Error ? cause.message : "The latest production could not be verified. Nothing was printed.");
       setAnnouncement("");
     } finally {
-      setPrinting(false);
+      if (pendingPrint.current === target) {
+        pendingPrint.current = null;
+        setPrinting(false);
+      }
     }
   };
 
@@ -205,7 +221,8 @@ export function GastroLabelPrintDialog({ productionDate, selectedSiteIds }: Prop
         ref={dialogRef}
         className={styles.dialog}
         aria-labelledby={titleId}
-        onClose={() => { setOpen(false); triggerRef.current?.focus(); }}
+        onCancel={(event) => { event.preventDefault(); close(); }}
+        onClose={() => { close(); triggerRef.current?.focus(); }}
       >
         <header className={styles.header}>
           <div>
