@@ -28,6 +28,7 @@ import { Button, PageHeading, Pill } from "./studio-ui";
 import { indexAdminCatalogue, normalizeCatalogueSearch } from "./studio-catalogue-index";
 import { useStudioRead, useStudioReads } from "./studio-reads";
 import styles from "./studio.module.css";
+import catalogue from "./studio-catalogue.module.css";
 
 const pounds = new Intl.NumberFormat("en-GB", {
   style: "currency",
@@ -75,16 +76,19 @@ export function CatalogueView({
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [availabilityFilter, setAvailabilityFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [sortKey, setSortKey] = useState<CatalogueSortKey>("name");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [pageIndex, setPageIndex] = useState(0);
   const [pageSize, setPageSize] = useState(25);
   const [itemId, setItemId] = useState(initialItemId || "");
+  const [detailsOpen, setDetailsOpen] = useState(Boolean(initialItemId));
   const [siteId, setSiteId] = useState("");
   const [serviceId, setServiceId] = useState("");
   const [eventDate, setEventDate] = useState("");
   const [verification, setVerification] = useState("");
   const [checking, setChecking] = useState(false);
+  const detailsRef = useRef<HTMLDetailsElement>(null);
   const pendingWrite = useRef(false);
   const catalogueRevision = useRef(0);
   const selection = useRef("");
@@ -111,13 +115,11 @@ export function CatalogueView({
 
   useEffect(() => {
     setItemId(initialItemId || "");
+    setDetailsOpen(Boolean(initialItemId));
   }, [initialItemId]);
   useEffect(() => {
     setVerification("");
   }, [itemId, siteId, serviceId, eventDate, admin]);
-  useEffect(() => {
-    if (itemId) void loadSectionLinks();
-  }, [itemId, loadSectionLinks]);
 
   async function send(
     command: CatalogueCommand,
@@ -271,26 +273,26 @@ export function CatalogueView({
 
   return (
     <>
-      <PageHeading
-        title={area === "products" ? "Catalogue" : "Sites & services"}
-      >
-        {back && <Button onClick={back}>Back to section</Button>}
-        {data && (
-          <Button disabled={loading || writing} onClick={() => void reload()}>
-            Refresh catalogue
-          </Button>
-        )}
-        {area === "products" && data?.canManage === true && (
-          <Button
-            primary
-            disabled={writing}
-            onClick={() => setEditor("create")}
-          >
-            Add product
-          </Button>
-        )}
-      </PageHeading>
-      {area === "products" && <p>Search company products and view their current catalogue details.</p>}
+      {area === "products" ? (
+        <div className={catalogue.heading}>
+          <div className={catalogue.breadcrumb}>Catalogue <span aria-hidden="true">&rsaquo;</span> <strong>Hospitality products</strong></div>
+          <div className={catalogue.headingRow}>
+            <div>
+              <h1>Catalogue management</h1>
+              <p>Manage Hospitality catalogue products, pricing, VAT and site availability.</p>
+            </div>
+            <div className={catalogue.headingActions}>
+              {back && <Button onClick={back}>Back to section</Button>}
+              {data?.canManage === true && <Button primary disabled={writing} onClick={() => setEditor("create")}>+ Add product</Button>}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <PageHeading title="Sites & services">
+          {back && <Button onClick={back}>Back to section</Button>}
+          {data && <Button disabled={loading || writing} onClick={() => void reload()}>Refresh catalogue</Button>}
+        </PageHeading>
+      )}
       {loading && <p role="status">Loading catalogue…</p>}
       {error && (
         <div className="fika-notice fika-notice--danger" role="alert">
@@ -306,37 +308,51 @@ export function CatalogueView({
         </div>
       )}
       {data && (
-        <div className={styles.panelBody}>
+        <div className={area === "products" ? catalogue.content : styles.panelBody}>
           {area === "products" ? (
             <>
-              <div className={styles.catalogueFilters}>
-                <label className="fika-field">Search products<input className="fika-input" type="search" value={search} onChange={(event) => { setSearch(event.target.value); setPageIndex(0); }} placeholder="Search products" /></label>
-                <label className="fika-field">Category<select className="fika-select" value={categoryFilter} onChange={(event) => { setCategoryFilter(event.target.value); setPageIndex(0); }}><option value="all">All categories</option>{categories.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
-                <label className="fika-field">Site availability<select className="fika-select" value={availabilityFilter} onChange={(event) => { setAvailabilityFilter(event.target.value); setPageIndex(0); }}><option value="all">All sites</option>{sites.map((site) => <option key={site.oplocId} value={site.oplocId}>{site.label}</option>)}</select></label>
-                <label className="fika-field">Status<select className="fika-select" value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPageIndex(0); }}><option value="all">All statuses</option><option value="active">Active</option><option value="archived">Archived</option></select></label>
+              <div className={catalogue.filters}>
+                <label className={`fika-field ${catalogue.search}`}><span className={styles.srOnly}>Search products</span><input className="fika-input" type="search" value={search} onChange={(event) => { setSearch(event.target.value); setPageIndex(0); }} placeholder="Search products" /></label>
+                <button type="button" className={catalogue.filterToggle} aria-expanded={filtersOpen} aria-controls="catalogue-secondary-filters" onClick={() => setFiltersOpen((open) => !open)}>
+                  Filters{[categoryFilter, availabilityFilter, statusFilter].filter((value) => value !== "all").length > 0 ? ` (${[categoryFilter, availabilityFilter, statusFilter].filter((value) => value !== "all").length} active)` : ""}
+                </button>
+                <div id="catalogue-secondary-filters" className={catalogue.secondaryFilters} data-open={filtersOpen}>
+                <label className="fika-field">Category<select className="fika-select" aria-label="Category" value={categoryFilter} onChange={(event) => { setCategoryFilter(event.target.value); setPageIndex(0); }}><option value="all">All categories</option>{categories.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
+                <label className="fika-field">Site availability<select className="fika-select" aria-label="Site availability" value={availabilityFilter} onChange={(event) => { setAvailabilityFilter(event.target.value); setPageIndex(0); }}><option value="all">All sites</option>{sites.map((site) => <option key={site.oplocId} value={site.oplocId}>{site.label}</option>)}</select></label>
+                <label className="fika-field">Status<select className="fika-select" aria-label="Status" value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPageIndex(0); }}><option value="all">All statuses</option><option value="active">Active</option><option value="archived">Archived</option></select></label>
+                <Button onClick={() => { setSearch(""); setCategoryFilter("all"); setAvailabilityFilter("all"); setStatusFilter("all"); setPageIndex(0); }}>Reset</Button>
+                </div>
               </div>
               {data.canManage === false && (
                 <p className="fika-help">Read-only access. Catalogue changes require Hub management permission.</p>
               )}
               {itemId && !selected && <p role="status">The saved mapping points to an item missing from the current catalogue.</p>}
-              {!data.rows.length ? <p>No products are available.</p> : (
-                <div className={styles.tableScroll}>
-                  <table className={`${styles.table} ${styles.catalogueTable}`}>
+              <div className={catalogue.tableCard}>
+              {!data.rows.length ? <p className={catalogue.empty}>No products are available.</p> : (
+                <div className={catalogue.tableScroll} tabIndex={0} role="region" aria-label="Catalogue products, scroll horizontally for more columns">
+                  <table className={catalogue.table}>
                     <thead><tr>
                       {([ ["name", "Product name"], ["category", "Category"], ["price", "Price (ex VAT)"], ["vat", "VAT"], ["sites", "Site availability"], ["status", "Status"] ] as const).map(([key, label]) => <th key={key} scope="col" aria-sort={sortKey === key ? sortDirection === "asc" ? "ascending" : "descending" : "none"}><button className={styles.catalogueSort} type="button" onClick={() => changeSort(key)}>{label}<span aria-hidden="true"> {sortKey === key ? sortDirection === "asc" ? "↑" : "↓" : "↕"}</span></button></th>)}
-                      <th scope="col"><span className={styles.srOnly}>Action</span></th>
+                      <th scope="col">Actions</th>
                     </tr></thead>
                     <tbody>
                       {pageRows.map((row) => (
                         <tr key={row.itemId}>
-                          <th scope="row">{row.name}</th>
-                          <td>{row.category || "—"}</td>
-                          <td>{row.defaultPrice ? pounds.format(row.defaultPrice.amount) : "Not set"}</td>
+                          <th scope="row"><span className={catalogue.product}><span className={catalogue.productIcon} aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4v4a3 3 0 0 0 6 0V4M7 4v16M16 20v-7h3V4c-2 1-3 4-3 7v2" /></svg></span>{row.name}</span></th>
+                          <td><span className={catalogue.category}>{row.category || "—"}</span></td>
+                          <td>
+                            {row.defaultPrice ? pounds.format(row.defaultPrice.amount) : "Not set"}
+                            {row.offerings.some(offering => offering.status === "active" && offering.available
+                              && (offering.price.source === "overrides" || offering.price.source === "site_only")) && (
+                              <small className={catalogue.priceVariation}>Site prices vary</small>
+                            )}
+                          </td>
                           <td>{row.defaultPrice ? vat.format(row.defaultPrice.vatRate) : "Not set"}</td>
                           <td>{availabilityLabel(row)}</td>
-                          <td><Pill>{words(row.status)}</Pill></td>
+                          <td><Pill tone={row.status === "active" ? "success" : "neutral"}>{words(row.status)}</Pill></td>
                           <td className={styles.catalogueAction}>
-                            <button className={styles.catalogueSelect} type="button" aria-label={`View ${row.name} details`} aria-pressed={itemId === row.itemId} disabled={writing} onClick={() => setItemId(row.itemId)}>
+                            {data.canManage === true && <button className={catalogue.action} type="button" aria-label={`Edit ${row.name}`} disabled={writing} onClick={() => { setItemId(row.itemId); setEditor("edit"); }}>Edit</button>}
+                            <button className={styles.catalogueSelect} type="button" aria-label={`View ${row.name} details`} aria-pressed={itemId === row.itemId} disabled={writing} onClick={() => { setItemId(row.itemId); setDetailsOpen(true); requestAnimationFrame(() => detailsRef.current?.scrollIntoView({ block: "start" })); }}>
                               {itemId === row.itemId ? "Selected" : "View"}
                             </button>
                           </td>
@@ -347,15 +363,16 @@ export function CatalogueView({
                   </table>
                 </div>
               )}
-              <div className={styles.cataloguePagination}>
+              <div className={catalogue.pagination}>
                 <span>Showing {matchingRows.length ? currentPage * pageSize + 1 : 0}–{Math.min((currentPage + 1) * pageSize, matchingRows.length)} of {matchingRows.length} products</span>
-                <label className="fika-field">Rows per page<select className="fika-select" value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPageIndex(0); }}><option value={25}>25</option><option value={50}>50</option></select></label>
+                <label className="fika-field">Rows per page<select className="fika-select" aria-label="Rows per page" value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPageIndex(0); }}><option value={25}>25</option><option value={50}>50</option></select></label>
                 <Button disabled={currentPage === 0} onClick={() => setPageIndex((page) => Math.max(0, page - 1))}>Previous page</Button>
                 <span aria-live="polite">Page {currentPage + 1} of {pageCount}</span>
                 <Button disabled={currentPage + 1 >= pageCount} onClick={() => setPageIndex((page) => Math.min(pageCount - 1, page + 1))}>Next page</Button>
               </div>
+              </div>
               {selected && (
-                <details className={styles.disclosure} open={Boolean(initialItemId && selected)}>
+                <details ref={detailsRef} key={selected.itemId} className={styles.disclosure} open={detailsOpen} onToggle={(event) => setDetailsOpen(event.currentTarget.open)}>
                   <summary>Product details and settings · {selected.name}</summary>
                   <section aria-label="Product details">
                     <h2>{selected.name}</h2>
@@ -371,13 +388,14 @@ export function CatalogueView({
                     {selected.needsReview.length > 0 && <p>Needs review · {selected.needsReview.map(words).join(", ")}</p>}
                     {data.canManage === true && <Button disabled={writing} onClick={() => setEditor("edit")}>Edit product</Button>}
                   </section>
-                  <StudioAssignmentLinks assignments={sectionsFor(selected.itemId)} open={openSection} />
+                  <StudioAssignmentLinks assignments={sectionsFor(selected.itemId)} open={openSection} onOpen={() => void loadSectionLinks()} />
                   <CatalogueProductGovernance row={selected} payload={data} send={send} />
                   <CatalogueSiteEditor key={selected.itemId} row={selected} oplocs={data.oplocs} canManage={data.canManage} send={sendSite} reload={() => reload(true)} />
                 </details>
               )}
               <details className={styles.disclosure}>
-                <summary>Catalogue review</summary>
+                <summary>Advanced catalogue review</summary>
+                <Button disabled={loading || writing} onClick={() => void reload()}>Refresh catalogue</Button>
                 <CatalogueDuplicateReview payload={data} send={send} />
               </details>
             </>
@@ -423,7 +441,7 @@ export function CatalogueView({
           className={styles.disclosure}
           hidden={area !== "products" || !data}
         >
-          <summary>Bulk catalogue operations</summary>
+          <summary>Advanced bulk catalogue operations</summary>
           <CatalogueBulk payload={data} send={send} />
         </details>
       )}

@@ -34,3 +34,5 @@ The gallery requires matching fixture hashes, Chromium versions and native dimen
 On the replacement shell use `--shell-interactions` with screen 03 to check local status filters, keyboard create and cancel with focus return, opening a saved menu, and Escape and focus return in tablet and mobile navigation. The JSON manifest records the checks and document and viewport widths.
 
 Review shows the real UI’s unavailable publication authority for the local actor. The fixture carries fictional commercial display values and no signed safety or publication records. Treat any change that needs genuine readiness, publication, activation or booking evidence as a separate authorised test.
+
+On the replacement Catalogue use "--catalogue-interactions" with screen 06 to verify local sorting and filters, contextual details and edit, contained scrolling, and one on-demand read for the legacy links disclosure.
