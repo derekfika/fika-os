@@ -1,7 +1,7 @@
 import { allergenMatrixContentHash } from "./cpu-allergen-release";
 import { cpuReleaseMaterializationEventId } from "./cpu-release-fanout";
 import { deliverCpuPropagation, replayCpuPropagation } from "./cpu-durable-outbox";
-import { currentAllergenReleaseMatchesOrder, matrixSignatureScope, sameMatrixSignatureScope, signatureAuthorityForOrder, signatureMatchesScope, type MatrixSignatureScope, type ProductionPlan } from "../app/lib/production-plan";
+import { currentAllergenReleaseMatchesOrder, frozenReleaseSignaturesMatchScope, matrixSignatureScope, sameMatrixSignatureScope, signatureAuthorityForOrder, type MatrixSignatureScope, type ProductionPlan } from "../app/lib/production-plan";
 import { matrixDriveConfiguration } from "../app/lib/matrix-drive-config";
 import { createProductionPlanRepository } from "./production-plan-repository";
 import type { ProductionOrder } from "./production-types";
@@ -36,7 +36,7 @@ export async function retryCommittedCpuMaterialization(input: {
   if (!release) throw Object.assign(new Error("There is no committed CPU allergen release to retry."), { status: 409, code: "CPU_RELEASE_NOT_FOUND" });
   if (release.status === "current" && release.materializationStatus === "ready") throw Object.assign(new Error("This CPU allergen release is already current."), { status: 409, code: "CPU_RELEASE_ALREADY_CURRENT" });
   if (release.status !== "pending" && release.status !== "current") throw Object.assign(new Error("This CPU allergen release is no longer eligible for materialization retry."), { status: 409, code: "CPU_RELEASE_NOT_RETRYABLE" });
-  if (!currentScope || plan.signedMenuContentHash !== currentScope.matrixContentHash || !releaseLineageMatchesScope(release, currentScope) || !release.signatures.every(signature => signature.valid && signatureMatchesScope(signature, currentScope))) throw Object.assign(new Error("The committed CPU allergen release no longer matches the current source lineage. Reload and review the current matrix."), { status: 409, code: "CPU_RELEASE_LINEAGE_CONFLICT" });
+  if (!currentScope || plan.signedMenuContentHash !== currentScope.matrixContentHash || !releaseLineageMatchesScope(release, currentScope) || !frozenReleaseSignaturesMatchScope(release, currentScope)) throw Object.assign(new Error("The committed CPU allergen release needs both valid signatures for the current source and matrix. Reload and review the current matrix."), { status: 409, code: "CPU_RELEASE_LINEAGE_CONFLICT" });
   const authoritativeSignatures = signatureAuthorityForOrder(plan, order, plan.menuItems);
   const roles = new Set(authoritativeSignatures.map(signature => signature.role));
   if (!roles.has("production_chef") || !roles.has("head_chef_site_manager")) throw Object.assign(new Error("Both authoritative CPU allergen signatures are required before materialization retry."), { status: 409, code: "CPU_RELEASE_SIGNATURE_CONFLICT" });

@@ -148,20 +148,32 @@ export function signatureAuthorityForOrder(plan: Pick<ProductionPlan, "signature
   return candidates.filter(signature => signatureMatchesScope(signature, scope) && ("valid" in signature ? signature.valid !== false : true));
 }
 
+export function frozenReleaseSignaturesMatchScope(release: CpuAllergenRelease, scope: MatrixSignatureScope) {
+  if (!Array.isArray(release.signatures)) return false;
+  const roles = new Set(release.signatures.map(signature => signature?.role));
+  return roles.has("production_chef") && roles.has("head_chef_site_manager")
+    && release.signatures.every(signature => signature?.valid === true && signatureMatchesScope(signature, scope));
+}
+
 export function currentAllergenReleaseMatchesOrder(release: CpuAllergenRelease | undefined, order: SigningLineageOrder, menuItems: PlannedMenuItem[]) {
-  const scope = matrixSignatureScope(order, allergenMatrixContentHash(menuItems));
-  if (!release || release.status !== "current" || release.materializationStatus !== "ready" || !scope) return false;
-  const roles = new Set(release.signatures.map(signature => signature.role));
-  if (!roles.has("production_chef") || !roles.has("head_chef_site_manager")) return false;
-  const lineageMatches = sameMatrixSignatureScope(scope, { ...release, productionOrderId: scope.productionOrderId, allergenEvidenceHash: release.allergenEvidenceHash || release.signatures?.[0]?.scope?.allergenEvidenceHash, matrixContentHash: scope.matrixContentHash }, false);
-  return lineageMatches && release.signatures.every(signature => signature.valid && signatureMatchesScope(signature, scope));
+  return release?.status === "current" && release.materializationStatus === "ready"
+    && committedAllergenReleaseMatchesOrder(release, order, menuItems);
 }
 
 /** Validate release source identity before a pending release is materialized. */
 export function allergenReleaseLineageMatchesOrder(release: CpuAllergenRelease | undefined, order: SigningLineageOrder, menuItems: PlannedMenuItem[]) {
   const scope = matrixSignatureScope(order, allergenMatrixContentHash(menuItems));
   if (!release || !scope) return false;
+  return releaseMatchesScope(release, scope);
+}
+
+function releaseMatchesScope(release: CpuAllergenRelease, scope: MatrixSignatureScope) {
   return sameMatrixSignatureScope(scope, { ...release, productionOrderId: scope.productionOrderId, allergenEvidenceHash: release.allergenEvidenceHash || release.signatures?.[0]?.scope?.allergenEvidenceHash, matrixContentHash: scope.matrixContentHash }, false);
+}
+
+export function committedAllergenReleaseMatchesOrder(release: CpuAllergenRelease, order: SigningLineageOrder, menuItems: PlannedMenuItem[]) {
+  const scope = matrixSignatureScope(order, allergenMatrixContentHash(menuItems));
+  return Boolean(scope && releaseMatchesScope(release, scope) && frozenReleaseSignaturesMatchScope(release, scope));
 }
 
 export function signedAllergenCheckpointMatchesOrder(plan: Pick<ProductionPlan, "signedMenuContentHash" | "signedSignatures" | "currentAllergenRelease">, order: SigningLineageOrder, menuItems: PlannedMenuItem[]) {

@@ -6,7 +6,7 @@ import type { NextRequest } from "next/server";
 import { allergenMatrixHtml } from "../app/ui/allergen-matrix";
 import { isHostedPdfRuntime, renderPdfToBuffer } from "../app/lib/local-pdf";
 import { matrixDriveConfiguration } from "../app/lib/matrix-drive-config";
-import { allergenReleaseLineageMatchesOrder, matrixSignatureScope, signatureMatchesScope, type MatrixArtifact, type PlannedMenuItem, type ProductionPlan } from "../app/lib/production-plan";
+import { allergenReleaseLineageMatchesOrder, committedAllergenReleaseMatchesOrder, matrixSignatureScope, signatureMatchesScope, type MatrixArtifact, type PlannedMenuItem, type ProductionPlan } from "../app/lib/production-plan";
 import { allergenReviewProblems, describeAllergenReviewProblem, effectiveProductionPlanStatus, planRevisionToken } from "../app/lib/production-plan-state";
 import type { ProductionOrder } from "./production-types";
 import { approvedCredentialedUpstream, CredentialedUpstreamError } from "@fika/server-shared/credentialed-upstream";
@@ -53,14 +53,22 @@ export function assertCpuReleaseRowsAttested(menuItems: PlannedMenuItem[]) {
   if (unverified.length) throw Object.assign(new Error(`The CPU allergen release is held: verify every allergen row before it is published. ${unverified.map(describeAllergenReviewProblem).join(" ")}`), { status: 422, code: "CPU_ALLERGEN_ROW_UNVERIFIED", unverifiedRows: unverified.map(problem => ({ rowId: problem.rowId, itemId: problem.itemId, kind: problem.kind })) });
 }
 
+function requireCommittedRelease(plan: ProductionPlan, order: ProductionOrder) {
+  const release = plan.currentAllergenRelease;
+  if (!release || !["pending", "current"].includes(release.status) || !committedAllergenReleaseMatchesOrder(release, order, plan.menuItems)) {
+    throw Object.assign(new Error("Both required signatures must be valid on the committed CPU release for the current source and matrix."), { status: 409, code: "CPU_RELEASE_LINEAGE_CONFLICT" });
+  }
+  return release;
+}
+
 /** Render the one service-date master checker. OPLOC materialisation reuses this identity. */
 export async function createCpuMasterArtifact(plan: ProductionPlan, order: ProductionOrder, actor: string, timestamp: string, request: NextRequest, items: PlannedMenuItem[] = plan.menuItems) {
   assertCpuReleaseRowsAttested(items);
+  const release = requireCommittedRelease(plan, order);
   if (effectiveProductionPlanStatus(plan) !== "planned") throw Object.assign(new Error("Mark the allergen matrix Planned before saving it to the site Drive."), { status: 422 });
   const hospitalityBase = getHospitalityMatrixBaseUrl();
   if (!(await matrixDriveConfiguration(order)).enabled) throw Object.assign(new Error("A configured Drive workspace is required before signing the CPU allergen bundle."), { status: 503 });
-  const signatures = plan.signatures || [];
-  if (!signatures.some(signature => signature.role === "production_chef") || !signatures.some(signature => signature.role === "head_chef_site_manager")) throw Object.assign(new Error("Both required signatures are required for release materialization."), { status: 422 });
+  const signatures = release.signatures;
   const serviceDate = order.serviceDate || order.requiredBy.slice(0, 10);
   const withSource = (item: PlannedMenuItem) => ({ ...item, id: `${order.canonicalId}:${item.id}`, name: item.name });
   const html = allergenMatrixHtml({ clientName: "FIKA OS", destinationLabel: "CPU master allergen checker", serviceType: order.serviceType || "Delivered-In menu", menuName: order.menuName, serviceDate, serviceWindow: order.serviceWindow, requiredBy: order.requiredBy }, items.map(withSource), signatures);
@@ -68,7 +76,7 @@ export async function createCpuMasterArtifact(plan: ProductionPlan, order: Produ
   try { pdfBase64 = (await renderPdfToBuffer(html)).toString("base64"); } catch (error) { console.error("FIKA PDF renderer failure", { app: "cpu-production", operation: "allergen-master-pdf-generation", errorName: error instanceof Error ? error.name : "UnknownError", errorMessage: error instanceof Error ? error.message : String(error), serviceDate, requestId: request.headers.get("x-request-id") || undefined, buildSha: process.env.FIKA_BUILD_SHA || undefined }); throw rendererFailure(error); }
   if (!pdfBase64) throw Object.assign(new Error("The final allergen checker PDF could not be generated."), { status: 503 });
   const contentHash = dailyBundleSha256(Buffer.from(pdfBase64, "base64"));
-  const releaseToken = (plan.currentAllergenRelease?.releaseId || "uncommitted").replace(/[^A-Za-z0-9_-]+/g, "-");
+  const releaseToken = release.releaseId.replace(/[^A-Za-z0-9_-]+/g, "-");
   const fileName = `CPU-Master-${serviceDate}-${releaseToken}.pdf`;
   const response = await fetch(`${hospitalityBase}/api/allergen-matrix/drive`, { method: "POST", redirect: "error", headers: { "content-type": "application/json", ...(request.headers.get("cookie") ? { cookie: request.headers.get("cookie")! } : {}), ...(request.headers.get("x-fika-internal-token") ? { "x-fika-internal-token": request.headers.get("x-fika-internal-token")! } : {}), ...(request.headers.get("x-request-id") ? { "x-request-id": request.headers.get("x-request-id")! } : {}) }, body: JSON.stringify({ name: fileName, html, pdfBase64, productionOrderId: order.canonicalId, releaseId: plan.currentAllergenRelease?.releaseId, weekCommencing: serviceDate }) });
   const body = await response.json().catch(() => undefined) as { saved?: { fileId?: string; driveUrl?: string }; error?: { message?: string } } | undefined;
@@ -87,14 +95,14 @@ export function resumeCpuMaterializationPhase(result: { duplicate?: boolean; pla
 /** Build and publish artifacts for exactly one governed CPU order/OPLOC. */
 export async function createCpuReleaseArtifacts(plan: ProductionPlan, order: ProductionOrder, actor: string, timestamp: string, request: NextRequest, options: { publishPackage?: boolean; masterArtifact?: MatrixArtifact } = {}) {
   assertCpuReleaseRowsAttested(plan.menuItems);
+  const release = requireCommittedRelease(plan, order);
   if (effectiveProductionPlanStatus(plan) !== "planned") throw Object.assign(new Error("Mark the allergen matrix Planned before saving it to the site Drive."), { status: 422 });
   const subItems = plan.menuItems.flatMap(item => item.subItems);
   if (!subItems.length || subItems.some(item => !item.name.trim())) throw Object.assign(new Error("Complete every named sub-item before saving the matrix."), { status: 422 });
   const hospitalityBase = getHospitalityMatrixBaseUrl();
   if (!(await matrixDriveConfiguration(order)).enabled) throw Object.assign(new Error("A configured Drive workspace is required before signing the CPU allergen bundle."), { status: 503 });
   const serviceDate = order.serviceDate || order.requiredBy.slice(0, 10);
-  const signatures = plan.signatures || [];
-  if (!signatures.some(signature => signature.role === "production_chef") || !signatures.some(signature => signature.role === "head_chef_site_manager")) throw Object.assign(new Error("Both required signatures are required for release materialization."), { status: 422 });
+  const signatures = release.signatures;
   const adHoc = isAdHocProductionOrder(order);
   const persistPdf = async (kind: "master" | "site", fileName: string, html: string, existing?: MatrixArtifact): Promise<{ kind: "master" | "site"; artifact: MatrixArtifact }> => {
     if (durableArtifact(existing)) return { kind, artifact: existing };
@@ -112,8 +120,9 @@ export async function createCpuReleaseArtifacts(plan: ProductionPlan, order: Pro
     // Ad-Hoc orders produce ONE signed allergen checker PDF saved to the CPU Drive workspace. They have no Delivered-In site, so no
     // site bundle, packet or Delivered-In publication is built, even when the order uses an existing OPLOC.
     const scope = matrixSignatureScope(order, menuContentHash(plan.menuItems));
-    const release = plan.currentAllergenRelease;
-    if (!scope || !release || !["pending", "current"].includes(release.status) || plan.signedMenuContentHash !== scope.matrixContentHash || !allergenReleaseLineageMatchesOrder(release, order, plan.menuItems) || signatures.some(signature => !signatureMatchesScope(signature, scope))) {
+    const planSignatures = plan.signatures || [];
+    if (!planSignatures.some(signature => signature.role === "production_chef") || !planSignatures.some(signature => signature.role === "head_chef_site_manager")) throw Object.assign(new Error("Both required signatures are required for Ad-Hoc release materialization."), { status: 422 });
+    if (!scope || plan.signedMenuContentHash !== scope.matrixContentHash || planSignatures.some(signature => !signatureMatchesScope(signature, scope))) {
       throw Object.assign(new Error("The Ad-Hoc release must match both signatures and the current source matrix before creating its PDF."), { status: 409, code: "CPU_RELEASE_LINEAGE_CONFLICT" });
     }
     const adHocHtml = allergenMatrixHtml({ clientName: order.clientName, destinationLabel: order.destinationLabel || "Ad-Hoc production order", serviceType: order.serviceType, menuName: order.menuName, serviceDate, serviceWindow: order.serviceWindow, requiredBy: order.requiredBy }, plan.menuItems, signatures);
@@ -128,7 +137,7 @@ export async function createCpuReleaseArtifacts(plan: ProductionPlan, order: Pro
   if (!order.destinationOplocId) throw Object.assign(new Error("The signed CPU allergen checker requires a canonical OPLOC output."), { status: 422 });
   const withSource = (item: PlannedMenuItem) => ({ ...item, id: `${order.canonicalId}:${item.id}`, name: order.destinationOplocId ? `${order.destinationOplocId} · ${item.name}` : item.name });
   const masterHtml = allergenMatrixHtml({ clientName: "FIKA OS", destinationLabel: "CPU master allergen checker", serviceType: order.serviceType || "Delivered-In menu", menuName: order.menuName, serviceDate, serviceWindow: order.serviceWindow, requiredBy: order.requiredBy }, plan.menuItems.map(withSource), signatures);
-  const releaseToken = (plan.currentAllergenRelease?.releaseId || "uncommitted").replace(/[^A-Za-z0-9_-]+/g, "-");
+  const releaseToken = release.releaseId.replace(/[^A-Za-z0-9_-]+/g, "-");
   const master = durableArtifact(options.masterArtifact)
     ? options.masterArtifact
     : durableArtifact(plan.masterMatrixArtifact)
@@ -160,9 +169,8 @@ export async function materializeCommittedCpuRelease(request: NextRequest, order
   if (isAdHocProductionOrder(order) && order.status === "cancelled") throw Object.assign(new Error("The Ad-Hoc order is cancelled; its release cannot be materialized."), { status: 409, code: "CPU_RELEASE_LINEAGE_CONFLICT" });
   if (order.origin === "menu_planning" && (order.status === "cancelled" || order.workflowStatus === "cancelled")) throw Object.assign(new Error("The Menu Planning publication is withdrawn; its CPU release cannot be materialized."), { status: 409, code: "CPU_RELEASE_LINEAGE_CONFLICT" });
   if (order.origin === "menu_planning" && order.supersededBy) throw Object.assign(new Error("The Menu Planning production order has been superseded; its CPU release cannot be materialized."), { status: 409, code: "CPU_RELEASE_SUPERSEDED_ORDER" });
-  if (!allergenReleaseLineageMatchesOrder(pending, order, stored.menuItems)) throw Object.assign(new Error("The committed CPU release no longer matches the canonical source lineage."), { status: 409, code: "CPU_RELEASE_LINEAGE_CONFLICT" });
+  requireCommittedRelease(stored, order);
   if (pending.status === "current" && pending.materializationStatus === "ready") return { plan: stored, alreadyMaterialized: true };
-  if (pending.status !== "pending" && !(pending.status === "current" && pending.materializationStatus !== "ready")) throw Object.assign(new Error("The CPU allergen release is no longer materializable."), { status: 409 });
   // Hold BEFORE the started receipt is written: a retry of a pending release must not persist, render, upload or publish anything.
   assertCpuReleaseRowsAttested(stored.menuItems);
   const materializationReceiptId = (phase: "started" | "prepared" | "final") => cpuReleaseMaterializationReceiptId(releaseId, order, phase);
@@ -179,7 +187,7 @@ export async function materializeCommittedCpuRelease(request: NextRequest, order
     artifactCandidate.currentAllergenRelease = stageCpuAllergenReleaseMaterialization(startedPlan.currentAllergenRelease!, { masterArtifact: prepared.masterArtifact, derivedArtifacts: [prepared.siteArtifact], packetArtifacts: prepared.packetArtifacts });
     artifactCandidate.matrixArtifact = prepared.siteArtifact;
     artifactCandidate.signedMatrixArtifact = prepared.siteArtifact;
-    artifactCandidate.signedSignatures = artifactCandidate.signatures;
+    artifactCandidate.signedSignatures = artifactCandidate.currentAllergenRelease.signatures;
     artifactCandidate.updatedAt = new Date().toISOString();
     artifactCandidate.audit.push({ action: "allergen-matrix-materialized", at: artifactCandidate.updatedAt, by: artifactCandidate.updatedBy, reason: `Prepared artifacts for committed CPU release ${releaseId}.` });
     const preparedResult = await repository.saveAndAppendCpuChange(artifactCandidate, planRevisionToken(startedPlan), { serviceDate: order.serviceDate || order.requiredBy.slice(0, 10), entityType: "productionPlan", entityId: artifactCandidate.id, revision: artifactCandidate.audit.length, changeType: "allergen-release-artifacts-prepared", actorId: artifactCandidate.updatedBy, changedAt: artifactCandidate.updatedAt, idempotencyKey: materializationReceiptId("prepared") });

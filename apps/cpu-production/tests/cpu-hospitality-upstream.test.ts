@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
 import { NextRequest } from "next/server";
 import { CANONICAL_ALLERGEN_KEYS } from "../../shared/allergen-contract";
-import type { ProductionPlan } from "../app/lib/production-plan";
+import { matrixSignatureScope, type ProductionPlan } from "../app/lib/production-plan";
+import { allergenMatrixContentHash, buildCpuAllergenRelease } from "../lib/cpu-allergen-release";
 import { createCpuMasterArtifact, createCpuReleaseArtifacts, getHospitalityMatrixBaseUrl } from "../lib/cpu-release-materialization";
 import type { ProductionOrder } from "../lib/production-types";
 
@@ -31,6 +32,9 @@ const order = {
   origin: "hospitality_booking",
   destinationOplocId: "oploc:test",
   sourceBookingId: "booking:test",
+  sourceQuoteRevisionId: "quote-revision:test:v1",
+  currentRevision: 1,
+  version: 1,
   serviceDate: "2026-11-06",
   serviceWindow: { startTime: "12:00" },
   requiredBy: "2026-11-06T12:00:00.000Z",
@@ -60,6 +64,20 @@ const plan: ProductionPlan = {
   updatedAt: timestamp,
   updatedBy: "test-chef",
 };
+const releaseScope = matrixSignatureScope(order, allergenMatrixContentHash(plan.menuItems))!;
+const committedSignatures = (["production_chef", "head_chef_site_manager"] as const).map((role, index) => ({
+  role, printedName: role, signedAt: `${timestamp.slice(0, 19)}.${String(index).padStart(3, "0")}Z`, actor: "test-chef", attestation: "Test fixture.", scope: releaseScope,
+}));
+plan.signatures = committedSignatures;
+plan.signedMenuContentHash = releaseScope.matrixContentHash;
+plan.currentAllergenRelease = buildCpuAllergenRelease({
+  serviceDate: releaseScope.serviceDate, sourceOrigin: "hospitality_booking", sourceBookingId: releaseScope.sourceBookingId,
+  sourceQuoteRevisionId: releaseScope.sourceQuoteRevisionId, sourceRevision: releaseScope.sourceRevision,
+  sourceVersion: releaseScope.sourceVersion, sourceContentHash: releaseScope.sourceContentHash,
+  version: 1, signedAt: timestamp, signatures: committedSignatures, items: plan.menuItems,
+  masterArtifact: { id: "pending-master", bookingId: order.sourceBookingId, fileName: "pending.pdf", createdAt: timestamp, createdBy: "test-chef", contentHash: "d".repeat(64), pdfStatus: "unavailable", driveStatus: "not_configured" },
+  derivedArtifacts: [], packetArtifacts: [], status: "pending",
+});
 const request = new NextRequest("http://localhost/api/production-plan", {
   headers: { cookie: "session=test", "x-fika-internal-token": "test-token" },
 });
