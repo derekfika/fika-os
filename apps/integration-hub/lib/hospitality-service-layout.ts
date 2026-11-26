@@ -59,6 +59,7 @@ export function layoutPackageFromDocuments(documents: StoredServiceLayout[]): Se
 /** Bounded admin read used when the package is rebuilt: never on a booking or portal read. */
 export async function readStoredServiceLayouts(): Promise<StoredServiceLayout[]> {
   const snapshot = await layoutCollection().limit(101).get();
+  recordDataAccess({ operation: "hospitality-catalogue.service-layout", source: "FIRESTORE", dataset: SERVICE_LAYOUT_COLLECTION, documents: snapshot.size, firestoreReadKind: "query" });
   if (snapshot.size > 100) throw new Error("Service layout exceeds the bounded 100-document limit.");
   return snapshot.docs.map(doc => doc.data() as StoredServiceLayout);
 }

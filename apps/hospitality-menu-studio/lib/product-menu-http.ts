@@ -1,4 +1,4 @@
-import type { CatalogueLoadResult } from "@fika/server-shared/hospitality-catalogue-client";
+import type { CatalogueLoadResult, CatalogueManifest } from "@fika/server-shared/hospitality-catalogue-client";
 import { z } from "zod";
 import { idSchema, revisionSchema } from "../../shared/hospitality-menu-studio-content";
 import { productMenuDraft, productMenuSetup } from "../../shared/hospitality-menu-studio-product-content";
@@ -13,7 +13,7 @@ const maximumBytes = 500_000;
 const dishReferences = z.array(z.strictObject({ dishId: idSchema, revision: revisionSchema })).min(1).max(productMenuDishBatchSize);
 const readQuery = z.union([
   z.strictObject({ itemId: idSchema }),
-  z.strictObject({ cursor: idSchema.optional() }),
+  z.strictObject({ cursor: idSchema.optional(), includeCatalogueManifest: z.literal("1").optional() }),
   z.strictObject({ dishRevisions: z.string().min(1).max(5_300) }),
 ]);
 const command = z.discriminatedUnion("action", [
@@ -23,14 +23,14 @@ const command = z.discriminatedUnion("action", [
 
 export function productMenuHandlers(dependencies: {
   authorise: (request: Request) => Promise<StudioActor>;
-  readCatalogue: (request: Request) => Promise<CatalogueLoadResult>;
+  readCatalogue: (request: Request) => Promise<CatalogueLoadResult & { manifest?: CatalogueManifest }>;
   assertOrigin: (request: Request) => void;
   store: () => Pick<ProductMenuStore, "read" | "readDishRevisions" | "list" | "createOrOpen" | "save">;
 }) {
-  async function authorisedItems(request: Request) {
+  async function authorisedCatalogue(request: Request) {
     const catalogue = await dependencies.readCatalogue(request);
     if (catalogue.source === "cache-unverified") throw catalogueUnavailable();
-    return new Set(catalogue.catalogue.items.map(item => item.id));
+    return { items: new Set(catalogue.catalogue.items.map(item => item.id)), manifest: catalogue.manifest };
   }
 
   async function response(action: () => Promise<unknown>) {
@@ -49,7 +49,7 @@ export function productMenuHandlers(dependencies: {
       const actor = await dependencies.authorise(request);
       const params = new URL(request.url).searchParams;
       const query = readQuery.parse(Object.fromEntries(params));
-      if ([...params].length > 1) throw new StudioProblem(422, "INVALID_REQUEST", "Choose a single product or page.");
+      if ([...params].length !== new Set(params.keys()).size) throw new StudioProblem(422, "INVALID_REQUEST", "Choose a single product or page.");
       if ("dishRevisions" in query) {
         const references = dishReferences.parse(query.dishRevisions.split(",").map(key => {
           const [dishId, revision, extra] = key.split("@");
@@ -57,12 +57,13 @@ export function productMenuHandlers(dependencies: {
         }));
         return { items: await dependencies.store().readDishRevisions(references) };
       }
-      const items = await authorisedItems(request);
+      const { items, manifest } = await authorisedCatalogue(request);
       if ("itemId" in query) {
         requireCurrentItem(items, query.itemId);
         return { item: await dependencies.store().read(query.itemId) };
       }
-      return dependencies.store().list(items, query.cursor);
+      const page = await dependencies.store().list(items, query.cursor);
+      return query.includeCatalogueManifest === "1" && manifest ? { ...page, catalogueManifest: manifest } : page;
     }),
     POST: (request: Request) => response(async () => {
       dependencies.assertOrigin(request);
@@ -70,7 +71,7 @@ export function productMenuHandlers(dependencies: {
       if (!actor.canManage) throw new StudioProblem(403, "STUDIO_WRITE_DENIED", "Studio authoring is read-only for this account.");
       const input = command.parse(await readJson(request));
       const itemId = input.action === "create" ? input.itemId : input.item.itemId;
-      requireCurrentItem(await authorisedItems(request), itemId);
+      requireCurrentItem((await authorisedCatalogue(request)).items, itemId);
       const store = dependencies.store();
       const item = input.action === "create" ? await store.createOrOpen(actor.id, itemId, input.setup) : await store.save(actor.id, input.item);
       return { item };

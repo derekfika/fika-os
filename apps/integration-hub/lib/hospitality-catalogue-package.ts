@@ -109,14 +109,17 @@ export async function publishPublicCataloguePackage(pkg: CataloguePackage, store
 
 /** Bounded rebuild: 4 entityType queries + routing. Coalesced so concurrent mutations share one rebuild. */
 export async function rebuildCataloguePackage(store?: ReadPackageStore): Promise<PublishOutcome> {
-  if (inflight.current) return inflight.current;
+  if (inflight.current) {
+    recordDataAccess({ operation: "hospitality-catalogue.package.rebuild", source: "MEMORY", dataset: CATALOGUE_DATASET, documents: 0, cacheResult: "IN_FLIGHT_JOIN" });
+    return inflight.current;
+  }
   inflight.current = (async () => {
     const [records, routing, layouts] = await Promise.all([
       listCanonicalRecordsByTypes(["Hospitality Menu Item", "Hospitality Menu Offering", "Hospitality Menu Price", "OPLOC"], 1000) as Promise<CanonicalRecord[]>,
       db.collection("integrationHubHospitalityMenuProductionRouting").limit(2001).get(),
       readStoredServiceLayouts(),
     ]);
-    recordDataAccess({ app: "integration-hub", operation: "hospitality-catalogue.package.rebuild", source: "FIRESTORE", documents: records.length + routing.size + layouts.length });
+    recordDataAccess({ operation: "hospitality-catalogue.package.routing", source: "FIRESTORE", dataset: "integrationHubHospitalityMenuProductionRouting", documents: routing.size, firestoreReadKind: "query" });
     const of = (type: string) => records.filter(record => record.entityType === type);
     const pkg = buildCataloguePackage({ items: of("Hospitality Menu Item"), offerings: of("Hospitality Menu Offering"), prices: of("Hospitality Menu Price"), oplocs: of("OPLOC"), routing: routing.docs.map(doc => doc.data() as RoutingDoc), serviceLayout: layouts }, new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date()));
     const internal = await publishCataloguePackage(pkg, store);
@@ -139,10 +142,15 @@ export async function getCataloguePackageBytes(contentHash: string, store: ReadP
 }
 
 /** Raw gzip bytes for the public package, including prior immutable hash URLs. */
-export async function getPublicCataloguePackageManifest(store: ReadPackageStore = oplocPackageStore()) { return store.getManifest(PUBLIC_CATALOGUE_MANIFEST_KEY); }
+export async function getPublicCataloguePackageManifest(store: ReadPackageStore = oplocPackageStore()) {
+  const manifest = await store.getManifest(PUBLIC_CATALOGUE_MANIFEST_KEY);
+  recordDataAccess({ operation: "hospitality-catalogue.public.manifest", source: "SNAPSHOT", dataset: PUBLIC_CATALOGUE_DATASET, documents: Number(Boolean(manifest)), packageVersion: manifest?.packageVersion });
+  return manifest;
+}
 export async function getPublicCataloguePackageBytes(contentHash: string, store: ReadPackageStore = oplocPackageStore()) {
   if (!/^[0-9a-f]{64}$/.test(contentHash)) return undefined;
   const bytes = await store.get(`${PUBLIC_CATALOGUE_DATASET}/${contentHash}.json.gz`);
+  recordDataAccess({ operation: "hospitality-catalogue.public.package", source: "SNAPSHOT", dataset: PUBLIC_CATALOGUE_DATASET, documents: Number(Boolean(bytes)) });
   return bytes ? { bytes } : undefined;
 }
 

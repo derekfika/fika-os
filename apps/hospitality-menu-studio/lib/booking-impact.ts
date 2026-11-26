@@ -2,6 +2,7 @@ import { z } from "zod";
 import { rotationWeek, type Review } from "./contract";
 import type { PublicationImpactTarget } from "./publication";
 import { dateSchema } from "./schema";
+import { studioUpstream, studioUpstreamHeaders } from "./data-trace";
 
 const canonicalItemId = z.string().regex(/^hospitality-menu-item:[a-z0-9][a-z0-9:._-]{0,180}$/i);
 const responseSchema = z.object({
@@ -20,10 +21,10 @@ export async function readStudioBookingImpact(hub: string, sessionCookie: string
   if (!sessionCookie || !target.catalogueItemIds.length || target.catalogueItemIds.length > 50 || !Number.isFinite(span)
     || span < 0 || span > 366 * 86_400_000 || target.catalogueItemIds.some(id => !canonicalItemId.safeParse(id).success)) return unavailable;
   try {
-    const response = await requestHub(`${hub}/api/hospitality-studio-impact`, {
-      method: "POST", headers: { cookie: sessionCookie, accept: "application/json", "content-type": "application/json" },
+    const response = await studioUpstream("hub.studio-booking-impact", () => requestHub(`${hub}/api/hospitality-studio-impact`, {
+      method: "POST", headers: { cookie: sessionCookie, accept: "application/json", "content-type": "application/json", ...studioUpstreamHeaders() },
       body: JSON.stringify(wireTarget), redirect: "error", cache: "no-store", signal: AbortSignal.timeout(5000),
-    });
+    }));
     if (!response.ok || !response.body) return unavailable;
     const reader = response.body.getReader();
     const bytes: Uint8Array[] = [];

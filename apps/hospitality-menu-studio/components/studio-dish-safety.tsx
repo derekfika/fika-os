@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Dish } from "../lib/contract";
 import { Button } from "./studio-ui";
 import { checkerLink, dishSafetyStatus, safetyLabels, type DishSafetyStatus } from "./studio-dish-safety-model";
-import { request } from "./use-studio-draft";
+import { useStudioRequest } from "./use-studio-draft";
 import styles from "./studio.module.css";
 
 export function DishSafety({ dish, saved, canManage, checkerOrigin }: {
@@ -13,6 +13,7 @@ export function DishSafety({ dish, saved, canManage, checkerOrigin }: {
   canManage: boolean;
   checkerOrigin?: string;
 }) {
+  const request = useStudioRequest();
   const [status, setStatus] = useState<DishSafetyStatus>("unavailable");
   const [busy, setBusy] = useState(false);
   const [link, setLink] = useState<string>();

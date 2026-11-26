@@ -9,11 +9,12 @@ import {
   retainedTimestamp,
 } from "./studio-model";
 import type { SaveState } from "./studio-ui";
+import { useStudioReads } from "./studio-reads";
 
 type Entity = Menu | Dish;
 
-export async function request(body?: unknown, query = "") {
-  const response = await fetch(
+export async function request(body?: unknown, query = "", read: typeof fetch = fetch) {
+  const response = await read(
     `/api/studio${query}`,
     body
       ? {
@@ -32,6 +33,11 @@ export async function request(body?: unknown, query = "") {
   return result;
 }
 
+export function useStudioRequest() {
+  const reads = useStudioReads();
+  return useCallback((body?: unknown, query = "") => request(body, query, reads.fetch), [reads]);
+}
+
 /** Keeps local edits until a matching server acknowledgement. Writes are serialized. */
 export function useDraft<T extends Entity>(
   actor: StudioActor,
@@ -39,6 +45,7 @@ export function useDraft<T extends Entity>(
   initial: T | null,
   onSaved: (item: T) => void,
 ) {
+  const request = useStudioRequest();
   const [item, setItem] = useState<T | null>(initial);
   const [state, setState] = useState<SaveState>("saved");
   const [error, setError] = useState("");
