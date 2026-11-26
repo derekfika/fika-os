@@ -567,8 +567,12 @@ export function publicationWeekBlockers(
 ) {
   const blockers: string[] = [];
   const weekdays = serviceDaysForWeek(snapshot);
-  if (weekdays.length < 5)
+  // Main Lunch publishes a five-day workweek. A supplementary menu publishes
+  // only its scheduled occurrences, which may legitimately be one weekday.
+  if (!snapshot.week.supplementaryMenu && weekdays.length < 5)
     blockers.push("The menu week must contain five service days.");
+  if (snapshot.week.supplementaryMenu && weekdays.length === 0)
+    blockers.push("The supplementary menu week must contain at least one scheduled service day.");
   if (
     !weekdays.some((day) =>
       snapshot.entries.some(

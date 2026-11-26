@@ -6,7 +6,7 @@ import { join } from "node:path";
 import type { RollingSnapshot } from "../lib/rolling-menu-types";
 import { CANONICAL_MENU_SLOTS } from "../../shared/menu-section-order";
 import { editWeek, weekChanges } from "../lib/week-draft";
-import { buildPublishedDay, serviceDaysForWeek } from "../lib/menu-publication";
+import { buildPublishedDay, publicationWeekBlockers, serviceDaysForWeek } from "../lib/menu-publication";
 
 const directory = mkdtempSync(join(tmpdir(), "fika-week-draft-337-"));
 process.chdir(directory); process.env.MENU_PLANNING_DB_PATH = join(directory, "isolated.sqlite"); process.env.MENU_PLANNING_TEST_MODE = "1";
@@ -277,4 +277,39 @@ test("supplementary recurrence publishes only scheduled days and binds menu cont
   const renamed = { ...source, week: { ...source.week, supplementaryMenu: { ...source.week.supplementaryMenu, name: "Fixture Brunch" } } };
   assert.notEqual(buildPublishedDay(renamed, scheduled[0]).contentHash, published.contentHash);
   assert.throws(() => buildPublishedDay({ ...source, week: { ...source.week, menuOccurrenceStatus: "skipped" } }, scheduled[0]), /skipped/);
+});
+
+test("weekly publication accepts one scheduled supplementary day but keeps Main Lunch at five days", () => {
+  const breakfast = base();
+  breakfast.week.supplementaryMenu = {
+    id: "breakfast",
+    name: "Fixture Breakfast",
+    serviceType: "Breakfast",
+    siteIds: ["site:1"],
+    recurrenceWeekdays: [5],
+  };
+  const monday = breakfast.days[0];
+  const friday = breakfast.days[4];
+  monday.entryIds = [];
+  friday.entryIds = [breakfast.entries[0].id];
+  breakfast.entries[0].dayId = friday.id;
+  breakfast.entries[0].date = friday.date;
+
+  assert.deepEqual(serviceDaysForWeek(breakfast).map(day => day.id), [friday.id]);
+  assert.deepEqual(publicationWeekBlockers(breakfast, allowed, new Set(["dish:fixture"])), []);
+
+  const unscheduled = {
+    ...breakfast,
+    week: {
+      ...breakfast.week,
+      supplementaryMenu: { ...breakfast.week.supplementaryMenu, recurrenceWeekdays: [] },
+    },
+  };
+  assert.ok(publicationWeekBlockers(unscheduled).some(blocker => blocker.includes("at least one scheduled service day")));
+  assert.ok(publicationWeekBlockers({
+    ...breakfast,
+    days: breakfast.days.slice(0, 4),
+    week: { ...breakfast.week, supplementaryMenu: undefined },
+  })
+    .some(blocker => blocker.includes("five service days")));
 });
