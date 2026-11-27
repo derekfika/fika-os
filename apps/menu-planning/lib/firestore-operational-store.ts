@@ -5,6 +5,7 @@ import type { CompiledPublishedWeekSnapshot, MenuPublication } from "./menu-publ
 import type { RollingDay, RollingEntry, RollingSnapshot, RollingWeek } from "./rolling-menu-types";
 import type { SupplementaryMenuTemplate } from "./rolling-menu";
 import type { MenuStructureTemplate } from "./menu-structure-library";
+import type { SavedDailyMenu } from "./menu-library";
 import { recordMenuPlanningReadBudget } from "./read-budget";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import { decodeWeeklyPublicationPacket } from "@fika/server-shared/weekly-publication-packet";
@@ -73,6 +74,26 @@ export class MenuPlanningFirestoreRepository {
       const result = mutator(templates);
       transaction.set(ref, { ...data, templates });
       recordFirestore("menu-structure-library.write", 1);
+      return result;
+    });
+  }
+  async getSavedDailyMenus() {
+    const document = await this.db.collection(MENU_PLANNING_COLLECTIONS.settings).doc("menu-library").get();
+    recordFirestore("menu-library.read", document.exists ? 1 : 0);
+    const menus = document.exists ? document.data()?.menus : undefined;
+    if (menus !== undefined && !Array.isArray(menus)) throw new Error("Invalid saved menu library.");
+    return (menus || []) as SavedDailyMenu[];
+  }
+  async updateSavedDailyMenus<T>(mutator: (menus: SavedDailyMenu[]) => T): Promise<T> {
+    return this.db.runTransaction(async transaction => {
+      const ref = this.db.collection(MENU_PLANNING_COLLECTIONS.settings).doc("menu-library");
+      const document = await transaction.get(ref);
+      const data = document.exists ? document.data() || {} : {};
+      if (data.menus !== undefined && !Array.isArray(data.menus)) throw new Error("Invalid saved menu library.");
+      const menus = (data.menus || []) as SavedDailyMenu[];
+      const result = mutator(menus);
+      transaction.set(ref, { ...data, menus });
+      recordFirestore("menu-library.write", 1);
       return result;
     });
   }

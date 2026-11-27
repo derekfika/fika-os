@@ -5,6 +5,7 @@ import { assertOperationalStoreAvailable } from "./hosted-runtime";
 import { assertExpectedVersion, MenuPlanningFirestoreRepository, type EventReplayState, type HostedTransactionState, type MenuPlanningTransactionScope } from "./firestore-operational-store";
 import type { SupplementaryMenuTemplate } from "./rolling-menu";
 import type { MenuStructureTemplate } from "./menu-structure-library";
+import type { SavedDailyMenu } from "./menu-library";
 import { applyRollingEntryPatch, commandDayIds, commandEntryIds, type RollingMutationCommand, type RollingMutationDelta } from "./rolling-command";
 import type { CompiledPublishedWeekSnapshot } from "./menu-publication";
 import type { RollingDay, RollingEntry, RollingSnapshot, RollingWeek } from "./rolling-menu-types";
@@ -72,6 +73,8 @@ export type MenuPlanningOperationalStore = {
   getMenuTemplateSlots(): Promise<string[]>;
   getMenuStructureTemplates(): Promise<MenuStructureTemplate[]>;
   updateMenuStructureTemplates<T>(mutator: (templates: MenuStructureTemplate[]) => T): Promise<T>;
+  getSavedDailyMenus(): Promise<SavedDailyMenu[]>;
+  updateSavedDailyMenus<T>(mutator: (menus: SavedDailyMenu[]) => T): Promise<T>;
   getSupplementaryMenuTemplates(): Promise<SupplementaryMenuTemplate[]>;
   listWeekSummaries<T>(): Promise<T[]>;
   listWeekSummariesByCommencing<T>(weekCommencings: string[]): Promise<T[]>;
@@ -125,6 +128,21 @@ class SqliteOperationalStore implements MenuPlanningOperationalStore {
       const templates = rolling.menuStructureTemplates || [];
       const result = mutator(templates);
       rolling.menuStructureTemplates = templates;
+      return result;
+    });
+  }
+  async getSavedDailyMenus() {
+    const menus = (await this.readRollingState<{ savedDailyMenus?: unknown }>()).savedDailyMenus;
+    if (menus !== undefined && !Array.isArray(menus)) throw unavailable("Menu Planning saved menu library is invalid.");
+    return (menus || []) as SavedDailyMenu[];
+  }
+  async updateSavedDailyMenus<T>(mutator: (menus: SavedDailyMenu[]) => T) {
+    return withMenuPlanningTransactionSync(state => {
+      const rolling = state.rolling as { savedDailyMenus?: unknown };
+      if (rolling.savedDailyMenus !== undefined && !Array.isArray(rolling.savedDailyMenus)) throw unavailable("Menu Planning saved menu library is invalid.");
+      const menus = (rolling.savedDailyMenus || []) as SavedDailyMenu[];
+      const result = mutator(menus);
+      rolling.savedDailyMenus = menus;
       return result;
     });
   }
@@ -201,6 +219,8 @@ class FirestoreOperationalStore implements MenuPlanningOperationalStore {
   getMenuTemplateSlots() { return this.repository.getMenuTemplateSlots(); }
   getMenuStructureTemplates() { return this.repository.getMenuStructureTemplates(); }
   updateMenuStructureTemplates<T>(mutator: (templates: MenuStructureTemplate[]) => T) { return this.repository.updateMenuStructureTemplates(mutator); }
+  getSavedDailyMenus() { return this.repository.getSavedDailyMenus(); }
+  updateSavedDailyMenus<T>(mutator: (menus: SavedDailyMenu[]) => T) { return this.repository.updateSavedDailyMenus(mutator); }
   getSupplementaryMenuTemplates() { return this.repository.getSupplementaryMenuTemplates(); }
   listWeekSummaries<T>() { return this.repository.listWeekSummaries() as Promise<T[]>; }
   listWeekSummariesByCommencing<T>(weekCommencings: string[]) { return this.repository.listWeekSummariesByCommencing(weekCommencings) as Promise<T[]>; }
@@ -240,6 +260,8 @@ export function readRollingState<T>() { return getMenuPlanningOperationalStore()
 export function getMenuTemplateSlots() { return getMenuPlanningOperationalStore().getMenuTemplateSlots(); }
 export function getMenuStructureTemplates() { return getMenuPlanningOperationalStore().getMenuStructureTemplates(); }
 export function updateMenuStructureTemplates<T>(mutator: (templates: MenuStructureTemplate[]) => T) { return getMenuPlanningOperationalStore().updateMenuStructureTemplates(mutator); }
+export function getSavedDailyMenus() { return getMenuPlanningOperationalStore().getSavedDailyMenus(); }
+export function updateSavedDailyMenus<T>(mutator: (menus: SavedDailyMenu[]) => T) { return getMenuPlanningOperationalStore().updateSavedDailyMenus(mutator); }
 export function listWeekSummaries<T>() { return getMenuPlanningOperationalStore().listWeekSummaries<T>(); }
 export function listWeekSummariesByCommencing<T>(weekCommencings: string[]) { return getMenuPlanningOperationalStore().listWeekSummariesByCommencing<T>(weekCommencings); }
 export function getWeekHead<T>(weekId: string) { return getMenuPlanningOperationalStore().getWeekHead<T>(weekId); }

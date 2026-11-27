@@ -19,9 +19,11 @@ test("Week Planner shows owner-approved salad display names without changing gen
   const component = readFileSync(new URL("../app/week-planner.tsx", import.meta.url), "utf8");
   assert.match(component, /<strong>\{plannerSlotLabel\(slot, menuStructureRowLabel\(snapshot, slot\)\)\}<\/strong>/, "slot row headings show the custom row label when present");
   assert.match(component, /weekPlannerSlotLabel\(slot, slotLabel\(slot\), displayName\)/, "explicit custom row names reach the label helper without being replaced by canonical slot labels");
-  assert.match(component, /<small>\{plannerSlotLabel\(slot\)\}<\/small>/, "picker headings show the explicit subtype");
+  assert.match(component, /displaySlotLabel=\{plannerSlotLabel\(picker\.slot, menuStructureRowLabel\(snapshot, picker\.slot\)\)\}/, "the shared picker receives the current row's explicit planner label");
+  const picker = readFileSync(new URL("../app/canonical-dish-picker.tsx", import.meta.url), "utf8");
+  assert.match(picker, /<small>\{displaySlotLabel \|\| slot\}<\/small>/, "the canonical picker shows the caller's current row label");
   assert.match(component, /Select dish for \$\{day\.dayName\}, \$\{plannerSlotLabel\(slot\)\}/, "Monday and other day cells expose the same specific label");
-  assert.match(component, /Recommended dishes for this row appear first/, "recommendations never hide other catalogue dishes");
+  assert.match(picker, /Recommended dishes for this row appear first/, "recommendations never hide other catalogue dishes");
 });
 
 test("hot main, fish, vegan and soup slots share one ordered HOT MAINS banner", () => {
