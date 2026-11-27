@@ -6,13 +6,26 @@ import { readGovernedOplocs } from "@/lib/oploc-authority";
 import type { PublishedMenuDay } from "@/lib/menu-publication";
 import { forwardProductionMaterialisationEvent } from "@/lib/production-client";
 import { replayMenuPublicationOutbox } from "@/lib/menu-publication";
-import { listMenuPlanningEventIdsForPublication } from "@/lib/operational-store";
+import { getMenuPlanningEvent, listMenuPlanningEventIdsForPublication } from "@/lib/operational-store";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import { getPublicationHandoff, queuedPublicationHandoff } from "@/lib/publication-handoff";
+import { isPublicationEventForPublication, publicationEventDiagnostic } from "@/lib/publication-event-diagnostic";
 
 async function handleGet(request: NextRequest) {
   const actor = await resolveMenuActor(request);
   const publicationId = request.nextUrl.searchParams.get("publicationId");
+  const eventId = request.nextUrl.searchParams.get("eventId");
+  if (eventId !== null) {
+    if (!publicationId) return NextResponse.json({ error: { message: "Publication is required for an event diagnostic." } }, { status: 422 });
+    if (!actorCanWriteOneOff(actor, "publish")) return NextResponse.json({ error: { message: "Event diagnostics require organisation-wide Menu Publish authority." } }, { status: 403 });
+    if (!publicationId.trim() || publicationId.length > 500 || publicationId.includes("/")) return NextResponse.json({ error: { message: "A valid publication reference is required." } }, { status: 422 });
+    if (!eventId.trim() || eventId.length > 2000 || eventId.includes("/")) return NextResponse.json({ error: { message: "A valid event reference is required." } }, { status: 422 });
+    const publication = await getMenuPublication(publicationId);
+    if (!publication) return NextResponse.json({ error: { message: "Menu publication was not found." } }, { status: 404 });
+    const event = await getMenuPlanningEvent(eventId);
+    if (!event || !isPublicationEventForPublication(event, publicationId)) return NextResponse.json({ error: { message: "Publication event was not found." } }, { status: 404 });
+    return NextResponse.json({ event: publicationEventDiagnostic(event) }, { headers: { "Cache-Control": "no-store" } });
+  }
   if (publicationId) {
     const publication = await getMenuPublication(publicationId);
     if (!publication) return NextResponse.json({ error: { message: "Menu publication was not found." } }, { status: 404 });
