@@ -130,6 +130,7 @@ test("empty states distinguish nothing offered, filters hiding everything and a 
 });
 
 const planner = readFileSync(new URL("../app/week-planner.tsx", import.meta.url), "utf8");
+const picker = readFileSync(new URL("../app/canonical-dish-picker.tsx", import.meta.url), "utf8");
 const panel = readFileSync(new URL("../app/dish-picker-filters.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../app/dish-picker-filters.css", import.meta.url), "utf8");
 
@@ -137,23 +138,23 @@ test("the planner keeps filters and recommendation mode with the search so Cance
   assert.match(planner, /const \[pickerFilters, setPickerFilters\] = useState<PickerFilters>\(emptyPickerFilters\)/);
   assert.match(planner, /setQuery\(""\); setPickerFilters\(emptyPickerFilters\); setPickerMode\("recommended"\); setPicker\(/);
   assert.match(planner, /filters=\{pickerFilters\} setFilters=\{setPickerFilters\}/);
-  assert.match(planner, /<DishPickerFilters /);
+  assert.match(picker, /<DishPickerFilters /);
   assert.match(planner, /const \[pickerMode, setPickerMode\] = useState<"recommended" \| "all">\("recommended"\)/);
-  assert.match(planner, /Search the entire Dish Library/);
-  assert.match(planner, /rankDishPickerItems\(result.dishes/);
+  assert.match(picker, /Search the entire Dish Library/);
+  assert.match(picker, /rankDishPickerItems\(result.dishes/);
   assert.match(planner, /setPickerMode\("recommended"\)/);
 });
 
 test("existing planner behaviour remains: Enter-to-create, choose, drag/copy, clear and publish commands", () => {
-  assert.match(planner, /resolveEnter\(/);
-  assert.match(planner, /onClick=\{\(\) => onChoose\(dish\)\}/);
+  assert.match(picker, /resolveEnter\(/);
+  assert.match(picker, /onClick=\{\(\) => onChoose\(dish\)\}/);
   assert.match(planner, /assessDishCopyTarget/);
   assert.match(planner, /update-entry/);
   assert.match(planner, /create-entry/);
 });
 
 test("filters read the shared registry, never hard-code tags, and never write", () => {
-  assert.match(planner, /loadDishTagRegistry\(\)/);
+  assert.match(picker, /loadDishTagRegistry\(\)/);
   for (const source of [panel, readFileSync(new URL("../lib/dish-picker-filters.ts", import.meta.url), "utf8")]) {
     assert.doesNotMatch(source, /method:\s*"(POST|PUT|PATCH|DELETE)"|localStorage|sessionStorage/);
   }

@@ -11,6 +11,7 @@ import {
   placeMenu,
   shouldIgnoreClick,
   suppressClickUntil,
+  withMenuLibraryDayActions,
 } from "../lib/planner-cell-menu";
 
 const entry = { id: "e1", itemId: "dish:a", itemLabel: "Chicken Tikka" };
@@ -30,6 +31,14 @@ test("a populated cell offers Edit, Change, Copy and a red Clear after a divider
 test("an empty cell offers only Select dish and never Edit or Clear for an absent record", () => {
   assert.deepEqual(ids({ ...base, entry: undefined }), ["select"]);
   assert.deepEqual(ids({ ...base, entry: { id: "e2", itemId: "", itemLabel: "   " } }), ["select"]);
+});
+
+test("day-level library actions appear after cell actions and expose a lock reason", () => {
+  const actions = withMenuLibraryDayActions(cellMenuActions({ ...base, entry: undefined }), "This day is locked.");
+  assert.deepEqual(actions.map(action => action.id), ["select", "save-day", "load-day"]);
+  assert.equal(actions[1].label, "Save Day to Menu Library");
+  assert.equal(actions[2].label, "Load from Menu Library");
+  assert.equal(actions[1].disabledReason, "This day is locked.");
 });
 
 test("Edit fails visibly for an unresolved, historical or unlinked dish instead of editing the wrong one", () => {
@@ -109,8 +118,8 @@ const planner = readFileSync(new URL("../app/week-planner.tsx", import.meta.url)
 const menu = readFileSync(new URL("../app/planner-cell-menu.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../app/planner-cell-menu.css", import.meta.url), "utf8");
 
-test("right-click is prevented only on populated planner cells, so the browser menu stays elsewhere", () => {
-  assert.match(planner, /onContextMenu=\{entry \? event => \{ event\.preventDefault\(\);/);
+test("right-click opens the cell and day actions from populated and empty planner cells", () => {
+  assert.match(planner, /onContextMenu=\{event => \{ event\.preventDefault\(\);/);
   assert.equal((planner.match(/onContextMenu=/g) || []).length, 1, "one scoped handler, never page-wide");
   assert.doesNotMatch(planner, /addEventListener\("contextmenu"/);
   assert.doesNotMatch(menu, /document\.addEventListener\("contextmenu"/);

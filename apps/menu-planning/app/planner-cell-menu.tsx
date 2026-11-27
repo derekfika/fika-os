@@ -21,6 +21,8 @@ const ICONS: Record<CellMenuActionId, string> = {
   clear: "M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13",
   select: "M12 5v14M5 12h14",
   "toggle-core": "M12 3v18M3 12h18",
+  "save-day": "M5 4h12l3 3v13H4V4h1zM8 4v6h8V4M8 20v-6h8v6",
+  "load-day": "M12 16V4m0 0L7 9m5-5 5 5M5 14v6h14v-6",
 };
 
 /**

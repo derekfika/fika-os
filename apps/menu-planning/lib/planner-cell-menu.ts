@@ -4,7 +4,7 @@
  * a deliberate long press. No React and no writes; the planner owns what each action does.
  */
 
-export type CellMenuActionId = "edit" | "change" | "copy" | "clear" | "select" | "toggle-core";
+export type CellMenuActionId = "edit" | "change" | "copy" | "clear" | "select" | "toggle-core" | "save-day" | "load-day";
 
 export type CellMenuAction = {
   id: CellMenuActionId;
@@ -51,6 +51,14 @@ export function cellMenuActions(input: CellMenuInput): CellMenuAction[] {
   });
   actions.push({ id: "clear", label: "Clear from planner", destructive: true, dividerBefore: true });
   return actions;
+}
+
+/** Menu Library operations apply to the full day, regardless of which cell opened the menu. */
+export function withMenuLibraryDayActions(actions: readonly CellMenuAction[], disabledReason?: string): CellMenuAction[] {
+  return [...actions,
+    { id: "save-day", label: "Save Day to Menu Library", dividerBefore: true, ...(disabledReason ? { disabledReason } : {}) },
+    { id: "load-day", label: "Load from Menu Library", ...(disabledReason ? { disabledReason } : {}) },
+  ];
 }
 
 export type Point = { x: number; y: number };

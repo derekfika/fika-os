@@ -140,13 +140,14 @@ test("a server match by exact name or merged alias is treated as selecting an ex
 });
 
 const planner = readFileSync(new URL("../app/week-planner.tsx", import.meta.url), "utf8");
+const picker = readFileSync(new URL("../app/canonical-dish-picker.tsx", import.meta.url), "utf8");
 const modal = readFileSync(new URL("../app/dish-editor-modal.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../app/dish-editor-modal.css", import.meta.url), "utf8");
 
 test("the planner opens the modal from Enter, keeps the picker cell for the save and returns to the picker on cancel", () => {
-  assert.match(planner, /if \(event\.nativeEvent\.isComposing\) return/);
-  assert.match(planner, /resolveEnter\(/);
-  assert.match(planner, /\{picker && !editor && !classification && <DishPicker/);
+  assert.match(picker, /if \(event\.nativeEvent\.isComposing\) return/);
+  assert.match(picker, /resolveEnter\(/);
+  assert.match(planner, /\{picker && !editor && !classification && <CanonicalDishPicker/);
   assert.match(planner, /\{access\.canManageOrganisation && picker && editor && <DishEditorModal/);
   assert.match(planner, /onCancel=\{\(\) => setEditor\(undefined\)\}/);
   assert.match(planner, /if \(saved\.outcome !== "updated"\) await choose\(\{ id: saved\.id, name: saved\.name, category: saved\.category \}\)/);
@@ -253,7 +254,7 @@ test("the salad slot is saved only for Salad dishes and other dishes keep their 
 test("the planner picker and modal apply and expose the salad slot rule", () => {
   assert.match(planner, /subcategory: saladSubtypeForSlot\(slot\)/);
   assert.match(planner, /initialSubcategory=\{editor\.subcategory\}/);
-  assert.match(planner, /Search the entire Dish Library/);
+  assert.match(picker, /Search the entire Dish Library/);
   assert.match(modal, /Salad slot/);
   assert.match(modal, /mode === "create" \? initialSubcategory : undefined/);
   assert.match(modal, /Not assigned yet/);
