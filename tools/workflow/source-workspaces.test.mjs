@@ -9,8 +9,8 @@ import { fixture } from './lifecycle-fixture.mjs';
 import { createWorkspace, workspaceRecords } from './workspaces.mjs';
 import { integrateSourceWorkspace, assignSourceWriter, createInfrastructureRecoveryWorkspace, createSourceWorkspace, completeSourceWorkspace, recoverSourceReservation, runSourceOperation } from './source-workspaces.mjs';
 import { completionFile, managedRoot, sourceTaskFile, workspaceInventory } from './workspace-capacity.mjs';
-import { cleanupSourceWorkspaces, integrationEvidence, pruneStaleSourceRegistrations, reconcileOrphanedBootstrapRecords } from './workspace-retirement.mjs';
-import { installSourceDependencies, recordGenerated, validationOutputCandidates, verifiedPythonCache, verifiedTypeScriptBuildInfo } from './workspace-cache.mjs';
+import { archiveIgnoredArtifacts, cleanupSourceWorkspaces, integrationEvidence, pruneStaleSourceRegistrations, reconcileOrphanedBootstrapRecords, retireVerificationOnlyWorkspace } from './workspace-retirement.mjs';
+import { generatedFingerprint, installSourceDependencies, recordGenerated, validationOutputCandidates, verifiedPythonCache, verifiedTypeScriptBuildInfo } from './workspace-cache.mjs';
 import { sourceWorkspaceHealth } from './workspace-health.mjs';
 import { migrateSourceHistory } from './source-migration.mjs';
 import { governedReleaseOperation } from './workspace-state.mjs';
@@ -69,6 +69,144 @@ test('completion protects dirty, ignored and unique commits and records pushed e
     assert.equal(completed.retirement, 'retained');
     assert.equal(readFileSync(path.join(task.directory, '.env'), 'utf8'), 'private fixture');
     assert.equal(f.git('rev-parse', task.branch), completed.finalSha);
+  }); } finally { f.dispose(); }
+});
+
+test('verification-only retirement archives fingerprinted dependencies and preserves Git provenance without a PR', () => {
+  const f = fixture();
+  try { f.within(() => {
+    const name = 'menu-planning-ui-housekeeping', owner = 'agent-task';
+    const generated = 'apps/menu-planning/node_modules';
+    const paths = ['apps/menu-planning/app/menu-planning-shell.tsx', 'apps/menu-planning/app/week-planner.tsx', 'apps/menu-planning/tests'];
+    const task = createSourceWorkspace(name, { owner, scope: paths.join(',') });
+    task.run = (...args) => command('git', args, { cwd: task.directory });
+    mkdirSync(path.join(task.directory, generated), { recursive: true });
+    writeFileSync(path.join(task.directory, generated, 'fixture-package.txt'), 'preserve this generated artifact');
+    const recorded = recordGenerated(task, [generated]);
+    assert.deepEqual(recorded.paths, [generated]);
+    assert.deepEqual(recorded.protectedPaths, []);
+    const expectedFingerprint = generatedFingerprint(task.directory, generated);
+    const previousCompletion = completeSourceWorkspace(name, {
+      owner, preserve: true, reason: 'No implementation needed: the fixture was created only for source verification.',
+    });
+    assert.equal(previousCompletion.outcome, 'unfinished-preserved');
+    assert.equal(previousCompletion.dirty, false);
+
+    const verificationPolicies = new Map([[name, {
+      name, owner, baseline: task.baseline, paths, completionOutcome: 'unfinished-preserved',
+      completionReasonPrefix: 'No implementation needed:', generated,
+    }]]);
+    const retired = retireVerificationOnlyWorkspace(name, {
+      owner, reason: 'Owner-authorized verified retirement of this no-change checkout.',
+    }, { verificationPolicies });
+    assert.equal(retired.outcome, 'completed-verification-only');
+    assert.equal(retired.retirement, 'retired');
+    assert.equal(retired.verificationEvidence.noUniqueCommits, true);
+    assert.equal(retired.verificationEvidence.generatedArchive[0].fingerprint, expectedFingerprint);
+    assert.equal(retired.artifactIntegrityVerified, true);
+    assert.equal(existsSync(task.directory), false);
+    assert.notEqual(spawnSync('git', ['show-ref', '--verify', `refs/heads/${task.branch}`], { cwd: f.repo, windowsHide: true }).status, 0);
+    assert.equal(existsSync(sourceTaskFile(name)), false);
+    assert.equal(existsSync(completionFile(name)), false);
+
+    const archiveRoot = path.join(stateDir(), 'source-recovery', 'verification-only', name, 'generated');
+    assert.equal(readFileSync(path.join(archiveRoot, generated, 'fixture-package.txt'), 'utf8'), 'preserve this generated artifact');
+    assert.equal(generatedFingerprint(archiveRoot, generated, { allowDanglingLinks: true }), expectedFingerprint);
+    const archiveRecord = JSON.parse(readFileSync(path.join(stateDir(), 'source-archive', `${name}.json`), 'utf8'));
+    assert.equal(archiveRecord.previousCompletion.reason, previousCompletion.reason);
+    assert.equal(archiveRecord.verificationArchive, path.join('source-recovery', 'verification-only', name));
+  }); } finally { f.dispose(); }
+});
+
+test('verification-only retirement refuses changed generated output and retains the checkout', () => {
+  const f = fixture();
+  try { f.within(() => {
+    const name = 'menu-planning-ui-housekeeping', owner = 'agent-task';
+    const generated = 'apps/menu-planning/node_modules';
+    const paths = ['apps/menu-planning/app/menu-planning-shell.tsx', 'apps/menu-planning/app/week-planner.tsx', 'apps/menu-planning/tests'];
+    const task = createSourceWorkspace(name, { owner, scope: paths.join(',') });
+    task.run = (...args) => command('git', args, { cwd: task.directory });
+    mkdirSync(path.join(task.directory, generated), { recursive: true });
+    const dependencyFile = path.join(task.directory, generated, 'fixture-package.txt');
+    writeFileSync(dependencyFile, 'fingerprinted package');
+    recordGenerated(task, [generated]);
+    completeSourceWorkspace(name, { owner, preserve: true, reason: 'No implementation needed: verification-only fixture.' });
+    writeFileSync(dependencyFile, 'changed after fingerprint');
+
+    const verificationPolicies = new Map([[name, {
+      name, owner, baseline: task.baseline, paths, completionOutcome: 'unfinished-preserved',
+      completionReasonPrefix: 'No implementation needed:', generated,
+    }]]);
+    assert.throws(() => retireVerificationOnlyWorkspace(name, { owner, reason: 'Owner-authorized verified retirement.' }, { verificationPolicies }), /missing, unrecorded or changed/);
+    assert.equal(existsSync(task.directory), true);
+    assert.equal(existsSync(path.join(stateDir(), 'source-recovery', 'verification-only', name)), false);
+  }); } finally { f.dispose(); }
+});
+
+test('merged workspace artifact archiving copies generated outputs and the explicit #736 local fixture intact', () => {
+  const f = fixture();
+  try { f.within(() => {
+    const task = createSourceWorkspace('menu-handoff-event-diagnostics', { owner: 'fixture-owner' });
+    task.run = (...args) => command('git', args, { cwd: task.directory });
+    const generated = 'apps/menu-planning/.next';
+    const dependencies = 'apps/menu-planning/node_modules';
+    const localFixture = 'apps/menu-planning/local-data/menu-planning/saved-sandwiches.json';
+    mkdirSync(path.join(task.directory, generated), { recursive: true });
+    mkdirSync(path.join(task.directory, dependencies), { recursive: true });
+    mkdirSync(path.dirname(path.join(task.directory, localFixture)), { recursive: true });
+    writeFileSync(path.join(task.directory, generated, 'build-output.txt'), 'generated build output');
+    writeFileSync(path.join(task.directory, dependencies, 'dependency.txt'), 'generated dependency tree');
+    writeFileSync(path.join(task.directory, localFixture), '{"fixture":"preserve"}');
+    recordGenerated(task, [dependencies]);
+
+    const fakeMergedHead = 'a'.repeat(40);
+    const archive = archiveIgnoredArtifacts(task, fakeMergedHead, { authorizedHeads: new Map([[task.name, fakeMergedHead]]) });
+    assert.deepEqual(archive.manifest.items.map(item => [item.path, item.type]), [
+      [generated, 'generated'], [localFixture, 'local-fixture'], [dependencies, 'generated'],
+    ]);
+    const contents = path.join(stateDir(), archive.directory, 'contents');
+    for (const item of archive.manifest.items) {
+      assert.equal(generatedFingerprint(contents, item.path, { allowDanglingLinks: true }), item.fingerprint);
+    }
+    assert.equal(readFileSync(path.join(contents, localFixture), 'utf8'), '{"fixture":"preserve"}');
+    assert.equal(existsSync(path.join(task.directory, localFixture)), true);
+  }); } finally { f.dispose(); }
+});
+
+test('merged workspace artifact archiving preserves the checkout when an unknown ignored path is present', () => {
+  const f = fixture();
+  try { f.within(() => {
+    const task = createSourceWorkspace('source-unknown-artifact', { owner: 'fixture-owner' });
+    const unknown = 'apps/menu-planning/local-data/menu-planning/unknown.json';
+    mkdirSync(path.dirname(path.join(task.directory, unknown)), { recursive: true });
+    writeFileSync(path.join(task.directory, unknown), 'keep outside any artifact archive');
+    const fakeMergedHead = 'a'.repeat(40);
+    assert.throws(() => archiveIgnoredArtifacts(task, fakeMergedHead, { authorizedHeads: new Map([[task.name, fakeMergedHead]]) }), /not eligible for generated-output archival/);
+    assert.equal(existsSync(path.join(task.directory, unknown)), true);
+    assert.equal(existsSync(path.join(stateDir(), 'source-recovery', 'workspace-artifacts', task.name)), false);
+  }); } finally { f.dispose(); }
+});
+
+test('Menu Designer generated browser and dependency artifacts are archived before its governed retirement', () => {
+  const f = fixture();
+  try { f.within(() => {
+    const task = createSourceWorkspace('menu-designer-visual-ui', { owner: 'agent-task' });
+    const generated = 'apps/menu-planning/.next';
+    const dependencies = 'apps/menu-planning/node_modules';
+    mkdirSync(path.join(task.directory, generated), { recursive: true });
+    mkdirSync(path.join(task.directory, dependencies), { recursive: true });
+    writeFileSync(path.join(task.directory, generated, 'build-output.txt'), 'preserve browser screenshots build');
+    writeFileSync(path.join(task.directory, dependencies, 'dependency.txt'), 'preserve isolated dependencies');
+    task.run = (...args) => command('git', args, { cwd: task.directory });
+    recordGenerated(task, [dependencies]);
+
+    const archive = archiveIgnoredArtifacts(task, task.head);
+    assert.deepEqual(archive.manifest.items.map(item => item.path), [generated, dependencies]);
+    const contents = path.join(stateDir(), archive.directory, 'contents');
+    for (const item of archive.manifest.items) {
+      assert.equal(generatedFingerprint(contents, item.path, { allowDanglingLinks: true }), item.fingerprint);
+    }
+    assert.equal(readFileSync(path.join(contents, generated, 'build-output.txt'), 'utf8'), 'preserve browser screenshots build');
   }); } finally { f.dispose(); }
 });
 

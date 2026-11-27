@@ -9,7 +9,7 @@ import { cancelSourceQueue, checkSourceWorkspace, completeSourceWorkspace, creat
   assignSourceWriter, createInfrastructureRecoveryWorkspace, integrateSourceWorkspace, promoteSourceQueue, recoverSourceOperation, recoverSourceReservation, runSourceOperation,
   sourceWriters } from './source-workspaces.mjs';
 import { requireCanonical, stateRecords, workspaceInventory } from './workspace-capacity.mjs';
-import { cleanupSourceWorkspaces, pruneStaleSourceRegistrations, reconcileOrphanedBootstrapRecords } from './workspace-retirement.mjs';
+import { cleanupSourceWorkspaces, pruneStaleSourceRegistrations, reconcileOrphanedBootstrapRecords, retireVerificationOnlyWorkspace } from './workspace-retirement.mjs';
 import { sourceWorkspaceHealth } from './workspace-health.mjs';
 import { installSourceDependencies, validationOutputCandidates, recordGenerated } from './workspace-cache.mjs';
 import { migrateSourceHistory } from './source-migration.mjs';
@@ -97,6 +97,10 @@ async function main() {
     else if (arg === 'writers') result = sourceWriters(name);
     else if (arg === 'check') result = checkSourceWorkspace(name);
     else if (arg === 'complete') result = completeSourceWorkspace(name, options);
+    else if (arg === 'retire-verification-only') {
+      result = retireVerificationOnlyWorkspace(name, options);
+      result.promotion = promoteSourceQueue();
+    }
     else if (arg === 'cancel') {
       result = cancelSourceQueue(name, options);
       if (result.state === 'cancelled') result.promotion = promoteSourceQueue();
@@ -199,6 +203,7 @@ async function main() {
       'fika workspace create <task> --owner <agent> [--scope <advisory paths>]',
       'fika workspace check <task>',
       'fika workspace complete <task> --owner <agent> [--preserve --reason <why>]',
+      'fika workspace retire-verification-only <authorized-task> --owner <agent> --reason <why>',
       'fika workspace startup; fika workspace cleanup [<task>] [--execute]; fika workspace prune [--execute]',
       'fika workspace health [--inventory-only] [--min-free-gb <GB>] [--output <file>]',
       'fika workspace cancel <queued-task> --owner <agent>; fika workspace recover <task> --owner <agent> --reason <why>',
