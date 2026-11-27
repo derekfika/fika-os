@@ -1,6 +1,7 @@
 import "./fonts.css";
 import "./styles.css";
 import "../../../shared/fika/tokens.css";
+import "../../../shared/fika/component-atlas.css";
 import "./shell.css";
 import "./planner-stage2.css";
 import "./final-tightening.css";

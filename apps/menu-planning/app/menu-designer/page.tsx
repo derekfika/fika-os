@@ -86,7 +86,7 @@ export default function MenuDesignerPage() {
         body: JSON.stringify({ action: saveAction, ...(current && saveAction !== "create" ? { templateId: current.id, expectedVersion: current.version } : {}), name: saveAction === "duplicate" ? `Copy of ${name.trim()}` : name.trim(), structure }),
       });
       const body = await response.json() as MenuLibraryResponse;
-      if (!response.ok) throw new Error(body.error?.message || "The Menu Library could not be updated.");
+      if (!response.ok) throw new Error(body.error?.message || "Saved layouts could not be updated.");
       const nextTemplates = Array.isArray(body.templates) ? body.templates : [];
       setTemplates(nextTemplates);
       if (saveAction === "archive") {
@@ -100,10 +100,10 @@ export default function MenuDesignerPage() {
             : nextTemplates.find(template => template.id === current?.id);
         if (saved) applyTemplate(saved);
         setTemplates(nextTemplates);
-        setNotice(saveAction === "duplicate" ? "A separate copy was added to Menu Library." : "Menu layout saved. Existing menu instances are unchanged.");
+        setNotice(saveAction === "duplicate" ? "A separate copy was added to Saved Layouts." : "Menu layout saved. Existing menu instances are unchanged.");
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The Menu Library could not be updated.");
+      setError(cause instanceof Error ? cause.message : "Saved layouts could not be updated.");
     } finally {
       setBusy(false);
     }
@@ -124,11 +124,11 @@ export default function MenuDesignerPage() {
     }
   };
 
-  return <MenuPlanningShell section="Menu Designer">
+  return <div className="fika-ui menu-designer-ui"><MenuPlanningShell section="Menu Designer">
     <section className="workspace-intro planner-intro menu-designer-intro"><small>Menu Planning · reusable layouts</small><h2>Menu Designer</h2><p>Design category and row layouts for future supplementary menus. Dates, dishes, portions, PAX, site allocations and publication details stay with each menu instance.</p></section>
     <div className="menu-designer-workspace">
       <aside className="menu-designer-library workspace-panel" aria-label="Saved menu layouts">
-        <div className="menu-designer-library__heading"><div><small>Menu Library</small><h3>Saved layouts</h3></div><button type="button" className="button button-soft" disabled={!access.canManage || busy || dirty} onClick={() => applyTemplate()}>New layout</button></div>
+        <div className="menu-designer-library__heading"><div><small>Saved Layouts</small><h3>Saved layouts</h3></div><button type="button" className="button button-soft" disabled={!access.canManage || busy || dirty} onClick={() => applyTemplate()}>New layout</button></div>
         {loading ? <p role="status">Loading saved layouts…</p> : activeTemplates.length ? <ul>{activeTemplates.map(template => <li key={template.id}><button type="button" className={selectedId === template.id ? "menu-designer-template is-active" : "menu-designer-template"} aria-current={selectedId === template.id ? "true" : undefined} onClick={() => requestSelection(template.id)}><strong>{template.name}</strong><span>{template.categories.length} categories · {template.categories.reduce((count, category) => count + category.rows.length, 0)} rows</span></button></li>)}</ul> : <div className="menu-designer-empty"><h4>No saved layouts yet</h4><p>Create your first layout and reuse it when scheduling a supplementary menu.</p></div>}
         {archivedTemplates.length > 0 && <details className="menu-designer-archived"><summary>Archived layouts · {archivedTemplates.length}</summary><ul>{archivedTemplates.map(template => <li key={template.id}><span>{template.name}</span><small>Archived</small></li>)}</ul></details>}
       </aside>
@@ -143,10 +143,10 @@ export default function MenuDesignerPage() {
           {dirty && <button type="button" className="button button-soft" disabled={busy} onClick={() => { if (selectedTemplate) applyTemplate(selectedTemplate); else applyTemplate(); }}>Discard changes</button>}
           <button type="button" className="button button-soft" disabled={!access.canManage || busy || !selectedTemplate || dirty} onClick={() => void save("duplicate")}>Duplicate</button>
           {selectedTemplate && <button type="button" className="button button-danger" disabled={!access.canManage || busy || dirty} onClick={() => void save("archive")}>Archive</button>}
-          <button type="button" className="button button-purple" disabled={!access.canManage || busy || !dirty || !name.trim()} onClick={() => void save(selectedTemplate ? "edit" : "create")}>{busy ? "Saving…" : selectedTemplate ? "Save changes" : "Save to Menu Library"}</button>
+          <button type="button" className="button button-purple" disabled={!access.canManage || busy || !dirty || !name.trim()} onClick={() => void save(selectedTemplate ? "edit" : "create")}>{busy ? "Saving…" : selectedTemplate ? "Save changes" : "Save Layout"}</button>
         </footer>
       </section>
     </div>
     {(pendingSelection !== undefined || pendingHref) && <div className="menu-designer-confirm-backdrop"><section className="menu-designer-confirm" role="dialog" aria-modal="true" aria-labelledby="menu-designer-confirm-title"><h3 id="menu-designer-confirm-title">Discard unsaved layout changes?</h3><p>Your edits have not been saved. Discard them to continue, or return to the designer and save first.</p><div><button type="button" className="button button-soft" onClick={() => { setPendingSelection(undefined); setPendingHref(undefined); }}>Keep editing</button><button type="button" className="button button-danger" onClick={discardAndContinue}>Discard and continue</button></div></section></div>}
-  </MenuPlanningShell>;
+  </MenuPlanningShell></div>;
 }

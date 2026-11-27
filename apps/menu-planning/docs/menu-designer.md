@@ -7,6 +7,7 @@ The layout editor contains no service date, site allocation, dish, portion, PAX 
 ## Source locations
 
 - `app/menu-designer/page.tsx` provides the saved-layout list, editing lifecycle, unsaved-change handling and API calls.
+- `app/layout.tsx` loads the opt-in shared Component Atlas; `app/menu-structure-library.css` composes its field, spacing and responsive patterns for the Menu Designer surface only.
 - `app/menu-structure-editor.tsx` edits categories and named rows, with drag ordering and arrow-button alternatives.
 - `lib/menu-structure-library.ts` owns the shared structure types, validation and copy behavior.
 - `app/api/menu-structure-library/route.ts` owns authenticated structure listing and versioned create/edit/duplicate/archive actions.

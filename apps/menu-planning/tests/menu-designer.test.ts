@@ -8,7 +8,9 @@ test("Menu Designer exposes reusable layout editing and lifecycle actions", () =
   const page = read("../app/menu-designer/page.tsx");
   const editor = read("../app/menu-structure-editor.tsx");
   assert.match(page, /Menu title/);
-  assert.match(page, /Save to Menu Library/);
+  assert.match(page, /Save Layout/);
+  assert.match(page, /Saved Layouts/);
+  assert.doesNotMatch(page, /Menu Library/);
   assert.match(page, /Duplicate/);
   assert.match(page, /Archive/);
   assert.match(page, /beforeunload/);
@@ -30,5 +32,17 @@ test("supplementary menu creation selects a saved layout and keeps service setup
   assert.match(createDialog, /Allocated sites/);
   assert.match(createDialog, /Service or delivery time/);
   assert.match(createDialog, /Repeat weekly/);
-  assert.doesNotMatch(createDialog, /MenuStructureEditor|Save structure changes|Save to Menu Library/);
+  assert.doesNotMatch(createDialog, /MenuStructureEditor|Save structure changes|Save Layout/);
+});
+
+test("Menu Designer opts into the shared FIKA controls without changing other Menu Planning screens", () => {
+  const page = read("../app/menu-designer/page.tsx");
+  const layout = read("../app/layout.tsx");
+  const styles = read("../app/menu-structure-library.css");
+  assert.match(layout, /shared\/fika\/component-atlas\.css/);
+  assert.match(page, /className="fika-ui menu-designer-ui"/);
+  assert.match(styles, /\.menu-designer-ui \.menu-structure-row/);
+  assert.match(styles, /var\(--fika-font-body\)/);
+  assert.match(styles, /@media \(max-width: 1100px\)/);
+  assert.match(styles, /@media \(max-width: 700px\)/);
 });
