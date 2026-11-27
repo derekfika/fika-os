@@ -10,7 +10,6 @@ import { slotLabel, useRollingData, type Dish } from "./planner-data";
 import { dishReferenceForEntry, groupedSlots, selectableDishIds } from "@/lib/week-planner-layout";
 import { plannerCopyAvailability, memoizePlannerSpeller } from "@/lib/planner-copy-availability";
 import PlanningContextNav from "./planning-context-nav";
-import { DayMenuSelect } from "./day-menu-select";
 import { rankDishPickerItems } from "@/lib/dish-picker";
 import { categoryForSlot } from "@/lib/dish-categories";
 import { assessDishCopyTarget, compatibleDishCopyTargets, copyableDishForSource, dishCopyUnavailableReason } from "@/lib/dish-copy";
@@ -35,7 +34,7 @@ import type { PublishedWeekAmendmentPreview, PublishedWeekDemandOperation } from
 
 import { useMenuAccess } from "./menu-access";
 import MenuStructureEditor from "./menu-structure-editor";
-import { copyMenuStructure, createBlankMenuStructure, type MenuStructureSnapshot, type MenuStructureTemplate } from "@/lib/menu-structure-library";
+import { copyMenuStructure, type MenuStructureSnapshot, type MenuStructureTemplate } from "@/lib/menu-structure-library";
 import type { RollingSnapshot } from "@/lib/rolling-menu-types";
 
 const plannerSlotLabel = (slot: string, displayName?: string) => weekPlannerSlotLabel(slot, slotLabel(slot), displayName);
@@ -303,7 +302,6 @@ export default function WeekPlanner() {
         {snapshot.days.slice(0, 5).map(day => {
           return <div className="week-matrix-day" key={day.id}>
             <span>{day.dayName.slice(0, 3).toUpperCase()}<small>{new Date(`${day.date}T00:00:00Z`).getUTCDate()}</small></span>
-            <DayMenuSelect weeks={weeks} current={snapshot.week} day={day} onSelect={selectWeek} />
             {access.canManage && <button type="button" className="add-supplementary-menu" disabled={!canEditDay(day.id) || Boolean(draft.dirty) || Boolean(draft.recovered) || draft.saving} onClick={() => setCreateMenuDay(day)} aria-label={`Add menu for ${day.dayName}`}>+ Add Menu</button>}
           </div>;
         })}
@@ -474,11 +472,9 @@ function AddSupplementaryMenuDialog({ day, weekId, command, onCreated, onClose }
   const [siteIds, setSiteIds] = useState<string[]>([]);
   const [weekdays, setWeekdays] = useState<number[]>([]);
   const [startWithPrevious, setStartWithPrevious] = useState(true);
-  const [structure, setStructure] = useState<MenuStructureSnapshot>(() => createBlankMenuStructure());
+  const [structure, setStructure] = useState<MenuStructureSnapshot>({ categories: [] });
   const [templates, setTemplates] = useState<MenuStructureTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
-  const [templateName, setTemplateName] = useState("Breakfast");
-  const [libraryBusy, setLibraryBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => { let active = true; void fetch("/api/menu-structure-library", { cache: "no-store" }).then(async response => { const body = await response.json().catch(() => ({})); if (!response.ok) throw new Error(body.error?.message || "Saved menu structures could not be loaded."); if (active && Array.isArray(body.templates)) setTemplates(body.templates); }).catch(cause => { if (active) setError(cause instanceof Error ? cause.message : "Saved menu structures could not be loaded."); }); return () => { active = false; }; }, []);
@@ -488,36 +484,14 @@ function AddSupplementaryMenuDialog({ day, weekId, command, onCreated, onClose }
   const selectTemplate = (templateId: string) => {
     setSelectedTemplateId(templateId);
     const template = templates.find(item => item.id === templateId);
-    if (template) { setTemplateName(template.name); setStructure(copyMenuStructure(template, template)); }
-    else { setTemplateName(name.trim() || "Breakfast"); setStructure(createBlankMenuStructure()); }
-  };
-  const saveTemplate = async (action: "create" | "edit" | "rename" | "duplicate" | "archive", requestedName = templateName) => {
-    const selectedTemplate = templates.find(item => item.id === selectedTemplateId);
-    const structureAction = action === "edit" && !selectedTemplate ? "create" : action;
-    if (structureAction === "create" && !requestedName.trim()) { setError("Name this reusable structure before saving it."); return; }
-    setLibraryBusy(true); setError("");
-    try {
-      const response = await fetch("/api/menu-structure-library", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: structureAction, ...(selectedTemplate && structureAction !== "create" ? { templateId: selectedTemplate.id, expectedVersion: selectedTemplate.version } : {}), name: requestedName.trim(), structure }) });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body.error?.message || "The Menu Library could not be updated.");
-      const updated = (body.templates || []) as MenuStructureTemplate[];
-      setTemplates(updated.filter(item => !item.archivedAt));
-      if (structureAction === "archive") { setSelectedTemplateId(""); setStructure(createBlankMenuStructure()); }
-      else if (structureAction === "create" || structureAction === "duplicate") {
-        const saved = updated.filter(item => !item.archivedAt).at(-1);
-        if (saved) { setSelectedTemplateId(saved.id); setTemplateName(saved.name); setStructure(copyMenuStructure(saved, saved)); }
-      } else {
-        const saved = updated.find(item => item.id === selectedTemplate?.id);
-        if (saved) { setSelectedTemplateId(saved.id); setTemplateName(saved.name); setStructure(copyMenuStructure(saved, saved)); }
-      }
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "The Menu Library could not be updated."); }
-    finally { setLibraryBusy(false); }
+    if (template) { setName(template.name); setStructure(copyMenuStructure(template, template)); }
   };
   const save = async () => {
-    if (busy || !name.trim() || !siteIds.length) return;
+    if (busy || !name.trim() || !siteIds.length || !selectedTemplateId) return;
     setBusy(true); setError("");
     const menuId = crypto.randomUUID();
     const selectedTemplate = templates.find(template => template.id === selectedTemplateId);
+    if (!selectedTemplate) { setBusy(false); setError("Choose a saved layout from Menu Designer before creating this service."); return; }
     const independentStructure = copyMenuStructure(structure, selectedTemplate);
     const ok = await command("create-supplementary-menu", { weekId, dayId: day.id, menuId, name: name.trim(), serviceType, siteIds, serviceTime: serviceTime || undefined, kitchenNotes: kitchenNotes.trim() || undefined, recurrenceWeekdays: weekdays, startWithPrevious, menuStructure: independentStructure });
     setBusy(false);
@@ -525,31 +499,19 @@ function AddSupplementaryMenuDialog({ day, weekId, command, onCreated, onClose }
     else setError("The additional menu could not be created. Review the planner message and try again.");
   };
   const labels = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-  return <PlannerModal title={`Create menu · ${day.dayName}`} onClose={onClose} className="item-detail planner-input-dialog menu-create-dialog" busy={busy || libraryBusy} dismissible={!busy && !libraryBusy}>
-    <header><div><small>Separate service · {new Date(`${day.date}T12:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })}</small><h3>Create a supplementary menu</h3></div><button type="button" className="modal-close" onClick={onClose} disabled={busy || libraryBusy} aria-label="Close create menu">Close</button></header>
+  return <PlannerModal title={`Create menu · ${day.dayName}`} onClose={onClose} className="item-detail planner-input-dialog menu-create-dialog" busy={busy} dismissible={!busy}>
+    <header><div><small>Separate service · {new Date(`${day.date}T12:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })}</small><h3>Create a supplementary menu</h3></div><button type="button" className="modal-close" onClick={onClose} disabled={busy} aria-label="Close create menu">Close</button></header>
     <p>This service has its own dishes, site allocations and publication history.</p>
-    <label>Start from a saved structure<select value={selectedTemplateId} onChange={event => selectTemplate(event.target.value)}><option value="">Create a new structure</option>{templates.map(template => <option key={template.id} value={template.id}>{template.name}</option>)}</select></label>
+    <label>Menu layout<select value={selectedTemplateId} onChange={event => selectTemplate(event.target.value)} required><option value="">Choose a saved layout</option>{templates.map(template => <option key={template.id} value={template.id}>{template.name}</option>)}</select></label>
+    <p className="form-help">Need a new layout? <a href="/menu-designer" target="_blank" rel="noreferrer">Open Menu Designer in a new tab</a>. The saved layout is copied into this service and can be edited independently later.</p>
     <label>Menu name<input data-modal-autofocus value={name} onChange={event => setName(event.target.value)} maxLength={100} placeholder="e.g. Monday Breakfast" /></label>
     <label>Service type<select value={serviceType} onChange={event => setServiceType(event.target.value)}><option>Breakfast</option><option>Lunch</option><option>Dinner</option><option>Other</option></select></label>
     <fieldset className="supplementary-menu-sites"><legend>Allocated sites</legend>{oplocs.map(site => <label key={site.canonicalId}><input type="checkbox" checked={siteIds.includes(site.canonicalId)} onChange={() => toggleSite(site.canonicalId)} />{site.label}</label>)}{!oplocs.length && <p role="status">{error || "Loading available sites…"}</p>}</fieldset>
     <label>Service or delivery time <span className="form-help">Optional</span><input type="time" value={serviceTime} onChange={event => setServiceTime(event.target.value)} /></label><label>Kitchen notes <span className="form-help">Optional · sent with this service only</span><textarea rows={3} maxLength={4000} value={kitchenNotes} onChange={event => setKitchenNotes(event.target.value)} /></label>
     <fieldset className="supplementary-menu-weekdays"><legend>Repeat weekly <span className="form-help">Optional — leave clear for this occurrence only</span></legend>{labels.map((label, index) => <label key={label}><input type="checkbox" checked={weekdays.includes(index + 1)} onChange={() => toggleWeekday(index + 1)} />{label}</label>)}</fieldset>
     <label className="supplementary-menu-previous"><input type="checkbox" checked={startWithPrevious} onChange={event => setStartWithPrevious(event.target.checked)} />Start with the previous occurrence’s dishes and allocations</label>
-    <MenuStructureEditor structure={structure} onChange={setStructure} disabled={busy || libraryBusy} />
-    <section className="menu-library-controls" aria-label="Reusable menu structure library">
-      <label>Reusable structure name<input className="fika-input" value={templateName} onChange={event => setTemplateName(event.target.value)} maxLength={100} /></label>
-      <div className="menu-library-controls__actions">
-        <button type="button" className="button button-soft" disabled={busy || libraryBusy || !templateName.trim()} onClick={() => void saveTemplate(selectedTemplateId ? "edit" : "create")}>{selectedTemplateId ? "Save structure changes" : "Save to Menu Library"}</button>
-        {selectedTemplateId && <>
-          <button type="button" className="button button-soft" disabled={busy || libraryBusy || !templateName.trim()} onClick={() => void saveTemplate("rename")}>Rename</button>
-          <button type="button" className="button button-soft" disabled={busy || libraryBusy || !templateName.trim()} onClick={() => void saveTemplate("duplicate", `Copy of ${templateName}`)}>Duplicate</button>
-          <button type="button" className="button button-soft" disabled={busy || libraryBusy} onClick={() => void saveTemplate("archive")}>Archive</button>
-        </>}
-      </div>
-      <p className="fika-help">Saving template edits affects future menus only. Existing menus keep their own saved structure.</p>
-    </section>
     {error && <p className="menu-error" role="alert">{error}</p>}
-    <footer className="form-actions"><button type="button" className="button button-soft" onClick={onClose} disabled={busy || libraryBusy}>Cancel</button><button type="button" className="button button-purple" onClick={() => void save()} disabled={busy || libraryBusy || !name.trim() || !siteIds.length || !oplocs.length}>{busy ? "Creating menu…" : "Create menu"}</button></footer>
+    <footer className="form-actions"><button type="button" className="button button-soft" onClick={onClose} disabled={busy}>Cancel</button><button type="button" className="button button-purple" onClick={() => void save()} disabled={busy || !name.trim() || !selectedTemplateId || !siteIds.length || !oplocs.length}>{busy ? "Creating menu…" : "Create menu"}</button></footer>
     <p className="form-help">The existing main Delivered-In menu will not change.</p>
   </PlannerModal>;
 }

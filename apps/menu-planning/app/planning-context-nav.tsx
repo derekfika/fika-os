@@ -14,23 +14,33 @@ export function menuWeeksForPlanner(weeks: Week[], currentWeek: string) {
       || left.supplementaryMenu.id.localeCompare(right.supplementaryMenu.id);
   });
 }
+export function preserveMenuSelectionForWeekNavigation(weeks: Week[], currentWeekId: string, targetWeekId: string) {
+  const current = weeks.find(week => week.id === currentWeekId);
+  const target = weeks.find(week => week.id === targetWeekId);
+  if (!current?.supplementaryMenu || !target) return target || current;
+  return weeks.find(week => week.weekCommencing === target.weekCommencing && week.supplementaryMenu?.id === current.supplementaryMenu?.id) || target;
+}
 export default function PlanningContextNav({ weeks, currentWeek, days, showDay = false, showMenuSelector = false, onSelectWeek }: { weeks: Week[]; currentWeek: string; days?: RollingDay[]; showDay?: boolean; showMenuSelector?: boolean; onSelectWeek?: (weekId: string) => void }) {
   const pathname = usePathname();
   const params = useSearchParams();
   const current = weeks.find(week => week.id === currentWeek);
   const navigationWeeks = weeks.filter(week => !week.supplementaryMenu).sort((a, b) => a.weekCommencing.localeCompare(b.weekCommencing));
-  if (current && !navigationWeeks.some(week => week.id === current.id)) navigationWeeks.push(current);
+  if (current && !navigationWeeks.some(week => week.id === current.id)) {
+    navigationWeeks.push(current);
+    navigationWeeks.sort((a, b) => a.weekCommencing.localeCompare(b.weekCommencing));
+  }
   const index = navigationWeeks.findIndex(week => week.id === currentWeek);
   const week = current || navigationWeeks[index];
   const selectedDayIndex = days?.length ? Math.max(0, days.findIndex(day => day.date === params.get("day") || day.id === params.get("day"))) : 0;
   const navigate = (weekId: string, day?: string) => {
     if (!showDay) {
-      if (onSelectWeek) onSelectWeek(weekId);
-      else window.dispatchEvent(new CustomEvent("menu-week-select", { detail: weekId }));
+      const selectedWeekId = preserveMenuSelectionForWeekNavigation(weeks, currentWeek, weekId)?.id || weekId;
+      if (onSelectWeek) onSelectWeek(selectedWeekId);
+      else window.dispatchEvent(new CustomEvent("menu-week-select", { detail: selectedWeekId }));
       return;
     }
     const next = new URLSearchParams(params.toString());
-    const target = weeks.find(item => item.id === weekId);
+    const target = preserveMenuSelectionForWeekNavigation(weeks, currentWeek, weekId);
     if (target) next.set("week", target.supplementaryMenu ? target.id : target.weekCommencing);
     else next.delete("week");
     if (days?.length) {
