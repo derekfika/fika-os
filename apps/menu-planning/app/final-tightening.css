@@ -921,14 +921,14 @@ button:disabled {
 }
 
 /*
- * Duplicate Planning (#254). Large workspace dialog: a two-column form + live preview on wide
- * screens, one column below 980px. The body scrolls; header and footer stay put. Light surfaces,
- * FIKA Tactile tokens only (--mp-* map to the canonical brand tokens above).
+ * Duplicate Planning (#254). Standard large dialog with a bounded, two-column form + live preview.
+ * Only the content region scrolls; the title and actions stay visible. Uses shared semantic tokens.
  */
 .planner-modal.duplicate-planning-dialog {
+  --fika-focus-ring: var(--color-focus);
   display: flex;
   flex-direction: column;
-  width: min(1040px, calc(100vw - 32px));
+  width: min(760px, calc(100vw - 32px));
   max-width: calc(100vw - 32px);
   max-height: calc(100dvh - 32px);
   overflow: hidden;
@@ -945,8 +945,8 @@ button:disabled {
   justify-content: flex-end;
   gap: 10px;
   margin-top: 0;
-  padding: 14px 26px;
-  border-top: 1px solid var(--mp-border);
+  padding: 14px 22px;
+  border-top: 1px solid var(--fika-border-default);
 }
 
 .duplicate-planning-dialog > .duplicate-week-summary {
@@ -959,10 +959,11 @@ button:disabled {
   gap: 18px;
   flex: 1 1 auto;
   min-height: 0;
-  padding: 18px 26px;
+  padding: 16px 22px;
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .duplicate-form,
@@ -979,14 +980,14 @@ button:disabled {
   min-width: 0;
   margin: 0;
   padding: 14px 16px 16px;
-  border: 1px solid var(--mp-border);
-  border-radius: var(--mp-radius);
-  background: #fff;
+  border: 1px solid var(--fika-border-default);
+  border-radius: var(--radius-md);
+  background: var(--fika-surface-card);
 }
 
 .duplicate-step > legend {
   padding: 0 6px;
-  color: var(--mp-navy);
+  color: var(--fika-text-primary);
   font-size: .8rem;
   font-weight: 850;
 }
@@ -996,9 +997,9 @@ button:disabled {
   gap: 6px;
   width: 100%;
   margin: 0;
-  color: var(--mp-muted);
-  font-size: .74rem;
-  font-weight: 800;
+  color: var(--fika-text-secondary);
+  font-size: .875rem;
+  font-weight: 600;
 }
 
 .duplicate-planning-dialog select {
@@ -1007,10 +1008,18 @@ button:disabled {
   min-width: 0;
   min-height: 44px;
   padding: 0 10px;
-  border: 1px solid var(--mp-border);
-  border-radius: var(--mp-radius);
-  background: #fff;
-  color: var(--mp-ink);
+  border: 1px solid var(--fika-border-default);
+  border-radius: 8px;
+  background: var(--fika-surface-card);
+  color: var(--fika-text-primary);
+  font: inherit;
+}
+
+.duplicate-planning-dialog :is(select, input):focus-visible,
+.duplicate-planning-dialog button:focus-visible,
+.duplicate-planning-dialog summary:focus-visible {
+  outline: 3px solid var(--fika-focus-ring);
+  outline-offset: 2px;
 }
 
 .duplicate-segment {
@@ -1024,9 +1033,18 @@ button:disabled {
 .duplicate-segment--weeks {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  max-height: 212px;
+  max-height: 196px;
   padding: 2px;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.duplicate-selection-help {
+  margin: 0;
+  color: var(--fika-text-secondary);
+  font-size: .8125rem;
+  line-height: 1.4;
 }
 
 /* Choice chips: native radio/checkbox plus visible text, never a full-width grid label. */
@@ -1038,15 +1056,15 @@ button:disabled {
   box-sizing: border-box;
   width: auto;
   min-width: 0;
-  min-height: 40px;
+  min-height: 44px;
   margin: 0;
-  padding: 4px 12px;
-  border: 1px solid var(--mp-border);
-  border-radius: var(--mp-radius);
-  background: #fff;
-  color: var(--mp-ink);
-  font-size: .82rem;
-  font-weight: 700;
+  padding: 6px 10px;
+  border: 1px solid var(--fika-border-default);
+  border-radius: 8px;
+  background: var(--fika-surface-card);
+  color: var(--fika-text-primary);
+  font-size: .875rem;
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -1056,24 +1074,24 @@ button:disabled {
 
 .duplicate-planning-dialog input[type="radio"],
 .duplicate-planning-dialog input[type="checkbox"] {
-  flex: 0 0 18px;
-  width: 18px;
-  min-height: 18px;
-  height: 18px;
+  flex: 0 0 20px;
+  width: 20px;
+  min-height: 20px;
+  height: 20px;
   margin: 0;
   padding: 0;
-  accent-color: var(--mp-purple);
+  accent-color: var(--fika-action-primary);
 }
 
 .duplicate-planning-dialog .duplicate-segment > label:has(input:checked),
 .duplicate-planning-dialog .duplicate-option--selected {
-  border-color: var(--mp-purple);
-  background: var(--mp-soft);
+  border-color: var(--fika-action-primary);
+  background: var(--fika-surface-subtle);
 }
 
-.duplicate-planning-dialog .duplicate-segment > label:has(input:focus-visible),
-.duplicate-planning-dialog .duplicate-option:has(input:focus-visible) {
-  outline: 3px solid var(--mp-focus);
+.duplicate-planning-dialog .duplicate-segment > label:focus-within,
+.duplicate-planning-dialog .duplicate-option:focus-within {
+  outline: 3px solid var(--fika-focus-ring);
   outline-offset: 2px;
 }
 
@@ -1104,9 +1122,9 @@ button:disabled {
 }
 
 .duplicate-option > small {
-  color: var(--mp-muted);
-  font-size: .74rem;
-  font-weight: 500;
+  color: var(--fika-text-secondary);
+  font-size: .8125rem;
+  font-weight: 400;
   line-height: 1.35;
 }
 
@@ -1114,14 +1132,15 @@ button:disabled {
   display: grid;
   flex-wrap: nowrap;
   padding: 16px;
-  border: 1px solid var(--mp-border);
-  border-radius: var(--mp-radius);
-  background: var(--mp-soft);
+  border: 1px solid var(--fika-border-default);
+  border-radius: var(--radius-md);
+  background: var(--fika-surface-subtle);
+  color: var(--fika-text-primary);
 }
 
 .duplicate-preview > h4 {
   margin: 0;
-  color: var(--mp-navy);
+  color: var(--fika-text-primary);
   font-size: .95rem;
 }
 
@@ -1133,7 +1152,7 @@ button:disabled {
 .duplicate-preview .duplicate-week-summary {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   margin: 0;
-  background: #fff;
+  background: var(--fika-surface-card);
 }
 
 .duplicate-preview .duplicate-week-warning {
@@ -1152,7 +1171,7 @@ button:disabled {
   gap: 6px;
   margin: 0;
   padding-left: 18px;
-  color: var(--mp-ink);
+  color: var(--fika-text-primary);
   font-size: .8rem;
   line-height: 1.4;
   overflow-wrap: anywhere;
@@ -1160,15 +1179,15 @@ button:disabled {
 
 .duplicate-exceptions {
   padding: 10px 12px;
-  border: 1px solid var(--mp-border);
-  border-radius: var(--mp-radius);
-  background: #fff;
+  border: 1px solid var(--fika-border-default);
+  border-radius: var(--radius-sm);
+  background: var(--fika-surface-card);
   font-size: .8rem;
 }
 
 .duplicate-exceptions > summary {
   min-height: 24px;
-  color: var(--mp-navy);
+  color: var(--fika-text-primary);
   font-weight: 800;
   cursor: pointer;
 }
@@ -1179,7 +1198,7 @@ button:disabled {
   overflow-y: auto;
 }
 
-@media (min-width: 980px) {
+@media (min-width: 760px) {
   .duplicate-body {
     grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr);
     align-items: start;
@@ -1192,8 +1211,14 @@ button:disabled {
 }
 
 @media (max-width: 560px) {
+  .planner-modal.duplicate-planning-dialog {
+    width: calc(100vw - 24px);
+    max-width: calc(100vw - 24px);
+    max-height: calc(100dvh - 24px);
+  }
+
   .duplicate-body {
-    padding: 16px 20px;
+    padding: 14px 16px;
   }
 
   .duplicate-preview .duplicate-week-summary {
@@ -1201,10 +1226,20 @@ button:disabled {
   }
 
   .duplicate-planning-dialog > .form-actions {
-    padding: 12px 20px 16px;
+    padding: 12px 16px 14px;
   }
 
   .duplicate-planning-dialog > .form-actions .button {
-    flex: 1 1 140px;
+    flex: 1 1 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .duplicate-planning-dialog *,
+  .duplicate-planning-dialog *::before,
+  .duplicate-planning-dialog *::after {
+    scroll-behavior: auto;
+    transition-duration: .01ms;
+    animation-duration: .01ms;
   }
 }
