@@ -8,6 +8,6 @@ const SALAD_SLOT_LABELS: Readonly<Record<string, string>> = {
 };
 
 /** Use owner-approved display names without changing slot identity or generic labels elsewhere. */
-export function weekPlannerSlotLabel(slot: string, genericLabel: string) {
-  return SALAD_SLOT_LABELS[slot] || genericLabel;
+export function weekPlannerSlotLabel(slot: string, genericLabel: string, explicitLabel?: string) {
+  return explicitLabel?.trim() || SALAD_SLOT_LABELS[slot] || genericLabel;
 }

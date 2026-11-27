@@ -38,7 +38,7 @@ import MenuStructureEditor from "./menu-structure-editor";
 import { copyMenuStructure, createBlankMenuStructure, type MenuStructureSnapshot, type MenuStructureTemplate } from "@/lib/menu-structure-library";
 import type { RollingSnapshot } from "@/lib/rolling-menu-types";
 
-const plannerSlotLabel = (slot: string, displayName?: string) => weekPlannerSlotLabel(slot, displayName || slotLabel(slot));
+const plannerSlotLabel = (slot: string, displayName?: string) => weekPlannerSlotLabel(slot, slotLabel(slot), displayName);
 const menuStructureRowLabel = (snapshot: RollingSnapshot, slot: string) => snapshot.week.menuStructure?.categories.flatMap(category => category.rows).find(row => row.slot === slot)?.name;
 
 const WeekMatrixScroller = memo(function WeekMatrixScroller({ children }: { children: ReactNode; revision: object }) {
