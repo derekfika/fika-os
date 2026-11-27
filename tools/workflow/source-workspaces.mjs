@@ -378,6 +378,7 @@ function completeUnderLock(name, options, { readPrs = pullInventory } = {}) {
   if (!options.preserve && (dirty || (!evidence.pushed && !evidence.inMain && !merged))) throw Error('Dirty or unpushed work remains. Commit/push or record --preserve --reason; the checkout is retained');
   if (run('branch', '--show-current') !== branch || run('rev-parse', 'HEAD') !== head || sourceStatus(run) !== status) throw Error('Checkout changed during completion');
   const result = { name, owner: options.owner, branch, finalSha: head, ...evidence, outcome: options.preserve ? 'unfinished-preserved' : 'completed',
+    ...(previous?.outcome === 'unfinished-preserved' ? { previousCompletion: previous } : {}),
     ...(options.preserve ? { reason: options.reason } : {}), retirement: 'retained', dirty, ignored: split(status).some(line => line.startsWith('!! ')),
     directory, at: new Date().toISOString() };
   save(completionFile(name), result);

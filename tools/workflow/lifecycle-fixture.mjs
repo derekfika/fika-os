@@ -9,6 +9,6 @@ export function fixture() {
   const git=(...args)=>run(repo,...args);
   execFileSync('git',['init','--bare',remote],{stdio:'ignore',windowsHide:true});
   git('init','-b','main');git('config','user.name','Lifecycle fixture');git('config','user.email','fixture@example.invalid');
-  writeFileSync(path.join(repo,'.gitignore'),'node_modules/\n.env\n');writeFileSync(path.join(repo,'README.md'),'fixture');git('add','.');git('commit','-m','Baseline');git('remote','add','origin',remote);git('push','-u','origin','main');
+  writeFileSync(path.join(repo,'.gitignore'),'node_modules/\n**/node_modules/\n**/.next/\napps/menu-planning/local-data/menu-planning/*.json\n.env\n');writeFileSync(path.join(repo,'README.md'),'fixture');git('add','.');git('commit','-m','Baseline');git('remote','add','origin',remote);git('push','-u','origin','main');
   return {base,repo,remote,git,run,within:fn=>withRepository(repo,fn),dispose(){const target=path.resolve(base);if(path.dirname(target)!==path.resolve(tmpdir())||!path.basename(target).startsWith('fika-lifecycle-'))throw Error('Unsafe fixture cleanup');rmSync(target,{recursive:true,force:true,maxRetries:5,retryDelay:100});}};
 }

@@ -9,7 +9,7 @@ import { dependencyLinkPlan, inside as isInside, matchesDependencyLink, trackedJ
 
 const artifactsFile = name => path.join(stateDir(), 'source-generated', `${name}.json`);
 
-function fingerprint(directory, relative, { observedEntries, allowedEntries, knownLinks, observedLinks } = {}) {
+function fingerprint(directory, relative, { observedEntries, allowedEntries, knownLinks, observedLinks, allowDanglingLinks = false } = {}) {
   const target = path.resolve(directory, relative);
   if (!isInside(directory, target) || !samePath(realpathSync(target), target)) throw Error('Generated root resolves through a link');
   const hash = createHash('sha256');
@@ -26,7 +26,7 @@ function fingerprint(directory, relative, { observedEntries, allowedEntries, kno
       const expected = knownLinks?.get(entry);
       if (expected && matchesDependencyLink(directory, entry, expected)) {
         observedLinks?.set(entry, expected);
-      } else if (!isInside(directory, realpathSync(file))) {
+      } else if (!allowDanglingLinks && !isInside(directory, realpathSync(file))) {
         throw Error('Generated path links outside the checkout');
       }
       hash.update(JSON.stringify([name, 'link', readlinkSync(file)]));
@@ -46,6 +46,13 @@ function fingerprint(directory, relative, { observedEntries, allowedEntries, kno
   }
   visit(target);
   return hash.digest('hex');
+}
+
+/** Hash a generated tree, optionally allowing archived symlinks whose original
+ * relative targets are outside the archive snapshot. Source provenance is still
+ * checked with the normal fingerprint rules before a copy is made. */
+export function generatedFingerprint(directory, relative, { allowDanglingLinks = false } = {}) {
+  return fingerprint(directory, relative, { allowDanglingLinks });
 }
 
 function nextDeclaration(workspace, relative) {
@@ -217,9 +224,10 @@ export function validationOutputCandidates(workspace, apps) {
   return candidates;
 }
 
-export function generatedRetirementPlan(workspace, status, head) {
+export function generatedRetirementPlan(workspace, status, head, { archivedPaths = [] } = {}) {
   const entries = generatedEntries(workspace);
   const knownLinks = dependencyLinkPlan(workspace, head, entries);
+  const archived = new Set(archivedPaths);
   const links = new Map();
   const verifiedGenerated = [];
   for (const line of split(status)) {
@@ -229,7 +237,7 @@ export function generatedRetirementPlan(workspace, status, head) {
     const nextDeclaration = verifiedNextDeclaration(workspace, relative, head);
     const buildInfo = verifiedTypeScriptBuildInfo(workspace, relative, head);
     const pythonCache = verifiedPythonCache(workspace, relative, head);
-    if (!fingerprinted && !nextDeclaration && !buildInfo && !pythonCache) {
+    if (!fingerprinted && !nextDeclaration && !buildInfo && !pythonCache && !archived.has(relative)) {
       throw Error(`Unverified ignored output: ${relative}`);
     }
     if (buildInfo) verifiedGenerated.push(relative);

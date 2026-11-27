@@ -1,13 +1,14 @@
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmdirSync, unlinkSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 import { ancestor, command, common, git, ref, save, stateDir } from './runtime.mjs';
-import { REPO, exactSha } from './policy.mjs';
+import { APPS, REPO, exactSha } from './policy.mjs';
 import { canonical, completionFile, localEntry, managedRoot, optionalJson, pathKey, registrations, samePath, sourceTaskFile, split,
   requireCanonical, stateRecords, withCapacityLock, workspaceName } from './workspace-capacity.mjs';
-import { generatedEntries, generatedRetirementPlan, pythonCacheRetirementFiles, verifiedPythonCache, verifiedTypeScriptBuildInfo } from './workspace-cache.mjs';
-import { dependencyLinkPlan, readArchivedRetirement, removeRetirementResidue, retirementResidue } from './workspace-residue.mjs';
+import { generatedEntries, generatedFingerprint, generatedRetirementPlan, pythonCacheRetirementFiles, verifiedPythonCache, verifiedTypeScriptBuildInfo } from './workspace-cache.mjs';
+import { dependencyLinkPlan, inside, readArchivedRetirement, removeRetirementResidue, retirementResidue } from './workspace-residue.mjs';
 
 export const githubOrigin = () => new RegExp(`github\\.com[:/]${REPO}(?:\\.git)?$`, 'i').test(git('remote', 'get-url', 'origin'));
 export function pullInventory(branch) {
@@ -152,6 +153,149 @@ const retirementArchive = name => path.join(stateDir(), 'source-recovery', 'reti
 const preservedHead = (name, head) => ref('refs/preserve/source-recovery/retirements/' + name + '/' + head);
 const gitOperationFiles = ['index.lock', 'MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'rebase-merge', 'rebase-apply', 'sequencer', 'BISECT_LOG'];
 
+const verificationOnlyTasks = new Map([
+  ['menu-planning-ui-housekeeping', {
+    name: 'menu-planning-ui-housekeeping', owner: 'agent-task',
+    baseline: '6ae741004ecd2dd26aebb0e083bb939ba016560f',
+    paths: ['apps/menu-planning/app/menu-planning-shell.tsx', 'apps/menu-planning/app/week-planner.tsx', 'apps/menu-planning/tests'],
+    completionOutcome: 'unfinished-preserved', completionReasonPrefix: 'No implementation needed:',
+    generated: 'apps/menu-planning/node_modules',
+  }],
+  ['menu-product-publication', {
+    name: 'menu-product-publication', owner: 'codex-menu-product-publication',
+    baseline: '72f62b2c78a99bc70afe5d20096cdc607bd8604d',
+    paths: ['apps/shared', 'apps/cpu-production', 'apps/integration-hub', 'apps/hospitality-booking'],
+    completionOutcome: 'completed', completionReasonPrefix: null, generated: null,
+  }],
+]);
+
+/** Retire the one owner-authorized verification checkout that made no source
+ * change. Unlike implementation work, it has no PR; exact baseline equality,
+ * clean tracked state, empty writer/operation registries and a preserved generated
+ * artifact are all required before native Git retirement is allowed. */
+export function retireVerificationOnlyWorkspace(name, { owner, reason }, { readPulls = pullInventory, removeWorktree = nativeWorktreeRemove, verificationPolicies = verificationOnlyTasks } = {}) {
+  requireCanonical();
+  const policy = verificationPolicies.get(name);
+  if (!policy || owner !== policy.owner || !reason?.trim()) {
+    throw Error('Verification-only retirement is restricted to an explicitly recorded no-change checkout and its owner');
+  }
+  git('fetch', '--no-write-fetch-head', 'origin');
+  const task = optionalJson(sourceTaskFile(name));
+  const completion = optionalJson(completionFile(name));
+  const directory = path.join(managedRoot(), name);
+  const branch = `codex/${name}`;
+  const tree = registrations().find(item => samePath(item.worktree, directory));
+  if (!task || !completion || !tree || task.owner !== owner || task.name !== name || task.branch !== branch ||
+      !samePath(task.directory, directory) || task.state !== 'active' ||
+      completion.outcome !== policy.completionOutcome || completion.finalSha !== tree.HEAD ||
+      (policy.completionReasonPrefix ? !completion.reason?.startsWith(policy.completionReasonPrefix) : completion.reason != null) ||
+      completion.dirty !== false || task.baseline !== policy.baseline || tree.HEAD !== policy.baseline ||
+      !ancestor(policy.baseline, ref('refs/remotes/origin/main')) || tree.branch !== branchRef(branch) || tree.locked || tree.prunable) {
+    throw Error('Verification-only checkout identity, owner record, completion or exact main lineage does not match');
+  }
+  if (JSON.stringify([...(task.paths || [])].sort()) !== JSON.stringify([...policy.paths].sort())) {
+    throw Error('Verification-only checkout scope changed');
+  }
+  if ((task.writers || []).length !== 0 || task.pid != null) throw Error('Verification-only checkout has assigned writers or an owner process');
+  if (stateRecords('source-operations').some(operation => operation.name === name) ||
+      stateRecords('workspace-operations').some(operation => operation.name === name)) {
+    throw Error('Verification-only checkout has an active or interrupted operation');
+  }
+  if (stateRecords('workspaces').some(lease => lease.name === name && lease.owner === owner &&
+      samePath(lease.directory, directory) && !['finished', 'retired'].includes(lease.state))) {
+    throw Error('Verification-only checkout has a nonterminal historical workspace lease');
+  }
+  if (readPulls(branch).length > 0 || ref(`refs/remotes/origin/${branch}`)) {
+    throw Error('Verification-only checkout has a remote branch or pull request that needs review');
+  }
+
+  const run = (...args) => command('git', args, { cwd: directory });
+  const currentHead = run('rev-parse', 'HEAD');
+  const originalStatus = sourceStatus(run);
+  const status = split(originalStatus);
+  const ignoredPaths = status.filter(line => line.startsWith('!! ')).map(line => line.slice(3).replace(/\/$/, '')).sort();
+  const trackedOrUntracked = status.filter(line => !line.startsWith('!! '));
+  const expectedIgnored = policy.generated ? [policy.generated] : [];
+  if (currentHead !== policy.baseline || run('rev-list', '--count', `origin/main..${currentHead}`) !== '0' ||
+      trackedOrUntracked.length || JSON.stringify(ignoredPaths) !== JSON.stringify(expectedIgnored)) {
+    throw Error('Verification-only checkout contains source changes, unique commits or unverified ignored output');
+  }
+  const artifacts = generatedEntries({ name, directory });
+  const expectedFingerprint = policy.generated ? artifacts?.[policy.generated] : undefined;
+  if (policy.generated && (!artifacts || Object.keys(artifacts).length !== 1 || !/^[a-f0-9]{64}$/.test(expectedFingerprint || '') ||
+      generatedFingerprint(directory, policy.generated) !== expectedFingerprint)) throw Error('Generated dependency tree is missing, unrecorded or changed since it was fingerprinted');
+  if (!policy.generated && artifacts && Object.keys(artifacts).length) throw Error('No-change checkout has an unexpected generated-artifact record');
+
+  const operationId = randomUUID();
+  const operationFile = path.join(stateDir(), 'source-operations', `${operationId}.json`);
+  withCapacityLock(() => {
+    if (!isDeepStrictEqual(optionalJson(sourceTaskFile(name)), task) ||
+        !isDeepStrictEqual(optionalJson(completionFile(name)), completion) ||
+        stateRecords('source-operations').some(operation => operation.name === name)) {
+      throw Error('Verification-only checkout changed before retirement was reserved');
+    }
+    save(operationFile, { id: operationId, kind: 'retire-verification-only', name, owner, pid: process.pid, startedAt: new Date().toISOString() });
+  });
+
+  try {
+    const archiveRoot = path.join(stateDir(), 'source-recovery', 'verification-only', name);
+    const generatedArchiveRoot = path.join(archiveRoot, 'generated');
+    const archiveManifest = path.join(archiveRoot, 'manifest.json');
+    if (localEntry(archiveRoot)) throw Error('A prior verification-only archive exists; inspect it before continuing');
+    const archivedArtifacts = [];
+    if (policy.generated) {
+      const generatedArchive = path.join(generatedArchiveRoot, policy.generated);
+      mkdirSync(path.dirname(generatedArchive), { recursive: true });
+      cpSync(path.join(directory, policy.generated), generatedArchive, {
+        recursive: true, errorOnExist: true, force: false, verbatimSymlinks: true,
+      });
+      const sourceFingerprint = generatedFingerprint(directory, policy.generated);
+      const archivedFingerprint = generatedFingerprint(generatedArchiveRoot, policy.generated, { allowDanglingLinks: true });
+      if (sourceFingerprint !== expectedFingerprint || archivedFingerprint !== expectedFingerprint) {
+        throw Error('Generated dependency archive failed its fingerprint integrity check');
+      }
+      archivedArtifacts.push({ path: policy.generated, archivedPath: path.relative(stateDir(), generatedArchive), fingerprint: archivedFingerprint });
+    }
+    const archiveData = {
+      kind: 'verified-menu-planning-only-checkout', name, owner, reason: reason.trim(),
+      sourceSha: currentHead, originMainSha: ref('refs/remotes/origin/main'),
+      generated: archivedArtifacts,
+      integrityVerifiedAt: new Date().toISOString(),
+    };
+    save(archiveManifest, archiveData);
+
+    const main = new Set(git('rev-list', 'origin/main').split(/\r?\n/));
+    archiveGitMetadata(tree.worktree, path.join('verification-only', name), currentHead, tree.branch, sha => main.has(sha));
+    if (run('rev-parse', 'HEAD') !== currentHead || sourceStatus(run) !== originalStatus) {
+      throw Error('Verification-only checkout changed while its preservation archive was created');
+    }
+    removeWorktree(directory);
+    if (registrations().some(item => samePath(item.worktree, directory)) || localEntry(directory)) {
+      throw Error('Native Git retirement did not remove the verification-only checkout');
+    }
+    if (registrations().some(item => item.branch === branchRef(branch))) throw Error('Verification-only branch remains checked out elsewhere');
+    if (ref(branchRef(branch))) git('update-ref', '-d', branchRef(branch), currentHead);
+
+    const archivedRecord = {
+      ...task, state: 'retired', finalSha: currentHead, outcome: 'completed-verification-only',
+      retirement: 'retired', mergedPr: null, archivedAt: new Date().toISOString(),
+      previousCompletion: completion,
+      verificationEvidence: {
+        exactOriginMainBaseline: currentHead, noUniqueCommits: true, trackedAndUntrackedChanges: [],
+        assignedWriters: [], activeOperations: [], pullRequests: [],
+        generatedArchive: archiveData.generated,
+      },
+      verificationArchive: path.relative(stateDir(), archiveRoot),
+    };
+    save(path.join(stateDir(), 'source-archive', `${name}.json`), archivedRecord);
+    unlinkSync(sourceTaskFile(name));
+    unlinkSync(completionFile(name));
+    return { ...archivedRecord, artifactIntegrityVerified: true };
+  } finally {
+    withCapacityLock(() => { if (localEntry(operationFile)) unlinkSync(operationFile); });
+  }
+}
+
 function removeEmptyGeneratedParents(directory, relative) {
   let current = path.dirname(path.join(directory, relative));
   while (!samePath(current, directory)) {
@@ -191,8 +335,102 @@ function registeredRetirement(task, completion) {
   if (operation) throw Error('Unresolved Git operation: ' + operation);
   if (split(run('ls-files', '-v', '-z')).some(line => /^[a-zS]/.test(line))) throw Error('Index contains assume-unchanged or skip-worktree paths');
   const status = sourceStatus(run);
-  const links = generatedRetirementPlan(task, status, completion.finalSha);
+  const archivedArtifacts = verifiedArtifactArchive(task, completion);
+  const links = generatedRetirementPlan(task, status, completion.finalSha, { archivedPaths: archivedArtifacts.map(item => item.path) });
   return { links, generated: links.verifiedGenerated || [] };
+}
+
+const archivedLocalFixture = 'apps/menu-planning/local-data/menu-planning/saved-sandwiches.json';
+const allowedGeneratedRoots = new Set([
+  'node_modules',
+  ...Object.values(APPS).flatMap(app => [`${app.path}/node_modules`, `${app.path}/.next`, `${app.path}/tsconfig.tsbuildinfo`]),
+  'apps/cpu-production/tools/xchange-print-agent/__pycache__',
+]);
+
+function archivedArtifactType(task, relative) {
+  if (allowedGeneratedRoots.has(relative)) return 'generated';
+  if (task.name === 'menu-handoff-event-diagnostics' && relative === archivedLocalFixture) return 'local-fixture';
+  return null;
+}
+
+/** Archive only known generated roots and the single ignored local fixture that
+ * blocked merged #736 retirement. Each source and copied tree is fingerprinted;
+ * unknown ignored paths remain protected. */
+export function archiveIgnoredArtifacts(task, head, { authorizedHeads = new Map([
+    ['cpu-print-stale-read-followup', '2e8affa1978212b8915e02bf6a9d935c8dc3bfd6'],
+    ['menu-handoff-event-diagnostics', 'f108a14dc1a90d3196c231d018d3cc69901bee04'],
+    ['menu-designer-visual-ui', null],
+  ]), existingArchive = null } = {}) {
+  const expectedHead = authorizedHeads.get(task.name);
+  const authorizedMenuDesigner = task.name === 'menu-designer-visual-ui' && task.owner === 'agent-task' &&
+    task.branch === 'codex/menu-designer-visual-ui';
+  if (expectedHead === undefined || (expectedHead === null ? !authorizedMenuDesigner : expectedHead !== head)) return null;
+  const run = (...args) => command('git', args, { cwd: task.directory });
+  const status = split(sourceStatus(run));
+  if (status.some(line => !line.startsWith('!! '))) throw Error('Tracked or untracked source changes must be preserved before artifact archival');
+  const items = status.map(line => line.slice(3).replace(/\/$/, '')).sort();
+  if (!items.length) return null;
+  const typed = items.map(relative => ({ path: relative, type: archivedArtifactType(task, relative) }));
+  const unknown = typed.find(item => !item.type);
+  if (unknown) throw Error(`Ignored path is not eligible for generated-output archival: ${unknown.path}`);
+  const generated = generatedEntries(task) || {};
+  const snapshots = typed.map(item => {
+    const file = path.join(task.directory, item.path);
+    const ignored = spawnSync('git', ['check-ignore', '-q', '--', item.path], { cwd: task.directory, windowsHide: true });
+    if (!localEntry(file) || !samePath(realpathSync(path.dirname(file)), path.dirname(file)) ||
+        run('ls-files', '--', item.path) || ignored.status !== 0) {
+      throw Error(`Ignored artifact path is tracked, missing or linked outside the checkout: ${item.path}`);
+    }
+    const fingerprint = generatedFingerprint(task.directory, item.path);
+    if (generated[item.path] && generated[item.path] !== fingerprint) throw Error(`Generated output changed since its recorded fingerprint: ${item.path}`);
+    // These named, allowlisted outputs are preserved byte-for-byte in the
+    // archive, so retirement does not rely on proving they are disposable.
+    return { ...item, fingerprint };
+  });
+  const archiveRoot = path.join(stateDir(), 'source-recovery', 'workspace-artifacts', task.name);
+  const contentsRoot = path.join(archiveRoot, 'contents');
+  const manifestFile = path.join(archiveRoot, 'manifest.json');
+  if (localEntry(archiveRoot)) {
+    if (!existingArchive) throw Error('A prior artifact archive exists; inspect it before repeating archival');
+    const items = verifiedArtifactArchive(task, { finalSha: head, artifactArchive: existingArchive });
+    return { directory: existingArchive.directory, manifest: { ...existingArchive.manifest, items } };
+  }
+  for (const item of snapshots) {
+    const source = path.join(task.directory, item.path);
+    const destination = path.join(contentsRoot, item.path);
+    mkdirSync(path.dirname(destination), { recursive: true });
+    cpSync(source, destination, { recursive: true, errorOnExist: true, force: false, preserveTimestamps: true, verbatimSymlinks: true });
+    if (generatedFingerprint(contentsRoot, item.path, { allowDanglingLinks: true }) !== item.fingerprint) {
+      throw Error(`Generated artifact archive failed its integrity check: ${item.path}`);
+    }
+  }
+  const manifest = {
+    schema: 'fika.source-workspace-artifact-archive.v1', task: task.name, owner: task.owner, head,
+    capturedAt: new Date().toISOString(), items: snapshots,
+  };
+  save(manifestFile, manifest);
+  return { directory: path.relative(stateDir(), archiveRoot), manifest };
+}
+
+function verifiedArtifactArchive(task, completion) {
+  if (!completion.artifactArchive) return [];
+  const directory = path.resolve(stateDir(), completion.artifactArchive.directory || '');
+  const root = path.resolve(stateDir());
+  if (!inside(root, directory) || !localEntry(directory)?.isDirectory() || !samePath(realpathSync(directory), directory)) {
+    throw Error('Generated artifact archive directory is missing or outside the recovery archive');
+  }
+  const manifestFile = path.join(directory, 'manifest.json');
+  if (!localEntry(manifestFile)?.isFile() || !samePath(realpathSync(manifestFile), manifestFile)) throw Error('Generated artifact archive manifest is missing');
+  const manifest = JSON.parse(readFileSync(manifestFile, 'utf8'));
+  if (!isDeepStrictEqual(manifest, completion.artifactArchive.manifest) || manifest.task !== task.name ||
+      manifest.owner !== task.owner || manifest.head !== completion.finalSha || !Array.isArray(manifest.items)) {
+    throw Error('Generated artifact archive manifest does not match the completion record');
+  }
+  for (const item of manifest.items) {
+    if (archivedArtifactType(task, item.path) !== item.type || generatedFingerprint(path.join(directory, 'contents'), item.path,
+      { allowDanglingLinks: true }) !== item.fingerprint) throw Error(`Generated artifact archive integrity failed: ${item.path}`);
+  }
+  return manifest.items;
 }
 
 function unregisteredRetirement(task, completion, proof) {
@@ -397,6 +635,11 @@ export function cleanupSourceWorkspaces({ execute = false, name, inspect = false
         const current = registrations().find(item => samePath(item.worktree, currentTask.directory));
         assertLocalIdentity(currentTask, latest, current, markers(), history, management);
         if (current) {
+          const artifactArchive = archiveIgnoredArtifacts(currentTask, latest.finalSha, { existingArchive: latest.artifactArchive || null });
+          if (artifactArchive) {
+            latest = { ...latest, artifactArchive };
+            save(file, latest);
+          }
           registeredRetirement(currentTask, latest);
           gitAdminSnapshot(current, task.name, sha => main.has(sha));
           // Recheck ignored and source content after archiving Git evidence. Record the
