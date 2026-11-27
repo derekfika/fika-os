@@ -8,6 +8,7 @@ import { useMenuAccess } from "./menu-access";
 
 const primary = [
   { href: "/", label: "Week Planner", icon: "▣" },
+  { href: "/menu-designer", label: "Menu Designer", icon: "✎" },
   { href: "/portions", label: "Portion Planner", icon: "▤" },
   { href: "/allergens", label: "Allergen Checker", icon: "◇" },
   { href: "/catalogue", label: "Dish Library", icon: "▧" },

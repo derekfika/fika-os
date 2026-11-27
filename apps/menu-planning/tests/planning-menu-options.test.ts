@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
-import { menuWeeksForPlanner } from "../app/planning-context-nav";
+import { menuWeeksForPlanner, preserveMenuSelectionForWeekNavigation } from "../app/planning-context-nav";
 import { emptyWeek, supplementaryMenuWeekId } from "../lib/rolling-menu";
 
 const monday = "2026-11-23";
@@ -15,7 +15,8 @@ const munich = supplementary("munich-re", "Munich RE", [1]);
 const wise = supplementary("wise", "Wise", [5]);
 const oneOff = { ...supplementary("one-off", "One-off service", []), supplementaryMenu: { ...supplementary("one-off", "One-off service", []).supplementaryMenu, serviceDate: "2026-11-25" } };
 const otherWeek = emptyWeek("2026-11-30").week;
-const weeks = [otherWeek, wise, oneOff, main, munich];
+const nextMunich = { ...otherWeek, id: supplementaryMenuWeekId("2026-11-30", "munich-re"), supplementaryMenu: munich.supplementaryMenu };
+const weeks = [otherWeek, wise, oneOff, main, munich, nextMunich];
 
 test("Week Planner offers the main and all same-week supplementary menus independent of today's recurrence", () => {
   const options = menuWeeksForPlanner(weeks, munich.id);
@@ -31,4 +32,11 @@ test("Week Planner menu switching selects the whole week and leaves existing dra
   assert.match(navigation, /if\s*\(!showDay\)[\s\S]*?if\s*\(onSelectWeek\)[\s\S]*?window\.dispatchEvent\(new CustomEvent\("menu-week-select"/);
   assert.match(navigation, /Main Lunch/);
   assert.match(component, /<WeekDraftNotices draft=\{draft\} selectWeek=\{selectWeek\} \/>/);
+  assert.doesNotMatch(component, /<DayMenuSelect/);
+  assert.match(component, /Choose a saved layout/);
+});
+
+test("week navigation preserves a supplementary menu identity when its occurrence exists", () => {
+  assert.equal(preserveMenuSelectionForWeekNavigation(weeks, munich.id, otherWeek.id)?.id, nextMunich.id);
+  assert.equal(preserveMenuSelectionForWeekNavigation(weeks.filter(week => week.id !== nextMunich.id), munich.id, otherWeek.id)?.id, otherWeek.id);
 });
