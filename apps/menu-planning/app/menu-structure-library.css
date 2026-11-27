@@ -1,0 +1,20 @@
+.menu-structure-editor { display: grid; gap: 16px; padding: 16px; border: 1px solid var(--fika-border-default); border-radius: var(--radius-md); background: var(--fika-surface-subtle); }
+.menu-structure-editor__heading, .menu-structure-category__heading { display: flex; align-items: end; justify-content: space-between; gap: 16px; }
+.menu-structure-editor__heading h4 { margin: 0; color: var(--fika-text-primary); font-size: 16px; line-height: 22px; }
+.menu-structure-editor__heading p { margin: 4px 0 0; color: var(--fika-text-secondary); font-size: 13px; line-height: 18px; }
+.menu-structure-category { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--fika-border-default); border-radius: var(--radius-md); background: var(--fika-surface-card); }
+.menu-structure-category__heading > .fika-field { flex: 1; }
+.menu-structure-order { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.menu-structure-order .button { min-width: 40px; min-height: 40px; padding: 8px 12px; }
+.menu-structure-rows { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.menu-structure-row { display: grid; grid-template-columns: 32px minmax(120px,1fr) auto; align-items: end; gap: 10px; padding: 10px 12px; border: 1px solid var(--fika-border-default); border-radius: var(--radius-sm); background: var(--fika-surface-page); }
+.menu-structure-row__number { align-self: center; color: var(--fika-text-muted); font-size: 13px; font-weight: 600; text-align: center; }
+.menu-structure-add-row { justify-self: start; }
+.planner-modal.menu-create-dialog { box-sizing: border-box; width: min(880px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow-y: auto; }
+.menu-library-controls { display: grid; gap: 10px; padding: 16px; border: 1px solid var(--fika-border-default); border-radius: var(--radius-md); background: var(--fika-surface-card); }
+.menu-library-controls__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 640px) {
+  .menu-structure-editor__heading, .menu-structure-category__heading { align-items: stretch; flex-direction: column; }
+  .menu-structure-row { grid-template-columns: 26px minmax(0,1fr); }
+  .menu-structure-row .menu-structure-order { grid-column: 2; }
+}

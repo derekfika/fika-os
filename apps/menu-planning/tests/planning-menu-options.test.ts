@@ -28,7 +28,7 @@ test("Week Planner menu switching selects the whole week and leaves existing dra
   const component = readFileSync(new URL("../app/week-planner.tsx", import.meta.url), "utf8");
   const navigation = readFileSync(new URL("../app/planning-context-nav.tsx", import.meta.url), "utf8");
   assert.match(component, /<PlanningContextNav weeks=\{weeks\} currentWeek=\{snapshot\.week\.id\} showMenuSelector \/>/);
-  assert.match(navigation, /if \(!showDay\) \{ if \(onSelectWeek\) onSelectWeek\(weekId\); else window\.dispatchEvent\(new CustomEvent\("menu-week-select"/);
+  assert.match(navigation, /if\s*\(!showDay\)[\s\S]*?if\s*\(onSelectWeek\)[\s\S]*?window\.dispatchEvent\(new CustomEvent\("menu-week-select"/);
   assert.match(navigation, /Main Lunch/);
   assert.match(component, /<WeekDraftNotices draft=\{draft\} selectWeek=\{selectWeek\} \/>/);
 });

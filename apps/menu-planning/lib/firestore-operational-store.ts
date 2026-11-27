@@ -4,6 +4,7 @@ import { claimEvent, eventIsDue, markEventDeadLetter, outboxRecord, resetEventFo
 import type { CompiledPublishedWeekSnapshot, MenuPublication } from "./menu-publication";
 import type { RollingDay, RollingEntry, RollingSnapshot, RollingWeek } from "./rolling-menu-types";
 import type { SupplementaryMenuTemplate } from "./rolling-menu";
+import type { MenuStructureTemplate } from "./menu-structure-library";
 import { recordMenuPlanningReadBudget } from "./read-budget";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import { decodeWeeklyPublicationPacket } from "@fika/server-shared/weekly-publication-packet";
@@ -56,6 +57,24 @@ export class MenuPlanningFirestoreRepository {
     recordFirestore("template.settings-read", document.exists ? 1 : 0);
     const slots = document.exists ? document.data()?.menuTemplateSlots : undefined;
     return Array.isArray(slots) ? slots.filter((slot): slot is string => typeof slot === "string") : [];
+  }
+  async getMenuStructureTemplates() {
+    const document = await this.db.collection(MENU_PLANNING_COLLECTIONS.settings).doc("menu-structure-library").get();
+    recordFirestore("menu-structure-library.read", document.exists ? 1 : 0);
+    const templates = document.exists ? document.data()?.templates : undefined;
+    return Array.isArray(templates) ? templates as MenuStructureTemplate[] : [];
+  }
+  async updateMenuStructureTemplates<T>(mutator: (templates: MenuStructureTemplate[]) => T): Promise<T> {
+    return this.db.runTransaction(async transaction => {
+      const ref = this.db.collection(MENU_PLANNING_COLLECTIONS.settings).doc("menu-structure-library");
+      const document = await transaction.get(ref);
+      const data = document.exists ? document.data() || {} : {};
+      const templates = Array.isArray(data.templates) ? data.templates as MenuStructureTemplate[] : [];
+      const result = mutator(templates);
+      transaction.set(ref, { ...data, templates });
+      recordFirestore("menu-structure-library.write", 1);
+      return result;
+    });
   }
   async listWeekSummaries() { const snapshot = await this.db.collection(MENU_PLANNING_COLLECTIONS.weeks).limit(100).get(); recordFirestore("week.summaries", snapshot.size); recordMenuPlanningReadBudget({ operation: "week_summaries", reads: { weeks: snapshot.size, days: 0, entries: 0, scoped: 1 } }); return snapshot.docs.map(doc => doc.data() as RollingWeek); }
   async listWeekSummariesByCommencing(weekCommencings: string[]) {

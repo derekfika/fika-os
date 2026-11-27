@@ -14,8 +14,9 @@ import { applyRollingEntryPatch, type RollingEntryPatch, type RollingMutationDel
 import { dishCategoryForWrite } from "./dish-categories";
 import { isGovernedMenuSlot, suggestMenuRowSlot } from "./menu-template";
 import { menuSiteIdentity, menuSiteKey } from "./site-pax";
-export type SupplementaryMenuTemplate = SupplementaryMenuContext & { startsFrom: string; discontinuedAfter?: string; previousOccurrenceWeekId?: string; createdAt: string; createdBy: string; audit?: RollingWeek["audit"] };
-export interface Stored { version: 1; weeks: RollingWeek[]; days: RollingDay[]; entries: RollingEntry[]; /** Permanent template additions apply only to weeks created after the change. */ menuTemplateSlots?: string[]; supplementaryMenuTemplates?: SupplementaryMenuTemplate[]; }
+import { copyMenuStructure, menuStructureSlots, type MenuStructureSnapshot } from "./menu-structure-library";
+export type SupplementaryMenuTemplate = SupplementaryMenuContext & { startsFrom: string; discontinuedAfter?: string; previousOccurrenceWeekId?: string; menuStructure?: MenuStructureSnapshot; createdAt: string; createdBy: string; audit?: RollingWeek["audit"] };
+export interface Stored { version: 1; weeks: RollingWeek[]; days: RollingDay[]; entries: RollingEntry[]; /** Permanent template additions apply only to weeks created after the change. */ menuTemplateSlots?: string[]; menuStructureTemplates?: import("./menu-structure-library").MenuStructureTemplate[]; supplementaryMenuTemplates?: SupplementaryMenuTemplate[]; }
 const now = () => new Date().toISOString();
 export const operationalDateLondon = (at = new Date()) => { const parts = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(at).filter(part => part.type !== "literal").map(part => [part.type, part.value])); return `${parts.year}-${parts.month}-${parts.day}`; };
 const operationalDate = () => operationalDateLondon();
@@ -115,18 +116,22 @@ type RecurrenceAccess = { canManage: (siteId: string) => boolean; assertSnapshot
 function canManageMenu(access: RecurrenceAccess, menu: SupplementaryMenuContext) {
   return menu.siteIds.length > 0 && menu.siteIds.every(access.canManage);
 }
-export async function createSupplementaryMenuWeek(weekCommencing: string, menu: SupplementaryMenuContext, actor: string, access: RecurrenceAccess, startFromWeekId?: string, template?: SupplementaryMenuTemplate) {
+export async function createSupplementaryMenuWeek(weekCommencing: string, menu: SupplementaryMenuContext, actor: string, access: RecurrenceAccess, startFromWeekId?: string, template?: SupplementaryMenuTemplate, requestedStructure?: MenuStructureSnapshot) {
   if (!canManageMenu(access, menu)) throw Object.assign(new Error("This menu is outside your management scope."), { status: 403 });
   const id = supplementaryMenuWeekId(weekCommencing, menu.id);
-  const templateSlots = newWeekTemplateSlots(await getMenuTemplateSlots());
+  const templateSlots = requestedStructure ? menuStructureSlots(requestedStructure) : newWeekTemplateSlots(await getMenuTemplateSlots());
   const candidate = emptyWeek(weekCommencing, actor, templateSlots, id);
   candidate.week.supplementaryMenu = structuredClone(menu);
+  if (requestedStructure) candidate.week.menuStructure = copyMenuStructure(requestedStructure);
+  else if (template?.menuStructure) candidate.week.menuStructure = copyMenuStructure(template.menuStructure);
   const previousId = startFromWeekId || (template?.previousOccurrenceWeekId && template.previousOccurrenceWeekId < id ? template.previousOccurrenceWeekId : undefined);
   const previous = previousId ? await getWeek(previousId) : undefined;
   if (previous) {
     const sourceMenu = previous.week.supplementaryMenu;
     if (sourceMenu?.id !== menu.id || !canManageMenu(access, sourceMenu)) throw Object.assign(new Error("The source menu is outside your management scope."), { status: 403 });
     access.assertSnapshot(previous);
+    if (previous.week.menuStructure) candidate.week.menuStructure = copyMenuStructure(previous.week.menuStructure);
+    candidate.week.templateSlots = previous.week.templateSlots?.slice() || candidate.week.templateSlots;
     candidate.entries = previous.entries.map(entry => {
       const dayIndex = previous.days.findIndex(day => day.id === entry.dayId);
       const day = candidate.days[Math.max(0, dayIndex)];
@@ -145,7 +150,7 @@ export async function createSupplementaryMenuWeek(weekCommencing: string, menu: 
     const templates = stored.supplementaryMenuTemplates || [];
     const templateIndex = templates.findIndex(value => value.id === menu.id);
     if (!isDeepStrictEqual(templates[templateIndex], template)) throw Object.assign(new Error("The recurring menu changed or its identity is already in use. Refresh the week."), { status: 409 });
-    if (menu.recurrenceWeekdays?.length && templateIndex < 0) stored.supplementaryMenuTemplates = [...templates, { ...structuredClone(menu), startsFrom: weekCommencing, previousOccurrenceWeekId: id, createdAt: now(), createdBy: actor }];
+    if (menu.recurrenceWeekdays?.length && templateIndex < 0) stored.supplementaryMenuTemplates = [...templates, { ...structuredClone(menu), startsFrom: weekCommencing, previousOccurrenceWeekId: id, ...(candidate.week.menuStructure ? { menuStructure: copyMenuStructure(candidate.week.menuStructure) } : {}), createdAt: now(), createdBy: actor }];
     else if (template && (!template.previousOccurrenceWeekId || template.previousOccurrenceWeekId < id)) stored.supplementaryMenuTemplates![templateIndex] = { ...template, previousOccurrenceWeekId: id };
     replaceSnapshotInStored(stored, candidate);
     return candidate;
@@ -166,8 +171,8 @@ export async function ensureSupplementaryMenuWeeks(weekCommencing: string, actor
       if (existing.supplementaryMenu && canManageMenu(access, existing.supplementaryMenu)) created.push(existing.id);
       continue;
     }
-    const { startsFrom, discontinuedAfter, previousOccurrenceWeekId, createdAt, createdBy, audit, ...menu } = template;
-    const snapshot = await createSupplementaryMenuWeek(weekCommencing, menu, actor, access, undefined, template);
+    const { startsFrom, discontinuedAfter, previousOccurrenceWeekId, menuStructure, createdAt, createdBy, audit, ...menu } = template;
+    const snapshot = await createSupplementaryMenuWeek(weekCommencing, menu, actor, access, undefined, template, menuStructure);
     created.push(snapshot.week.id);
   }
   return created;
@@ -219,6 +224,23 @@ export async function updateSupplementaryMenuOccurrence(weekId: string, expected
     }
     return snapshotFromStored(stored, weekId);
   }, { weekId, weekVersion: expectedWeekVersion }, { weekId, sourceWeekId: "__none__", includeEvents: false, recurrence: patch.applyToFuture ? "with-week" : undefined });
+}
+export async function updateSupplementaryMenuStructure(weekId: string, expectedWeekVersion: number, structure: MenuStructureSnapshot, actor: string, access: RecurrenceAccess) {
+  const validated = copyMenuStructure(structure);
+  return withMenuPlanningTransaction(state => {
+    const stored = state.rolling as unknown as Stored;
+    const week = stored.weeks.find(value => value.id === weekId);
+    if (!week) throw Object.assign(new Error("The additional menu occurrence was not found."), { status: 404 });
+    if (!week.supplementaryMenu) throw Object.assign(new Error("The primary menu structure cannot be changed through this action."), { status: 409 });
+    if (!canManageMenu(access, week.supplementaryMenu)) throw Object.assign(new Error("This menu is outside your management scope."), { status: 403 });
+    if (week.version !== expectedWeekVersion) throw Object.assign(new Error("This menu changed. Refresh before editing its structure."), { status: 409 });
+    if (week.status !== "draft" || Object.values(week.dayStatuses || {}).some(status => status !== "draft")) throw Object.assign(new Error("A published menu structure is locked. Create a new occurrence to use another layout."), { status: 409 });
+    week.menuStructure = validated;
+    week.templateSlots = menuStructureSlots(validated);
+    week.version += 1;
+    week.audit.push({ action: "supplementary-menu-structure-amended", at: now(), by: actor });
+    return snapshotFromStored(stored, weekId);
+  }, { weekId, weekVersion: expectedWeekVersion }, { weekId, sourceWeekId: "__none__", includeEvents: false });
 }
 export async function discontinueSupplementaryMenu(menuId: string, discontinuedAfter: string, actor: string, access: RecurrenceAccess) {
   return withMenuPlanningTransaction(state => {
