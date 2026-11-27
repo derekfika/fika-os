@@ -14,7 +14,7 @@ function job(name: string): string {
 }
 
 test("Menu Planning keeps its complete isolated test-file suite", () => {
-  assert.equal(scripts.test, "tsx --test tests/*.test.ts");
+  assert.equal(scripts.test, "tsx --test --test-concurrency=1 tests/*.test.ts");
   assert.doesNotMatch(scripts.test, /(?:--test-isolation|--experimental-test-isolation)=none/);
 });
 
