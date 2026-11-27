@@ -4,4 +4,4 @@ During hosted staging acceptance, custom row names mapped to salad slot identiti
 
 Responsibilities and source locations: `lib/week-planner-slot-label.ts` resolves explicit, canonical, and generic row labels; `app/week-planner.tsx` supplies saved custom row names; `tests/week-planner-layout.test.ts` covers precedence and blank-name fallback.
 
-Validation: focused row-label regression, affected Menu Planning tests, typecheck and build pending. Deployment: staging acceptance in progress; no production deployment.
+Validation: row-label precedence regression passed; full Menu Planning suite passed (604 passed, 5 skipped), typecheck and production build passed; PR #739 exact-source `Workflow / merge-gate` passed. Hosted acceptance confirmed that edited, duplicated, renamed and archived templates do not alter the saved Breakfast instance, Main Lunch remains unchanged, and the custom row labels render after reload. Deployment: Menu Planning staging, PR #739 source `cdc365be24392e79f7d1d03fca9bc9dd14755e55`, build `build-2026-11-27-002`, succeeded at 100%; no production deployment.
