@@ -15,7 +15,7 @@ test("Week Planner shows owner-approved salad display names without changing gen
   assert.equal(weekPlannerSlotLabel("HOT MAIN", "Hot Main"), "Hot Main");
   assert.equal(weekPlannerSlotLabel("CUSTOM SLOT", "Custom display"), "Custom display");
   const component = readFileSync(new URL("../app/week-planner.tsx", import.meta.url), "utf8");
-  assert.match(component, /<strong>\{plannerSlotLabel\(slot\)\}<\/strong>/, "slot row headings show the explicit subtype");
+  assert.match(component, /<strong>\{plannerSlotLabel\(slot, menuStructureRowLabel\(snapshot, slot\)\)\}<\/strong>/, "slot row headings show the custom row label when present");
   assert.match(component, /<small>\{plannerSlotLabel\(slot\)\}<\/small>/, "picker headings show the explicit subtype");
   assert.match(component, /Select dish for \$\{day\.dayName\}, \$\{plannerSlotLabel\(slot\)\}/, "Monday and other day cells expose the same specific label");
   assert.match(component, /Recommended dishes for this row appear first/, "recommendations never hide other catalogue dishes");

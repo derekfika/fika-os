@@ -87,10 +87,12 @@ test("the Menu Planning proxy forwards only rotation query keys and the caller's
   await assert.rejects(readRotationAccess(null, (async () => json({ error: { message: "no session" } }, 401)) as never), error => (error as { status?: number }).status === 401);
 });
 
-test("the Hospitality Rotations workspace has its own navigation entry, separate from the Week Planner", () => {
+test("Hospitality Rotations keeps its legacy route while its sidebar entry is retired", () => {
   const shell = readFileSync(new URL("../app/menu-planning-shell.tsx", import.meta.url), "utf8");
-  assert.match(shell, /href: "\/rotations", label: "Hospitality Rotations"/);
+  assert.doesNotMatch(shell, /href: "\/rotations", label: "Hospitality Rotations"/);
   assert.match(shell, /href: "\/", label: "Week Planner"/);
+  assert.doesNotMatch(readFileSync(new URL("../app/week-planner.tsx", import.meta.url), "utf8"), /Make available to Hospitality|set-hospitality-availability/);
+  assert.match(readFileSync(new URL("../app/api/rolling-menu/route.ts", import.meta.url), "utf8"), /set-hospitality-availability/);
 });
 
 test("week dish order can be moved within bounds and survives re-selection", async () => {

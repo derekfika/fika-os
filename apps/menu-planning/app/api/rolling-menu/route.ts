@@ -26,6 +26,7 @@ import {
   setSupplementaryMenuOccurrenceSkipped,
   updateEntry,
   updateSupplementaryMenuOccurrence,
+  updateSupplementaryMenuStructure,
   validateWeek,
   validateWeekAuthoritative,
 } from "@/lib/rolling-menu";
@@ -82,6 +83,7 @@ import type {
   DuplicateScope,
 } from "@/lib/menu-duplicate";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
+import { validateMenuStructure } from "@/lib/menu-structure-library";
 import type { GovernedOploc } from "@/lib/oploc-authority";
 
 const oplocAliases = (sites: readonly GovernedOploc[]) => new Map(sites.flatMap(site => (site.legacyIds || []).map(id => [id, site.canonicalId] as const)));
@@ -444,6 +446,7 @@ async function handlePost(request: NextRequest) {
       const serviceTime = String(body.serviceTime || "").trim();
       const kitchenNotes = String(body.kitchenNotes || "").trim();
       const recurrenceWeekdays = [...new Set(Array.isArray(body.recurrenceWeekdays) ? body.recurrenceWeekdays.map(Number) : [])];
+      const menuStructure = body.menuStructure === undefined ? undefined : validateMenuStructure(body.menuStructure);
       if (!name || name.length > 100) throw Object.assign(new Error("Enter a menu name up to 100 characters."), { status: 422 });
       const menuId = String(body.menuId || crypto.randomUUID());
       if (!/^[A-Za-z0-9_-]{8,100}$/.test(menuId)) throw Object.assign(new Error("The additional menu identity is invalid."), { status: 422 });
@@ -466,7 +469,7 @@ async function handlePost(request: NextRequest) {
       const previous = body.startWithPrevious === true
         ? (await listWeeks()).filter(value => value.supplementaryMenu?.id === menu.id && value.weekCommencing < parent.week.weekCommencing).sort((left, right) => right.weekCommencing.localeCompare(left.weekCommencing))[0]
         : undefined;
-      const snapshot = await createSupplementaryMenuWeek(parent.week.weekCommencing, menu, actor.uid, recurrenceAccess, previous?.id);
+      const snapshot = await createSupplementaryMenuWeek(parent.week.weekCommencing, menu, actor.uid, recurrenceAccess, previous?.id, undefined, menuStructure);
       return respond({ snapshot: scopedSnapshot(snapshot, actor), weeks: await readWeeks(), publicationState: await readPublicationState(snapshot) });
     }
     if (action === "ensure-recurring-menus") {
@@ -496,6 +499,16 @@ async function handlePost(request: NextRequest) {
       const recurrenceWeekdays = Array.isArray(body.recurrenceWeekdays) ? [...new Set(body.recurrenceWeekdays.map(Number))] : undefined;
       const snapshot = await updateSupplementaryMenuOccurrence(weekId, Number(body.expectedWeekVersion), { name: String(body.name || ""), serviceType: serviceType as "Breakfast" | "Lunch" | "Dinner" | "Other", serviceTime: body.serviceTime === undefined ? undefined : String(body.serviceTime), kitchenNotes: body.kitchenNotes === undefined ? target.week.supplementaryMenu.kitchenNotes : String(body.kitchenNotes), applyToFuture: body.applyToFuture === true, recurrenceWeekdays }, actor.uid, recurrenceAccess);
       return respond({ snapshot: scopedSnapshot(snapshot, actor), weeks: await readWeeks(), publicationState: await readPublicationState(snapshot) });
+    }
+    if (action === "update-menu-structure") {
+      const weekId = String(body.weekId || "");
+      const target = await getWeek(weekId);
+      if (!target.week.supplementaryMenu) throw Object.assign(new Error("The selected menu is not supplementary."), { status: 409 });
+      assertMenuSnapshotMutationScope(target, actor, "manage", aliases);
+      if (target.week.supplementaryMenu.siteIds.some(id => !actorCanWriteOploc(actor, id, "manage"))) throw Object.assign(new Error("This menu includes a site outside your management scope."), { status: 403 });
+      const menuStructure = validateMenuStructure(body.structure);
+      const snapshot = await updateSupplementaryMenuStructure(weekId, Number(body.expectedWeekVersion), menuStructure, actor.uid, recurrenceAccess);
+      return respond({ snapshot: scopedSnapshot(snapshot, actor), weeks: await readWeeks() });
     }
     if (action === "discontinue-supplementary-menu") {
       const menuId = String(body.menuId || "");

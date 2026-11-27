@@ -65,15 +65,32 @@ export function selectableDishIds<T extends { id: string }>(dishes: readonly T[]
   return dishes.filter(dish => !unavailable.has(dish.id));
 }
 
-export function groupedSlots(snapshot: RollingSnapshot) {
-  const slots = Array.from(new Set([
+export function groupedSlots(snapshot: RollingSnapshot): Array<[string, string[]]> {
+  const canonicalSlots = Array.from(new Set([
     ...plannerSlotsForWeek(snapshot.week),
     ...(snapshot.week.customSlots || []),
     ...snapshot.entries.map(entry => entry.slot),
   ])).filter(slot => !snapshot.week.removedSlots?.includes(slot)
     || (snapshot.week.status === "draft" && (PERMANENT_DESSERT_SLOTS as readonly string[]).includes(slot)));
+  if (snapshot.week.menuStructure) {
+    // Supplementary layouts own their rows; do not pad them with Main Lunch's default grid.
+    const slots = Array.from(new Set([
+      ...(snapshot.week.templateSlots || []),
+      ...(snapshot.week.customSlots || []),
+      ...snapshot.entries.map(entry => entry.slot),
+    ])).filter(slot => !snapshot.week.removedSlots?.includes(slot));
+    const visible = new Set(slots);
+    const assigned = new Set<string>();
+    const customGroups = snapshot.week.menuStructure.categories.map(category => {
+      const rows = category.rows.map(row => row.slot).filter(slot => visible.has(slot));
+      rows.forEach(slot => assigned.add(slot));
+      return [category.name, rows] as [string, string[]];
+    }).filter(([, rows]) => rows.length > 0);
+    const remaining = slots.filter(slot => !assigned.has(slot));
+    return remaining.length ? [...customGroups, ["Other", remaining] as [string, string[]]] : customGroups;
+  }
   const groups = new Map<string, string[]>();
-  for (const slot of slots) {
+  for (const slot of canonicalSlots) {
     const section = menuSectionForSlot(slot).label;
     groups.set(section, [...(groups.get(section) || []), slot]);
   }

@@ -7,6 +7,7 @@ import "./final-tightening.css";
 import "./import-menu-week.css";
 import "./visual-system.css";
 import "./supplementary-menu.css";
+import "./menu-structure-library.css";
 import "./dish-title-wrap.css";
 import "./portion-planner-resize.css";
 import { MenuAccessProvider } from "./menu-access";
